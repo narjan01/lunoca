@@ -1,0 +1,678 @@
+/* ==========================================================================
+   Root Variables
+   ========================================================================== */
+:root {
+  --primary: #c496f2; 
+  --primary-dark: #a673d9;
+  --secondary: #ffb6c1; 
+  --text-dark: #5c4033; 
+  --text-light: #888;
+  --bg: #fbf9ff; 
+  --white: #ffffff;
+  --shadow: 0 8px 24px rgba(196, 150, 242, 0.15);
+  --radius: 16px;
+}
+
+/* ==========================================================================
+   Base/Reset Styles
+   ========================================================================== */
+* {
+  box-sizing: border-box;
+}
+
+body { 
+  font-family: 'Poppins', sans-serif; 
+  background-color: var(--bg); 
+  color: var(--text-dark); 
+  margin: 0; 
+  padding: 0; 
+}
+
+/* ==========================================================================
+   Header Styles
+   ========================================================================== */
+header {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  color: var(--white); 
+  text-align: center; 
+  padding: 15px 15px 10px;
+  position: sticky; 
+  top: 0; 
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
+  border-bottom-left-radius: 20px; 
+  border-bottom-right-radius: 20px;
+}
+
+.header-top { 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  width: 100%; 
+  position: relative;
+}
+
+.header-logo { 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  gap: 10px; 
+  font-family: 'Great Vibes', cursive; 
+  font-size: 34px; 
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.1); 
+  margin: 0 auto;
+}
+
+.header-logo img { 
+  width: 50px; 
+  height: 50px; 
+  border-radius: 50%; 
+  object-fit: cover; 
+  border: 2px solid var(--white); 
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15); 
+}
+
+#user-greeting { 
+  font-size: 12px; 
+  opacity: 0.9; 
+  margin-top: 5px; 
+  font-weight: 400; 
+}
+
+/* ==========================================================================
+   User Menu / Dropdown Styles
+   ========================================================================== */
+.user-menu-btn { 
+  background-color: rgba(255,255,255,0.2); 
+  color: var(--white); 
+  border: 1px solid rgba(255,255,255,0.5); 
+  width: 40px; 
+  height: 40px; 
+  border-radius: 50%; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  font-size: 16px; 
+  cursor: pointer; 
+  transition: 0.3s; 
+  backdrop-filter: blur(5px); 
+  padding: 0; 
+  position: absolute; 
+  right: 0; 
+  top: 5px;
+}
+
+.user-menu-btn:hover { 
+  background-color: var(--white); 
+  color: var(--primary); 
+}
+
+.user-dropdown { 
+  position: absolute; 
+  top: 50px; 
+  right: 0; 
+  background: var(--white); 
+  border-radius: 12px; 
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2); 
+  width: 180px; 
+  display: none; 
+  flex-direction: column; 
+  overflow: hidden; 
+  z-index: 200;
+}
+
+.user-dropdown.show { 
+  display: flex; 
+  animation: fadeIn 0.2s ease;
+}
+
+.user-dropdown button { 
+  background: none; 
+  color: var(--text-dark); 
+  border-radius: 0; 
+  padding: 12px 15px; 
+  text-align: left; 
+  font-weight: 500; 
+  font-size: 13px; 
+  box-shadow: none; 
+  border-bottom: 1px solid #f0f0f0; 
+  width: 100%; 
+  justify-content: flex-start;
+}
+
+.user-dropdown button:last-child { 
+  border-bottom: none; 
+  color: #e74c3c; 
+}
+
+.user-dropdown button:hover { 
+  background: #f9f9f9; 
+  color: var(--primary); 
+  transform: none; 
+}
+
+.user-dropdown button i { 
+  margin-right: 10px; 
+  width: 16px; 
+  text-align: center; 
+}
+
+/* ==========================================================================
+   Layout Styles
+   ========================================================================== */
+.container { 
+  padding: 20px 15px 100px; 
+  max-width: 600px; 
+  margin: 0 auto; 
+}
+
+.screen { 
+  display: none; 
+  animation: fadeIn 0.4s ease; 
+}
+
+.screen.active { 
+  display: block; 
+}
+
+.row-2 { 
+  display: flex; 
+  gap: 10px; 
+}
+
+.row-2 .form-group { 
+  flex: 1; 
+}
+
+.loading-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  padding: 40px;
+  text-align: center;
+  color: var(--text-light);
+}
+
+/* ==========================================================================
+   Product Cards Styles
+   ========================================================================== */
+.produto-card, .admin-card, .login-box, .panel-card { 
+  background: var(--white); 
+  border-radius: var(--radius); 
+  padding: 18px; 
+  margin-bottom: 20px; 
+  box-shadow: var(--shadow); 
+  display: flex; 
+  align-items: center; 
+  border: 1px solid rgba(0,0,0,0.03); 
+}
+
+.produto-card { 
+  flex-direction: column; 
+  align-items: stretch; 
+  padding: 0; 
+  overflow: hidden; 
+}
+
+.produto-header { 
+  display: flex; 
+  align-items: center; 
+  padding: 15px; 
+}
+
+.produto-img { 
+  width: 90px; 
+  height: 90px; 
+  object-fit: cover; 
+  border-radius: 12px; 
+  margin-right: 15px; 
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1); 
+}
+
+.produto-info { 
+  flex: 1; 
+}
+
+.produto-info h3 { 
+  margin: 0 0 4px 0; 
+  font-size: 18px; 
+  color: var(--text-dark); 
+  font-weight: 600; 
+}
+
+.produto-desc { 
+  padding: 0 15px 15px; 
+  font-size: 13px; 
+  color: var(--text-light); 
+  line-height: 1.5; 
+}
+
+.produto-footer { 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  padding: 12px 15px; 
+  background: #fafafa; 
+  border-top: 1px solid #f0f0f0; 
+}
+
+.preco { 
+  font-weight: 600; 
+  color: var(--primary-dark); 
+  font-size: 16px;
+}
+
+/* ==========================================================================
+   Button Styles
+   ========================================================================== */
+button { 
+  background-color: var(--primary); 
+  color: var(--white); 
+  border: none; 
+  padding: 12px 20px; 
+  border-radius: 10px; 
+  font-weight: 600; 
+  font-family: 'Poppins', sans-serif; 
+  cursor: pointer; 
+  transition: all 0.3s ease; 
+  box-shadow: 0 4px 10px rgba(196, 150, 242, 0.3); 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  gap: 8px;
+}
+
+button:hover { 
+  background-color: var(--primary-dark); 
+  transform: translateY(-2px); 
+}
+
+button:active { 
+  transform: translateY(0); 
+}
+
+.btn-adicionar { 
+  padding: 8px 15px; 
+  font-size: 13px; 
+  border-radius: 20px; 
+}
+
+.btn-outline { 
+  background-color: transparent; 
+  color: var(--primary); 
+  border: 2px solid var(--primary); 
+  box-shadow: none; 
+}
+
+.btn-outline:hover { 
+  background-color: var(--primary); 
+  color: var(--white); 
+}
+
+.btn-danger { 
+  background-color: #ff6b6b; 
+  box-shadow: 0 4px 10px rgba(255, 107, 107, 0.3); 
+}
+
+.btn-danger:hover { 
+  background-color: #ff4757; 
+}
+
+/* ==========================================================================
+   Forms Styles
+   ========================================================================== */
+.form-group { 
+  margin-bottom: 15px; 
+  width: 100%;
+}
+
+.form-group label { 
+  display: block; 
+  font-weight: 600; 
+  margin-bottom: 6px; 
+  font-size: 13px; 
+  color: var(--text-dark); 
+}
+
+.form-group input, .form-group select, .form-group textarea { 
+  width: 100%; 
+  padding: 12px 15px; 
+  border: 2px solid #eee; 
+  border-radius: 10px; 
+  font-family: 'Poppins', sans-serif; 
+  font-size: 14px; 
+  background-color: #fafafa; 
+  transition: border-color 0.3s; 
+}
+
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus { 
+  border-color: var(--primary); 
+  outline: none; 
+  background-color: var(--white); 
+}
+
+/* ==========================================================================
+   Cart Button Styles
+   ========================================================================== */
+#btn-ver-carrinho { 
+  position: fixed; 
+  bottom: 25px; 
+  left: 5%; 
+  width: 90%; 
+  padding: 16px; 
+  font-size: 16px; 
+  background: var(--text-dark); 
+  color: var(--white); 
+  border-radius: 30px; 
+  box-shadow: 0 10px 25px rgba(92, 64, 51, 0.4); 
+  display: none; 
+  justify-content: space-between; 
+  align-items: center; 
+  z-index: 90;
+}
+
+/* ==========================================================================
+   Modal Styles
+   ========================================================================== */
+.modal-overlay { 
+  position: fixed; 
+  top: 0; 
+  left: 0; 
+  width: 100%; 
+  height: 100%; 
+  background: rgba(0,0,0,0.5); 
+  z-index: 200; 
+  display: none; 
+  align-items: flex-end; 
+  justify-content: center; 
+  backdrop-filter: blur(3px); 
+  animation: fadeIn 0.3s;
+}
+
+.modal-content { 
+  background: var(--white); 
+  width: 100%; 
+  max-width: 600px; 
+  border-top-left-radius: 24px; 
+  border-top-right-radius: 24px; 
+  padding: 25px 20px; 
+  position: relative; 
+  animation: slideUp 0.3s ease-out; 
+  max-height: 90vh; 
+  overflow-y: auto;
+}
+
+.close-modal { 
+  position: absolute; 
+  top: 15px; 
+  right: 20px; 
+  font-size: 24px; 
+  color: #aaa; 
+  cursor: pointer; 
+}
+
+.modal-img-container { 
+  text-align: center; 
+  margin-bottom: 15px; 
+}
+
+.modal-img-container img { 
+  width: 120px; 
+  height: 120px; 
+  object-fit: cover; 
+  border-radius: 16px; 
+  box-shadow: var(--shadow); 
+}
+
+.modal-title { 
+  font-size: 22px; 
+  color: var(--text-dark); 
+  margin: 0 0 5px; 
+  font-weight: 600; 
+  text-align: center; 
+}
+
+.modal-price { 
+  color: var(--primary-dark); 
+  font-size: 18px; 
+  font-weight: bold; 
+  text-align: center; 
+  margin-bottom: 15px; 
+}
+
+.modal-desc { 
+  font-size: 13px; 
+  color: var(--text-light); 
+  text-align: center; 
+  margin-bottom: 20px; 
+  line-height: 1.5; 
+}
+
+/* ==========================================================================
+   Variations Box Styles
+   ========================================================================== */
+.variations-box { 
+  background: #fafafa; 
+  border: 1px solid #eee; 
+  border-radius: 12px; 
+  padding: 15px; 
+  margin-bottom: 20px; 
+}
+
+.variations-title { 
+  font-weight: 600; 
+  font-size: 14px; 
+  margin-bottom: 10px; 
+  color: var(--text-dark); 
+}
+
+.variation-item { 
+  display: flex; 
+  align-items: center; 
+  padding: 8px 0; 
+  border-bottom: 1px dashed #ddd; 
+  cursor: pointer;
+}
+
+.variation-item:last-child { 
+  border-bottom: none; 
+}
+
+.variation-item input { 
+  margin-right: 10px; 
+  width: 18px; 
+  height: 18px; 
+  accent-color: var(--primary); 
+}
+
+/* ==========================================================================
+   Admin Panel Styles
+   ========================================================================== */
+.admin-nav { 
+  display: flex; 
+  gap: 8px; 
+  margin-bottom: 25px; 
+  overflow-x: auto; 
+  padding-bottom: 5px;
+}
+
+.admin-nav button { 
+  flex: 1; 
+  background-color: #f0f0f0; 
+  color: #555; 
+  padding: 10px; 
+  font-size: 13px; 
+  border-radius: 8px; 
+  white-space: nowrap; 
+  box-shadow: none; 
+  border: 1px solid #e0e0e0; 
+  justify-content: center;
+}
+
+.admin-nav button.active { 
+  background-color: var(--primary); 
+  color: var(--white); 
+  border-color: var(--primary); 
+}
+
+.admin-tab { 
+  display: none; 
+  animation: fadeIn 0.3s; 
+}
+
+.admin-tab.active { 
+  display: block; 
+}
+
+.admin-item-card { 
+  background: var(--white); 
+  padding: 15px; 
+  border-radius: 12px; 
+  margin-bottom: 15px; 
+  box-shadow: var(--shadow); 
+  border-left: 5px solid var(--primary); 
+}
+
+.user-list-item { 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  padding: 15px; 
+  background: var(--white); 
+  border-radius: 12px; 
+  margin-bottom: 12px; 
+  box-shadow: var(--shadow); 
+}
+
+/* ==========================================================================
+   Calendar Styles
+   ========================================================================== */
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.calendar { 
+  width: 100%; 
+  border-collapse: collapse; 
+  background: var(--white); 
+  border-radius: 12px; 
+  overflow: hidden; 
+  box-shadow: var(--shadow); 
+}
+
+.calendar th { 
+  background: var(--primary); 
+  color: var(--white); 
+  padding: 12px 5px; 
+  font-size: 13px; 
+  font-weight: 600;
+}
+
+.calendar td { 
+  border: 1px solid #f0f0f0; 
+  padding: 12px 5px; 
+  text-align: center; 
+  vertical-align: top; 
+  height: 60px; 
+  cursor: pointer; 
+  transition: 0.2s;
+}
+
+.calendar td.has-order { 
+  background-color: #fff0f5; 
+  font-weight: bold; 
+  color: var(--primary-dark); 
+  border-bottom: 2px solid var(--secondary);
+}
+
+/* ==========================================================================
+   File Upload Styles
+   ========================================================================== */
+.file-upload-wrapper { 
+  position: relative; 
+  overflow: hidden; 
+  display: inline-block; 
+  width: 100%; 
+}
+
+.file-upload-wrapper input[type=file] { 
+  font-size: 100px; 
+  position: absolute; 
+  left: 0; 
+  top: 0; 
+  opacity: 0; 
+  cursor: pointer; 
+  height: 100%; 
+}
+
+.btn-upload { 
+  background-color: #f9f9f9; 
+  border: 2px dashed #ccc; 
+  color: #666; 
+  padding: 15px; 
+  text-align: center; 
+  border-radius: 10px; 
+  display: block; 
+  width: 100%; 
+  transition: 0.3s;
+}
+
+.btn-upload:hover { 
+  border-color: var(--primary); 
+  color: var(--primary); 
+  background-color: #fff9ff;
+}
+
+/* ==========================================================================
+   Animations
+   ========================================================================== */
+@keyframes fadeIn { 
+  from { opacity: 0; transform: translateY(10px); } 
+  to { opacity: 1; transform: translateY(0); } 
+}
+
+@keyframes slideUp { 
+  from { transform: translateY(100%); } 
+  to { transform: translateY(0); } 
+}
+
+/* ==========================================================================
+   Responsive Queries
+   ========================================================================== */
+@media (min-width: 768px) {
+  .container {
+    max-width: 800px;
+  }
+  
+  #btn-ver-carrinho {
+    width: 400px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  
+  .produto-card {
+    flex-direction: row;
+    align-items: center;
+  }
+  
+  .produto-img {
+    width: 120px;
+    height: 120px;
+  }
+  
+  .produto-header {
+    flex: 1;
+  }
+  
+  .produto-footer {
+    flex-direction: column;
+    justify-content: center;
+    border-top: none;
+    border-left: 1px solid #f0f0f0;
+    width: 150px;
+  }
+}
