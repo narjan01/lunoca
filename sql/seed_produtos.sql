@@ -10,7 +10,7 @@ VALUES
   10.00,
   'Uma fatia de pura felicidade! Nossa massa artesanal incrivelmente leve e molhadinha, intercalada com um recheio denso e aveludado que derrete na boca. Para completar, uma cobertura delicada e um brigadeiro perfeito no topo.',
   'Brigadeiro, Brigadeiro Branco',
-  'https://i.ibb.co/XrBJZ5Wt/Fatia.jpg',
+  'img/fatia.jpg',
   true
 ),
 (
@@ -24,7 +24,7 @@ Feitos com ingredientes nobres, cremosos por dentro e enrolados com todo carinho
 
 Apresentados em uma elegante caixa de madeira artesanal, prontos para presentear ou adoçar seu dia com sofisticação.',
   'Brigadeiro, Brigadeiro Branco, Beijinho',
-  'https://i.ibb.co/WJLnnD6/Brigadeiros-personalizados.jpg',
+  'img/brigadeiros-personalizados.jpg',
   true
 ),
 (
@@ -34,7 +34,7 @@ Apresentados em uma elegante caixa de madeira artesanal, prontos para presentear
 
 Sabores de Recheio: Brigadeiro Branco, Brigadeiro Preto, Dois Amores, Prestígio.',
   'Brigadeiro Branco, Brigadeiro Preto, Dois Amores, Prestígio',
-  'https://i.ibb.co/6cvYC93M/bolo-kilo.jpg',
+  'img/bolo-kilo.jpg',
   true
 ),
 (
@@ -50,7 +50,7 @@ Escolha o seu recheio favorito:
 ✨ Dois Amores
 ✨ Prestígio',
   'Brigadeiro Branco, Brigadeiro Preto, Dois Amores, Prestígio',
-  'https://i.ibb.co/LDb75Jvw/Brownie.jpg',
+  'img/brownie.jpg',
   true
 ),
 (
@@ -60,6 +60,6 @@ Escolha o seu recheio favorito:
 
 Tamanho: Aproximadamente 14g cada.',
   'Brigadeiro, Brigadeiro Branco, Prestígio',
-  'https://i.ibb.co/Xf4cGR2M/brigadeiros.jpg',
+  'img/cento-doces.jpg',
   true
 );
