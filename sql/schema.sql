@@ -110,7 +110,7 @@ BEGIN
   INSERT INTO public.profiles (id, nome, email, nivel)
   VALUES (
     new.id,
-    new.raw_user_meta_data->>'nome',
+    COALESCE(new.raw_user_meta_data->>'nome', new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)),
     new.email,
     'cliente'
   );

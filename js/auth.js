@@ -69,6 +69,20 @@ async function processarAutenticacao() {
   }
 }
 
+async function loginComGoogle() {
+  try {
+    const { data, error } = await supabaseClient.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin
+      }
+    });
+    if (error) throw error;
+  } catch (error) {
+    alert("Erro ao conectar com o Google: " + error.message);
+  }
+}
+
 async function fazerLogout() {
   await supabaseClient.auth.signOut();
   usuarioAtual = { nivel: 'visitante', nome: '', email: '', id: null };

@@ -43,6 +43,14 @@
         <div class="form-group" style="width: 100%;"><label>Email ou Usuário</label><input type="text" id="auth-email" placeholder="ex: doces@email.com"></div>
         <div class="form-group" style="width: 100%;"><label>Senha</label><input type="password" id="auth-senha" placeholder="••••••••"></div>
         <button id="btn-auth-action" style="width: 100%; margin-bottom: 10px;" onclick="processarAutenticacao()">Entrar</button>
+        <div style="display: flex; align-items: center; width: 100%; margin: 12px 0; color: #aaa; font-size: 11px;">
+          <hr style="flex: 1; border: none; border-top: 1px solid #eee;">
+          <span style="padding: 0 10px; font-weight: 600; letter-spacing: 0.5px;">OU</span>
+          <hr style="flex: 1; border: none; border-top: 1px solid #eee;">
+        </div>
+        <button id="btn-google-auth" class="btn-google" style="width: 100%; margin-bottom: 10px;" onclick="loginComGoogle()">
+          <i class="fa-brands fa-google" style="color: #EA4335; font-size: 16px;"></i> Entrar com o Google
+        </button>
         <button style="width: 100%;" class="btn-outline" onclick="mostrarTela('menu-section')">Voltar ao Cardápio</button>
         <div style="text-align: center; margin-top: 20px; font-size: 14px; cursor: pointer;" onclick="alternarModoAuth()">
           Não tem conta? <span style="font-weight: 600; color: var(--primary);">Cadastre-se aqui</span>
