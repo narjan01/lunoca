@@ -203,6 +203,66 @@
         <button onclick="carregarUsuariosAdmin()" style="width: 100%; margin-bottom: 15px;" class="btn-outline"><i class="fa-solid fa-rotate-right"></i> Atualizar Lista</button>
         <div id="lista-usuarios-admin"></div>
       </div>
+
+      <!-- Aba do Plug-in Mercado Pago -->
+      <div id="admin-tab-pagamentos" class="admin-tab">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+          <h3 style="margin:0;"><i class="fa-solid fa-credit-card"></i> Plug-in Mercado Pago</h3>
+          <span style="font-size: 11px; background: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 20px; font-weight: bold;">v2.0 Instalado</span>
+        </div>
+
+        <div class="panel-card" style="flex-direction: column; align-items: stretch; border: 1px solid #bae6fd; background: #f0f9ff; margin-bottom: 20px;">
+          <div style="display: flex; gap: 12px; align-items: flex-start;">
+            <i class="fa-solid fa-circle-info" style="color: #0284c7; font-size: 20px; margin-top: 2px;"></i>
+            <div style="font-size: 13px; color: #0369a1; line-height: 1.5;">
+              <strong>Plug-in Oficial Mercado Pago ativo na Lunoca Doceria:</strong><br>
+              Suporte a <strong>PIX instantâneo com QR Code</strong> e <strong>Cartão de Crédito em até 12x</strong> com baixa e confirmação automática de pedidos.
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-card" style="flex-direction: column; align-items: stretch;">
+          <h4 style="margin-top:0; margin-bottom: 15px; color: var(--text-dark);"><i class="fa-solid fa-key"></i> Credenciais da API</h4>
+
+          <div class="form-group">
+            <label>Access Token (Produção ou Sandbox)</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="password" id="mp-access-token" placeholder="APP_USR-... ou TEST-..." style="font-family: monospace; font-size: 13px;">
+              <button type="button" class="btn-outline" onclick="toggleVisibilidadeTokenMP()" style="padding: 0 12px;" title="Ver/Ocultar"><i class="fa-regular fa-eye" id="icon-eye-mp"></i></button>
+            </div>
+            <span style="font-size: 11px; color: #666;">Obtenha no portal <a href="https://www.mercadopago.com.br/developers/panel/app" target="_blank" style="color:var(--primary); font-weight:bold;">Mercado Pago Developers</a></span>
+          </div>
+
+          <div class="form-group">
+            <label>Public Key (Chave Pública do Frontend)</label>
+            <input type="text" id="mp-public-key" placeholder="APP_USR-... ou TEST-..." style="font-family: monospace; font-size: 13px;">
+          </div>
+
+          <div class="form-group">
+            <label>Chave PIX de Contingência (E-mail / Telefone / CNPJ)</label>
+            <input type="text" id="mp-chave-pix" placeholder="lunocadoceria@gmail.com">
+            <span style="font-size: 11px; color: #666;">Exibida caso a conexão com a API esteja indisponível.</span>
+          </div>
+
+          <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button onclick="salvarConfigMPAdmin()" style="flex: 2;"><i class="fa-solid fa-floppy-disk"></i> Salvar Configurações</button>
+            <button onclick="testarConexaoMP()" class="btn-outline" style="flex: 1;"><i class="fa-solid fa-plug"></i> Testar API</button>
+          </div>
+
+          <div id="mp-status-teste" style="margin-top: 15px;"></div>
+        </div>
+
+        <div class="panel-card" style="flex-direction: column; align-items: stretch; margin-top: 20px;">
+          <h4 style="margin-top:0; margin-bottom: 10px; color: var(--text-dark);"><i class="fa-solid fa-satellite-dish"></i> Webhook Automático</h4>
+          <p style="font-size: 12px; color: #555; margin-bottom: 10px;">
+            URL para cadastro no Mercado Pago Developers (Notificações Webhook > Evento: <code>payment</code>):
+          </p>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" readonly value="https://lunocadoceria.com.br/api/mercadopago/webhook" style="font-family: monospace; font-size: 12px; background: #f4f4f5; color: #333;" id="input-webhook-url-admin">
+            <button class="btn-outline" onclick="navigator.clipboard.writeText('https://lunocadoceria.com.br/api/mercadopago/webhook'); alert('URL do Webhook copiada!');" style="white-space: nowrap;"><i class="fa-regular fa-copy"></i> Copiar</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -243,6 +303,7 @@
   <script src="js/pedidos.js"></script>
   <script src="https://sdk.mercadopago.com/js/v2"></script>
   <script src="js/mercadopago.js"></script>
+  <script src="js/mercadopago-plugin.js"></script>
   <script src="js/admin.js"></script>
 </body>
 </html>
