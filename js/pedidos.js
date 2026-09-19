@@ -148,6 +148,20 @@ async function atualizarStatusPedido(pedidoId, novoStatus) {
     }
 }
 
+async function atualizarStatusPedido(pedidoId, novoStatus) {
+    try {
+        const { error } = await supabaseClient.from('pedidos').update({ status: novoStatus }).eq('id', pedidoId);
+        if (error) throw error;
+        alert("Status atualizado para: " + novoStatus);
+        let ped = pedidosGlobal.find(p => String(p.id) === String(pedidoId));
+        if (ped) ped.status = novoStatus;
+        if (typeof renderizarCalendario === 'function') renderizarCalendario();
+    } catch (err) {
+        console.error(err);
+        alert("Erro ao atualizar status do pedido.");
+    }
+}
+
 function mudarMes(delta) {
     dataCalendario.setMonth(dataCalendario.getMonth() + delta);
     renderizarCalendario();
