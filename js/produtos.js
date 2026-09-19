@@ -195,7 +195,7 @@ function limparFormProduto() {
   document.getElementById('prod-file').value = "";
 }
 
-async async async async async function prepararUpload(input) {
+async function prepararUpload(input) {
   if (input.files && input.files[0]) {
     var file = input.files[0];
     document.getElementById('lbl-upload').innerHTML = "<i class='fa-solid fa-spinner fa-spin'></i> Processando...";
