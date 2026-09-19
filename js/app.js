@@ -1,3 +1,12 @@
+
+// Função global de escape para prevenir XSS
+function escapeHTML(str) {
+  if (!str) return '';
+  return String(str).replace(/[&<>'"]/g, function(tag) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag;
+  });
+}
+
 // Global state variables
 var produtos = [];
 var carrinho = [];
@@ -60,8 +69,19 @@ function mostrarTela(telaId) {
 
 function configurarRegraData() {
   let d = new Date();
-  d.setDate(d.getDate() + 2);
-  document.getElementById('data-pedido').min = d.toISOString().split('T')[0];
+  let diasUteis = 2;
+  let adicionados = 0;
+  while (adicionados < diasUteis) {
+    d.setDate(d.getDate() + 1);
+    let dia = d.getDay();
+    if (dia !== 0 && dia !== 6) { // Pula Domingo (0) e Sábado (6)
+      adicionados++;
+    }
+  }
+  let campo = document.getElementById('data-pedido');
+  if (campo) {
+    campo.min = d.toISOString().split('T')[0];
+  }
 }
 
 window.onclick = function(event) {

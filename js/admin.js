@@ -23,7 +23,7 @@ async function carregarUsuariosAdmin() {
         let html = '';
         for(let i = 0; i < users.length; i++){
             let u = users[i];
-            html += '<div class="user-list-item"><div><strong style="color:var(--text-dark);">' + (u.nome || 'Sem Nome') + '</strong> ' + (u.nivel === 'admin' ? '<i class="fa-solid fa-crown" style="color:gold;" title="Admin"></i>' : '') + '<br><span style="font-size:13px; color:#666;">' + u.email + '</span></div>';
+            let nomeLimpo = escapeHTML(u.nome || 'Sem Nome'); let emailLimpo = escapeHTML(u.email || ''); let statusInativo = u.ativo === false ? ' <span style="color:#e74c3c; font-size:11px;">(Desativado)</span>' : ''; html += '<div class="user-list-item"><div><strong style="color:var(--text-dark);">' + nomeLimpo + '</strong> ' + (u.nivel === 'admin' ? '<i class="fa-solid fa-crown" style="color:gold;" title="Admin"></i>' : '') + statusInativo + '<br><span style="font-size:13px; color:#666;">' + emailLimpo + '</span></div>';
             
             if (u.id === usuarioAtual.id) {
                 html += '<span style="font-size:12px; font-weight:bold; color:var(--primary); background:#f0e6ff; padding:4px 8px; border-radius:12px;">VOCÊ</span>';
@@ -74,19 +74,20 @@ async function salvarFormUsuario() {
 async function excluirUser(id) {
     if (clickExcluir === id) {
         try {
-            const { error } = await supabaseClient.from('profiles').delete().eq('id', id);
+            // Desativa o usuário em vez de excluir fisicamente para não quebrar integridade
+            const { error } = await supabaseClient.from('profiles').update({ ativo: false }).eq('id', id);
             if (error) throw error;
             
-            alert("Usuário excluído com sucesso!");
+            alert("Usuário desativado com sucesso!");
             clickExcluir = null;
             carregarUsuariosAdmin();
         } catch (err) {
             console.error(err);
-            alert("Erro ao excluir usuário.");
+            alert("Erro ao desativar usuário.");
         }
     } else {
         clickExcluir = id;
-        alert("Clique novamente na lixeira para confirmar a exclusão deste usuário.");
+        alert("Clique novamente na lixeira para confirmar a desativação deste usuário.");
         setTimeout(() => { clickExcluir = null; }, 3000);
     }
 }

@@ -137,3 +137,38 @@ CREATE INDEX idx_profiles_email ON public.profiles(email);
 -- 
 -- UPDATE public.profiles SET nivel = 'admin' WHERE email = 'seu_email@exemplo.com';
 -- ==========================================
+
+
+-- =======================================================
+-- ATUALIZAÇÃO DE SEGURANÇA: Proteção de Nível Admin e RLS
+-- =======================================================
+
+-- Trigger para impedir que usuários comuns alterem 'nivel' ou 'ativo'
+CREATE OR REPLACE FUNCTION public.check_profile_update()
+RETURNS TRIGGER AS $$
+DECLARE
+    current_user_level TEXT;
+BEGIN
+    SELECT nivel INTO current_user_level 
+    FROM public.profiles 
+    WHERE id = auth.uid();
+
+    IF current_user_level IS DISTINCT FROM 'admin' THEN
+        IF NEW.nivel IS DISTINCT FROM OLD.nivel THEN
+            RAISE EXCEPTION 'Operação não autorizada: você não pode alterar seu nível de privilégio.';
+        END IF;
+
+        IF NEW.ativo IS DISTINCT FROM OLD.ativo THEN
+            RAISE EXCEPTION 'Operação não autorizada: você não pode alterar o status da conta.';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS tr_check_profile_update ON public.profiles;
+CREATE TRIGGER tr_check_profile_update
+    BEFORE UPDATE ON public.profiles
+    FOR EACH ROW
+    EXECUTE FUNCTION public.check_profile_update();

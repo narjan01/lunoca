@@ -32,9 +32,11 @@ function renderizarProdutosApp() {
   let html = '';
   for (let i = 0; i < produtos.length; i++) {
     let p = produtos[i];
-    let imagemUrl = p.img ? p.img : defaultImg;
-    let descFormatada = p.desc ? p.desc.replace(/\n/g, '<br>') : '';
-    html += '<div class="produto-card"><div class="produto-header"><img src="' + imagemUrl + '" class="produto-img" alt="' + p.nome + '"><div class="produto-info"><h3>' + p.nome + '</h3></div></div><div class="produto-desc">' + descFormatada + '</div><div class="produto-footer"><div class="preco">R$ ' + parseFloat(p.preco).toFixed(2) + '</div><button class="btn-adicionar" onclick="abrirModalProduto(\'' + p.id + '\')"><i class="fa-solid fa-plus"></i></button></div></div>';
+    let imagemUrl = p.img ? escapeHTML(p.img) : defaultImg;
+    let nomeEsc = escapeHTML(p.nome);
+    let descFormatada = p.desc ? escapeHTML(p.desc).replace(/\n/g, '<br>') : '';
+    let precoFormatado = parseFloat(p.preco || 0).toFixed(2);
+    html += '<div class="produto-card"><div class="produto-header"><img src="' + imagemUrl + '" class="produto-img" alt="' + nomeEsc + '"><div class="produto-info"><h3>' + nomeEsc + '</h3></div></div><div class="produto-desc">' + descFormatada + '</div><div class="produto-footer"><div class="preco">R$ ' + precoFormatado + '</div><button class="btn-adicionar" onclick="abrirModalProduto(\'' + p.id + '\')"><i class="fa-solid fa-plus"></i></button></div></div>';
   }
   if (html === '') {
     html = "<p style='text-align:center;'>Cardápio em atualização.</p>";
@@ -55,7 +57,11 @@ function abrirModalProduto(id) {
   document.getElementById('modal-img').src = p.img || 'https://via.placeholder.com/150/fbf9ff/c496f2?text=Doce';
   document.getElementById('modal-nome').innerText = p.nome;
   document.getElementById('modal-preco').innerText = "R$ " + parseFloat(p.preco).toFixed(2);
-  document.getElementById('modal-desc').innerHTML = p.desc ? p.desc.replace(/\n/g, '<br>') : '';
+  let mDesc = document.getElementById('modal-desc');
+  if (mDesc) {
+    mDesc.textContent = p.desc || '';
+    mDesc.style.whiteSpace = 'pre-line';
+  }
   
   let containerOpcoes = document.getElementById('modal-opcoes-container');
   let listaOpcoes = document.getElementById('modal-opcoes-lista');
@@ -189,34 +195,57 @@ function limparFormProduto() {
   document.getElementById('prod-file').value = "";
 }
 
-function prepararUpload(input) {
+async function prepararUpload(input) {
   if (input.files && input.files[0]) {
     var file = input.files[0];
     document.getElementById('lbl-upload').innerHTML = "<i class='fa-solid fa-spinner fa-spin'></i> Processando...";
-    document.getElementById('upload-status').innerText = "Enviando para o ImgBB...";
+    document.getElementById('upload-status').innerText = "Enviando imagem...";
     document.getElementById('btn-salvar-produto').disabled = true;
-    
-    const IMGBB_API_KEY = (typeof window.IMGBB_API_KEY !== 'undefined') ? window.IMGBB_API_KEY : '97dfa8989e6adbbc6faebb4b505686fe'; 
-    let formData = new FormData();
-    formData.append("image", file);
-    
-    fetch("https://api.imgbb.com/1/upload?key=" + IMGBB_API_KEY, { method: "POST", body: formData })
-      .then(function(response) { return response.json(); })
-      .then(function(data) {
-        if (data.success) {
-          document.getElementById('upload-status').innerText = "✅ Foto hospedada!";
-          document.getElementById('upload-status').style.color = "green";
-          document.getElementById('lbl-upload').innerHTML = "<i class='fa-solid fa-check'></i> " + file.name;
-          document.getElementById('prod-img').value = data.data.url;
-          document.getElementById('btn-salvar-produto').disabled = false;
-        } else {
-          throw new Error("Falha na API.");
-        }
-      })
-      .catch(function(error) {
-        document.getElementById('upload-status').innerText = "❌ Erro ao enviar.";
-        document.getElementById('upload-status').style.color = "red";
+
+    try {
+      // 1. Tenta upload no bucket 'produtos' do Supabase Storage
+      const fileExt = file.name.split('.').pop();
+      const fileName = Date.now() + '_' + Math.random().toString(36).substring(7) + '.' + fileExt;
+      const filePath = 'itens/' + fileName;
+
+      const { data: storageData, error: storageError } = await supabaseClient.storage
+        .from('produtos')
+        .upload(filePath, file, { cacheControl: '3600', upsert: false });
+
+      if (!storageError && storageData) {
+        const { data: publicUrlData } = supabaseClient.storage
+          .from('produtos')
+          .getPublicUrl(filePath);
+
+        document.getElementById('upload-status').innerText = "✅ Foto hospedada no Supabase!";
+        document.getElementById('upload-status').style.color = "green";
+        document.getElementById('lbl-upload').innerHTML = "<i class='fa-solid fa-check'></i> " + escapeHTML(file.name);
+        document.getElementById('prod-img').value = publicUrlData.publicUrl;
         document.getElementById('btn-salvar-produto').disabled = false;
-      });
+        return;
+      }
+
+      // 2. Fallback ImgBB caso o bucket ainda não esteja configurado
+      const IMGBB_API_KEY = (typeof window.IMGBB_API_KEY !== 'undefined') ? window.IMGBB_API_KEY : '97dfa8989e6adbbc6faebb4b505686fe';
+      let formData = new FormData();
+      formData.append("image", file);
+
+      const resp = await fetch("https://api.imgbb.com/1/upload?key=" + IMGBB_API_KEY, { method: "POST", body: formData });
+      const data = await resp.json();
+      if (data.success) {
+        document.getElementById('upload-status').innerText = "✅ Foto hospedada!";
+        document.getElementById('upload-status').style.color = "green";
+        document.getElementById('lbl-upload').innerHTML = "<i class='fa-solid fa-check'></i> " + escapeHTML(file.name);
+        document.getElementById('prod-img').value = data.data.url;
+        document.getElementById('btn-salvar-produto').disabled = false;
+      } else {
+        throw new Error("Falha no upload.");
+      }
+    } catch (err) {
+      console.error(err);
+      document.getElementById('upload-status').innerText = "❌ Erro ao enviar.";
+      document.getElementById('upload-status').style.color = "red";
+      document.getElementById('btn-salvar-produto').disabled = false;
+    }
   }
 }

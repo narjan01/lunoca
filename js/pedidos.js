@@ -45,29 +45,64 @@ async function enviarPedido() {
 
 async function carregarPedidosAdmin() {
     document.getElementById('lista-pedidos-admin').innerHTML = "<p style='text-align:center;'><i class='fa-solid fa-spinner fa-spin'></i> Buscando...</p>";
-    
     try {
         const { data: pedidos, error } = await supabaseClient.from('pedidos').select('*').order('data_entrega', { ascending: false });
         if (error) throw error;
         
         pedidosGlobal = pedidos || [];
-        
-        if(pedidosGlobal.length === 0) {
+        if (pedidosGlobal.length === 0) {
             document.getElementById('lista-pedidos-admin').innerHTML = "Nenhum pedido encontrado.";
             return;
         }
+
+        const STATUS_OPTIONS = ['Pendente', 'Confirmado', 'Em Preparo', 'Pronto', 'Entregue', 'Cancelado'];
         
         let html = '';
-        for(let i = 0; i < pedidosGlobal.length; i++){
+        for (let i = 0; i < pedidosGlobal.length; i++) {
             let p = pedidosGlobal[i];
             let dtaStr = p.data_entrega ? p.data_entrega.split('-').reverse().join('/') : "Data Indefinida";
-            html += '<div class="admin-item-card"><h4 style="margin:0; color:var(--primary); font-size: 16px;"><i class="fa-regular fa-calendar-check"></i> Entrega: ' + dtaStr + '</h4><div style="margin-top: 10px; font-size:13px; color: #555;"><p style="margin:4px 0;"><strong>Cliente:</strong> ' + p.nome_cliente + '</p><p style="margin:4px 0;"><strong>Contato:</strong> ' + p.email_cliente + '</p><p style="margin:4px 0;"><strong>Valor:</strong> R$ ' + parseFloat(p.total).toFixed(2) + ' | <strong>Tipo:</strong> ' + (p.pagamento ? p.pagamento.toUpperCase() : '') + '</p><p style="margin:8px 0 0 0; padding:8px; background:#f9f9f9; border-radius:6px; border:1px solid #eee;"><strong>Cesta:</strong> ' + p.itens + '</p></div></div>';
+            let statusAtual = p.status || 'Pendente';
+
+            let selectStatus = '<select onchange="atualizarStatusPedido(\'' + p.id + '\', this.value)" style="font-size:12px; font-weight:bold; padding:4px 8px; border-radius:6px; border:1px solid #ccc; background:#fff; cursor:pointer;">';
+            for (let s = 0; s < STATUS_OPTIONS.length; s++) {
+                let opt = STATUS_OPTIONS[s];
+                selectStatus += '<option value="' + opt + '" ' + (opt === statusAtual ? 'selected' : '') + '>' + opt + '</option>';
+            }
+            selectStatus += '</select>';
+
+            html += '<div class="admin-item-card">' +
+                '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">' +
+                    '<h4 style="margin:0; color:var(--primary); font-size: 16px;"><i class="fa-regular fa-calendar-check"></i> Entrega: ' + dtaStr + '</h4>' +
+                    '<div style="display:flex; align-items:center; gap:6px;">' +
+                        '<span style="font-size:12px; font-weight:bold; color:#555;">Status:</span> ' + selectStatus +
+                    '</div>' +
+                '</div>' +
+                '<div style="margin-top: 10px; font-size:13px; color: #555;">' +
+                    '<p style="margin:4px 0;"><strong>Cliente:</strong> ' + escapeHTML(p.nome_cliente) + '</p>' +
+                    '<p style="margin:4px 0;"><strong>Contato:</strong> ' + escapeHTML(p.email_cliente) + '</p>' +
+                    '<p style="margin:4px 0;"><strong>Valor:</strong> R$ ' + parseFloat(p.total).toFixed(2) + ' | <strong>Tipo:</strong> ' + (p.pagamento ? p.pagamento.toUpperCase() : '') + '</p>' +
+                    '<p style="margin:8px 0 0 0; padding:8px; background:#f9f9f9; border-radius:6px; border:1px solid #eee;"><strong>Cesta:</strong> ' + escapeHTML(p.itens) + '</p>' +
+                '</div>' +
+            '</div>';
         }
         document.getElementById('lista-pedidos-admin').innerHTML = html;
-        
     } catch (err) {
         console.error(err);
         document.getElementById('lista-pedidos-admin').innerHTML = "Erro ao carregar pedidos.";
+    }
+}
+
+async function atualizarStatusPedido(pedidoId, novoStatus) {
+    try {
+        const { error } = await supabaseClient.from('pedidos').update({ status: novoStatus }).eq('id', pedidoId);
+        if (error) throw error;
+        alert("Status atualizado para: " + novoStatus);
+        let ped = pedidosGlobal.find(p => String(p.id) === String(pedidoId));
+        if (ped) ped.status = novoStatus;
+        if (typeof renderizarCalendario === 'function') renderizarCalendario();
+    } catch (err) {
+        console.error(err);
+        alert("Erro ao atualizar status do pedido.");
     }
 }
 
