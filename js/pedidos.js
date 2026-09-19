@@ -1,5 +1,5 @@
 // ==========================================================================
-// LUNOCA DOCERIA - Módulo de Pedidos e Integração Mercado Pago
+// LUNOCA DOCERIA - Módulo de Pedidos e Integração InfinitePay
 // ==========================================================================
 
 async function enviarPedido() {
@@ -17,15 +17,16 @@ async function enviarPedido() {
         
     let total = 0;
     let nomesItens = [];
-    let itensParaMP = [];
+    let itensParaPagamento = [];
         
     for (let i = 0; i < carrinho.length; i++) {
         total += parseFloat(carrinho[i].preco);
         nomesItens.push(carrinho[i].nome);
-        itensParaMP.push({
+        itensParaPagamento.push({
             id: carrinho[i].id || (i + 1),
             nome: carrinho[i].nome,
-            preco: carrinho[i].preco
+            preco: carrinho[i].preco,
+            quantidade: 1
         });
     }
         
@@ -52,9 +53,9 @@ async function enviarPedido() {
         salvarCarrinhoLocal();
         atualizarBotaoCarrinho();
 
-        // Iniciar fluxo de pagamento Mercado Pago (Pix ou Cartão)
-        if (typeof iniciarPagamentoMercadoPago === 'function') {
-            await iniciarPagamentoMercadoPago(pedidoId, total, itensParaMP, formaPagamento);
+        // Iniciar fluxo de pagamento InfinitePay (Pix taxa zero ou Cartão em até 12x)
+        if (typeof iniciarPagamentoInfinitePay === 'function') {
+            await iniciarPagamentoInfinitePay(pedidoId, total, itensParaPagamento, formaPagamento);
         } else {
             alert("🎉 Pedido Confirmado! A Lunoca agradece a preferência.");
             mostrarTela('menu-section');
@@ -97,16 +98,23 @@ async function carregarPedidosAdmin() {
             selectStatus += '</select>';
 
             let tipoBadge = p.pagamento === 'pix' 
-                ? '<span style="background:#e6fffa; color:#0d9488; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;"><i class="fa-brands fa-pix"></i> PIX</span>'
-                : '<span style="background:#eff6ff; color:#2563eb; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;"><i class="fa-solid fa-credit-card"></i> Cartão</span>';
+                ? '<span style="background:#e6fffa; color:#0d9488; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;"><i class="fa-brands fa-pix"></i> PIX (InfinitePay)</span>'
+                : '<span style="background:#eff6ff; color:#2563eb; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;"><i class="fa-solid fa-credit-card"></i> Cartão (InfinitePay)</span>';
 
-            let linkMPBtn = p.mercado_pago_link 
-                ? `<a href="${p.mercado_pago_link}" target="_blank" rel="noopener" style="margin-left:8px; text-decoration:none;">
-                    <button style="padding:3px 8px; font-size:11px; background:#009ee3; color:#fff; border:none; border-radius:6px; cursor:pointer;">
-                      <i class="fa-solid fa-arrow-up-right-from-square"></i> Link Mercado Pago
+            let linkPagamentoBtn = '';
+            if (p.infinitepay_link) {
+                linkPagamentoBtn = `<a href="${p.infinitepay_link}" target="_blank" rel="noopener" style="margin-left:8px; text-decoration:none;">
+                    <button style="padding:3px 8px; font-size:11px; background:#000000; color:#fff; border:none; border-radius:6px; cursor:pointer;">
+                      <i class="fa-solid fa-arrow-up-right-from-square"></i> Link InfinitePay
                     </button>
-                   </a>`
-                : '';
+                   </a>`;
+            } else if (p.mercado_pago_link) {
+                linkPagamentoBtn = `<a href="${p.mercado_pago_link}" target="_blank" rel="noopener" style="margin-left:8px; text-decoration:none;">
+                    <button style="padding:3px 8px; font-size:11px; background:#475569; color:#fff; border:none; border-radius:6px; cursor:pointer;">
+                      <i class="fa-solid fa-arrow-up-right-from-square"></i> Link Pagamento
+                    </button>
+                   </a>`;
+            }
 
             html += '<div class="admin-item-card">' +
                 '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">' +
@@ -119,7 +127,7 @@ async function carregarPedidosAdmin() {
                 '<div style="margin-top: 10px; font-size:13px; color: #555;">' +
                     '<p style="margin:4px 0;"><strong>Cliente:</strong> ' + escapeHTML(p.nome_cliente) + '</p>' +
                     '<p style="margin:4px 0;"><strong>Contato:</strong> ' + escapeHTML(p.email_cliente) + '</p>' +
-                    '<p style="margin:4px 0;"><strong>Valor:</strong> R$ ' + parseFloat(p.total).toFixed(2) + ' | <strong>Endereço:</strong> ' + escapeHTML(p.endereco_entrega || 'Balcão') + linkMPBtn + '</p>' +
+                    '<p style="margin:4px 0;"><strong>Valor:</strong> R$ ' + parseFloat(p.total).toFixed(2) + ' | <strong>Endereço:</strong> ' + escapeHTML(p.endereco_entrega || 'Balcão') + linkPagamentoBtn + '</p>' +
                     '<p style="margin:8px 0 0 0; padding:8px; background:#f9f9f9; border-radius:6px; border:1px solid #eee;"><strong>Cesta:</strong> ' + escapeHTML(p.itens) + '</p>' +
                 '</div>' +
             '</div>';

@@ -180,3 +180,13 @@ ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS mercado_pago_id TEXT;
 ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS mercado_pago_status TEXT;
 ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS mercado_pago_preference_id TEXT;
 ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS mercado_pago_link TEXT;
+
+-- =======================================================
+-- ATUALIZAÇÃO: Integração InfinitePay (PIX taxa zero e Cartão até 12x)
+-- =======================================================
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS infinitepay_transaction_nsu TEXT;
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS infinitepay_invoice_slug TEXT;
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS infinitepay_status TEXT;
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS infinitepay_link TEXT;
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS infinitepay_capture_method TEXT;
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS infinitepay_receipt_url TEXT;
