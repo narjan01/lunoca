@@ -12,6 +12,8 @@ function mudarTabAdmin(tab) {
     if(tab === 'calendario') renderizarCalendario();
     if(tab === 'usuarios') carregarUsuariosAdmin();
     if(tab === 'pagamentos') carregarConfigMercadoPagoAdmin();
+    if(tab === 'estoque' && typeof carregarEstoqueAdmin === 'function') carregarEstoqueAdmin();
+    if(tab === 'financeiro' && typeof carregarFinanceiroAdmin === 'function') carregarFinanceiroAdmin();
 }
 
 async function carregarUsuariosAdmin() {

@@ -118,6 +118,9 @@ function editarProduto(id) {
   document.getElementById('prod-desc').value = p.desc;
   document.getElementById('prod-opcoes').value = p.opcoes || "";
   document.getElementById('prod-img').value = p.img || "";
+  if (document.getElementById('prod-estoque-qtd')) document.getElementById('prod-estoque-qtd').value = (p.estoque_qtd !== undefined && p.estoque_qtd !== null) ? p.estoque_qtd : 10;
+  if (document.getElementById('prod-estoque-minimo')) document.getElementById('prod-estoque-minimo').value = (p.estoque_minimo !== undefined && p.estoque_minimo !== null) ? p.estoque_minimo : 3;
+  if (document.getElementById('prod-controlar-estoque')) document.getElementById('prod-controlar-estoque').checked = p.controlar_estoque !== false;
   document.getElementById('lbl-upload').innerHTML = "<i class='fa-solid fa-image'></i> Foto Selecionada";
   document.getElementById('upload-status').innerText = "";
   window.scrollTo(0, 0);
@@ -130,6 +133,9 @@ async function salvarProdutoAdmin() {
   let desc = document.getElementById('prod-desc').value;
   let opcoes = document.getElementById('prod-opcoes').value;
   let img = document.getElementById('prod-img').value;
+  let estoqueQtd = parseInt(document.getElementById('prod-estoque-qtd')?.value || 10, 10);
+  let estoqueMinimo = parseInt(document.getElementById('prod-estoque-minimo')?.value || 3, 10);
+  let controlarEstoque = document.getElementById('prod-controlar-estoque') ? document.getElementById('prod-controlar-estoque').checked : true;
   
   if (!nome || !preco) return alert("Preencha Nome e Preço.");
   
@@ -147,7 +153,10 @@ async function salvarProdutoAdmin() {
           preco: preco,
           descricao: desc,
           opcoes: opcoes,
-          img_url: img
+          img_url: img,
+          estoque_qtd: estoqueQtd,
+          estoque_minimo: estoqueMinimo,
+          controlar_estoque: controlarEstoque
         })
         .eq('id', id);
       error = res.error;
@@ -159,7 +168,10 @@ async function salvarProdutoAdmin() {
           preco: preco,
           descricao: desc,
           opcoes: opcoes,
-          img_url: img
+          img_url: img,
+          estoque_qtd: estoqueQtd,
+          estoque_minimo: estoqueMinimo,
+          controlar_estoque: controlarEstoque
         });
       error = res.error;
     }
@@ -193,6 +205,9 @@ function limparFormProduto() {
   document.getElementById('lbl-upload').innerHTML = "<i class='fa-solid fa-cloud-arrow-up'></i> Escolher foto...";
   document.getElementById('upload-status').innerText = "";
   document.getElementById('prod-file').value = "";
+  if (document.getElementById('prod-estoque-qtd')) document.getElementById('prod-estoque-qtd').value = "10";
+  if (document.getElementById('prod-estoque-minimo')) document.getElementById('prod-estoque-minimo').value = "3";
+  if (document.getElementById('prod-controlar-estoque')) document.getElementById('prod-controlar-estoque').checked = true;
 }
 
 async function prepararUpload(input) {

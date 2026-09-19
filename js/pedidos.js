@@ -46,6 +46,10 @@ async function enviarPedido() {
         if (error) throw error;
 
         const pedidoId = (inserted && inserted[0]) ? inserted[0].id : Date.now();
+        // Baixa automática no estoque para os doces vendidos
+        if (typeof darBaixaEstoqueAposPedido === 'function') {
+            darBaixaEstoqueAposPedido(itensParaMP, pedidoId);
+        }
 
         // Limpar carrinho após confirmação
         carrinho = [];

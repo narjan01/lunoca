@@ -690,3 +690,16 @@ button:active {
     width: 150px;
   }
 }
+
+/* ==========================================================================
+   Estoque & Financeiro Active States
+   ========================================================================== */
+.btn-filtro-estoque.active,
+.btn-periodo-fin.active,
+.btn-filtro-extrato.active {
+  background: var(--primary) !important;
+  color: var(--white) !important;
+  border-color: var(--primary) !important;
+  box-shadow: 0 2px 6px rgba(196, 150, 242, 0.35);
+  font-weight: 600;
+}

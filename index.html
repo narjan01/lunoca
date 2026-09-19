@@ -133,6 +133,8 @@
         <button id="tab-btn-pedidos" class="active" onclick="mudarTabAdmin('pedidos')"><i class="fa-solid fa-receipt"></i> Pedidos</button>
         <button id="tab-btn-calendario" onclick="mudarTabAdmin('calendario')"><i class="fa-regular fa-calendar-days"></i> Calendário</button>
         <button id="tab-btn-produtos" onclick="mudarTabAdmin('produtos')"><i class="fa-solid fa-box"></i> Produtos</button>
+        <button id="tab-btn-estoque" onclick="mudarTabAdmin('estoque')"><i class="fa-solid fa-boxes-stacked"></i> Estoque</button>
+        <button id="tab-btn-financeiro" onclick="mudarTabAdmin('financeiro')"><i class="fa-solid fa-chart-line"></i> Financeiro</button>
         <button id="tab-btn-usuarios" onclick="mudarTabAdmin('usuarios')"><i class="fa-solid fa-users"></i> Usuários</button>
         <button id="tab-btn-pagamentos" onclick="mudarTabAdmin('pagamentos')"><i class="fa-solid fa-credit-card"></i> Mercado Pago</button>
       </div>
@@ -165,6 +167,22 @@
           <div class="form-group">
             <label>Variações de Sabor <span style="font-weight:normal; color:#888;">(Separe por vírgula)</span></label>
             <input type="text" id="prod-opcoes" placeholder="Ex: Brigadeiro Branco, Prestígio, Dois Amores">
+          </div>
+          <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+            <div class="form-group" style="flex: 1; min-width: 140px;">
+              <label><i class="fa-solid fa-boxes-stacked"></i> Estoque Atual (Un)</label>
+              <input type="number" id="prod-estoque-qtd" placeholder="10" value="10" min="0">
+            </div>
+            <div class="form-group" style="flex: 1; min-width: 140px;">
+              <label><i class="fa-solid fa-triangle-exclamation"></i> Alerta Mínimo</label>
+              <input type="number" id="prod-estoque-minimo" placeholder="3" value="3" min="1">
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: -5px; margin-bottom: 15px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600;">
+              <input type="checkbox" id="prod-controlar-estoque" checked style="width: 18px; height: 18px; accent-color: var(--primary);">
+              Controlar estoque deste doce (desmarque para produção sob encomenda)
+            </label>
           </div>
           <div class="form-group">
             <label>Foto do Produto</label>
@@ -263,6 +281,139 @@
           </div>
         </div>
       </div>
+
+      <!-- ================================================================= -->
+      <!-- ABA 6: Gerenciamento de Estoque                                  -->
+      <!-- ================================================================= -->
+      <div id="admin-tab-estoque" class="admin-tab">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 8px;">
+          <h3 style="margin:0;"><i class="fa-solid fa-boxes-stacked" style="color:var(--primary);"></i> Controle de Estoque</h3>
+          <button onclick="carregarEstoqueAdmin()" class="btn-outline" style="padding: 6px 12px; font-size: 12px;">
+            <i class="fa-solid fa-rotate-right"></i> Atualizar Estoque
+          </button>
+        </div>
+
+        <!-- 4 Cards de Indicadores de Estoque -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px;">
+          <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #10b981;">
+            <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">Total em Estoque</div>
+            <div id="card-estoque-total-unidades" style="font-size: 18px; font-weight: bold; color: var(--text-dark); margin-top: 4px;">--</div>
+            <span style="font-size: 11px; color: #059669;"><i class="fa-solid fa-box"></i> Prontos para venda</span>
+          </div>
+
+          <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #0284c7;">
+            <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">Valor do Estoque</div>
+            <div id="card-estoque-valor-total" style="font-size: 16px; font-weight: bold; color: #0284c7; margin-top: 4px;">R$ 0,00</div>
+            <span style="font-size: 11px; color: #64748b;"><i class="fa-solid fa-tag"></i> A preço de venda</span>
+          </div>
+
+          <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #f59e0b;">
+            <div style="font-size: 10px; color: #d97706; font-weight: bold; text-transform: uppercase;">Estoque Baixo</div>
+            <div id="card-estoque-itens-baixos" style="font-size: 18px; font-weight: bold; color: #d97706; margin-top: 4px;">0</div>
+            <span style="font-size: 11px; color: #b45309;"><i class="fa-solid fa-triangle-exclamation"></i> Requer produção</span>
+          </div>
+
+          <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #ef4444;">
+            <div style="font-size: 10px; color: #dc2626; font-weight: bold; text-transform: uppercase;">Esgotados</div>
+            <div id="card-estoque-itens-esgotados" style="font-size: 18px; font-weight: bold; color: #dc2626; margin-top: 4px;">0</div>
+            <span style="font-size: 11px; color: #991b1b;"><i class="fa-solid fa-ban"></i> Zerados no site</span>
+          </div>
+        </div>
+
+        <!-- Filtros e Busca Rápida -->
+        <div style="display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap;">
+          <div style="flex: 1; min-width: 180px;">
+            <input type="text" placeholder="Buscar doce no estoque..." onkeyup="buscarEstoque(this.value)" style="width: 100%; padding: 8px 12px; font-size: 13px; border-radius: 8px; border: 1px solid #d1d5db;">
+          </div>
+          <div style="display: flex; gap: 4px; overflow-x: auto;">
+            <button id="btn-filtro-estoque-todos" class="btn-filtro-estoque active" onclick="filtrarEstoque('todos')" style="padding: 6px 10px; font-size: 11px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; cursor: pointer;">Todos</button>
+            <button id="btn-filtro-estoque-em_estoque" class="btn-filtro-estoque" onclick="filtrarEstoque('em_estoque')" style="padding: 6px 10px; font-size: 11px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; cursor: pointer;">Em Estoque</button>
+            <button id="btn-filtro-estoque-baixo" class="btn-filtro-estoque" onclick="filtrarEstoque('baixo')" style="padding: 6px 10px; font-size: 11px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; cursor: pointer;">Estoque Baixo</button>
+            <button id="btn-filtro-estoque-esgotado" class="btn-filtro-estoque" onclick="filtrarEstoque('esgotado')" style="padding: 6px 10px; font-size: 11px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; cursor: pointer;">Esgotados</button>
+          </div>
+        </div>
+
+        <!-- Lista de Produtos e Estoque -->
+        <div id="lista-estoque-admin"></div>
+
+        <!-- Histórico de Movimentações -->
+        <div style="margin-top: 25px;">
+          <h4 style="margin: 0 0 10px; color: var(--text-dark); font-size: 14px;"><i class="fa-solid fa-clock-rotate-left"></i> Histórico de Movimentações</h4>
+          <div id="lista-movimentacoes-estoque"></div>
+        </div>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- ABA 7: Controle Financeiro & Fluxo de Caixa                      -->
+      <!-- ================================================================= -->
+      <div id="admin-tab-financeiro" class="admin-tab">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 8px;">
+          <h3 style="margin:0;"><i class="fa-solid fa-chart-line" style="color:var(--primary);"></i> Controle Financeiro & Fluxo de Caixa</h3>
+          <div style="display: flex; gap: 8px;">
+            <button onclick="abrirModalNovaDespesa()" style="padding: 6px 12px; font-size: 12px; background: var(--primary); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">
+              <i class="fa-solid fa-plus"></i> Lançar Despesa
+            </button>
+            <button onclick="carregarFinanceiroAdmin()" class="btn-outline" style="padding: 6px 12px; font-size: 12px; border-radius: 8px;">
+              <i class="fa-solid fa-rotate-right"></i> Atualizar
+            </button>
+          </div>
+        </div>
+
+        <!-- Filtros de Período -->
+        <div style="display: flex; gap: 6px; margin-bottom: 15px; overflow-x: auto; padding-bottom: 4px;">
+          <button id="btn-periodo-hoje" class="btn-periodo-fin" onclick="mudarPeriodoFinanceiro('hoje')" style="padding: 6px 10px; font-size: 11px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; cursor: pointer;">Hoje</button>
+          <button id="btn-periodo-7dias" class="btn-periodo-fin" onclick="mudarPeriodoFinanceiro('7dias')" style="padding: 6px 10px; font-size: 11px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; cursor: pointer;">Últimos 7 dias</button>
+          <button id="btn-periodo-mes_atual" class="btn-periodo-fin active" onclick="mudarPeriodoFinanceiro('mes_atual')" style="padding: 6px 10px; font-size: 11px; border-radius: 6px; border: 1px solid var(--primary); background: var(--primary); color: #fff; cursor: pointer;">Este Mês</button>
+          <button id="btn-periodo-mes_anterior" class="btn-periodo-fin" onclick="mudarPeriodoFinanceiro('mes_anterior')" style="padding: 6px 10px; font-size: 11px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; cursor: pointer;">Mês Passado</button>
+          <button id="btn-periodo-tudo" class="btn-periodo-fin" onclick="mudarPeriodoFinanceiro('tudo')" style="padding: 6px 10px; font-size: 11px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; cursor: pointer;">Todo o Histórico</button>
+        </div>
+
+        <!-- 4 Cards Executivos de Finanças -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px;">
+          <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #10b981;">
+            <div style="font-size: 10px; color: #047857; font-weight: bold; text-transform: uppercase;">Faturamento Bruto</div>
+            <div id="fin-card-faturamento" style="font-size: 17px; font-weight: bold; color: #047857; margin-top: 4px;">R$ 0,00</div>
+            <span id="fin-sub-faturamento" style="font-size: 11px; color: #64748b;">0 pedidos</span>
+          </div>
+
+          <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #ef4444;">
+            <div style="font-size: 10px; color: #b91c1c; font-weight: bold; text-transform: uppercase;">Despesas & Custos</div>
+            <div id="fin-card-despesas" style="font-size: 17px; font-weight: bold; color: #b91c1c; margin-top: 4px;">R$ 0,00</div>
+            <span style="font-size: 11px; color: #64748b;"><i class="fa-solid fa-receipt"></i> Insumos e utilidades</span>
+          </div>
+
+          <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #3b82f6;">
+            <div style="font-size: 10px; color: #1d4ed8; font-weight: bold; text-transform: uppercase;">Lucro Líquido</div>
+            <div id="fin-card-lucro" style="font-size: 17px; font-weight: bold; color: #1d4ed8; margin-top: 4px;">R$ 0,00</div>
+            <span id="fin-sub-lucro" style="font-size: 11px; color: #64748b;">Margem: 0%</span>
+          </div>
+
+          <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #8b5cf6;">
+            <div style="font-size: 10px; color: #6d28d9; font-weight: bold; text-transform: uppercase;">Ticket Médio</div>
+            <div id="fin-card-ticket" style="font-size: 17px; font-weight: bold; color: #6d28d9; margin-top: 4px;">R$ 0,00</div>
+            <span style="font-size: 11px; color: #64748b;"><i class="fa-solid fa-basket-shopping"></i> Média por pedido</span>
+          </div>
+        </div>
+
+        <!-- Gráfico e DRE em 2 Colunas -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin-bottom: 20px;">
+          <div id="fin-grafico-pagamentos"></div>
+          <div id="fin-dre-simplificado"></div>
+        </div>
+
+        <!-- Extrato e Fluxo de Caixa -->
+        <div style="background: #fff; padding: 16px; border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <h4 style="margin: 0; font-size: 14px; color: var(--text-dark);"><i class="fa-solid fa-list-check" style="color:var(--primary);"></i> Extrato de Fluxo de Caixa</h4>
+            <div style="display: flex; gap: 6px;">
+              <button id="btn-extrato-todos" class="btn-filtro-extrato active" onclick="filtrarExtratoFinanceiro('todos')" style="padding: 4px 8px; font-size: 11px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; cursor: pointer;">Todos</button>
+              <button id="btn-extrato-receitas" class="btn-filtro-extrato" onclick="filtrarExtratoFinanceiro('receitas')" style="padding: 4px 8px; font-size: 11px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; cursor: pointer;">Entradas</button>
+              <button id="btn-extrato-despesas" class="btn-filtro-extrato" onclick="filtrarExtratoFinanceiro('despesas')" style="padding: 4px 8px; font-size: 11px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; cursor: pointer;">Saídas</button>
+            </div>
+          </div>
+          <div id="lista-financeiro-extrato"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -278,6 +429,113 @@
         <div id="modal-opcoes-lista"></div>
       </div>
       <button style="width:100%; padding: 15px; font-size: 16px;" onclick="confirmarAdicaoCarrinho()"><i class="fa-solid fa-cart-plus"></i> Adicionar ao Carrinho</button>
+    </div>
+  </div>
+
+  <!-- Modal de Ajuste de Estoque -->
+  <div id="modal-ajuste-estoque" class="modal-overlay">
+    <div class="modal-content" style="max-width: 420px; text-align: left;">
+      <span class="close-modal" onclick="fecharModalAjusteEstoque()">&times;</span>
+      <h3 style="margin-top:0; color:var(--text-dark); font-size:17px;"><i class="fa-solid fa-sliders" style="color:var(--primary);"></i> Ajustar Estoque</h3>
+      <p style="font-size:13px; color:#666; margin-top:-5px;">Doce: <strong id="ajuste-prod-nome" style="color:var(--text-dark);">--</strong> (Saldo Atual: <span id="ajuste-prod-atual" style="font-weight:bold; color:var(--primary);">--</span> un)</p>
+
+      <div class="form-group">
+        <label>Nova Quantidade em Estoque</label>
+        <input type="number" id="ajuste-prod-nova-qtd" min="0" value="0" style="font-size:16px; font-weight:bold;">
+      </div>
+
+      <div class="form-group">
+        <label>Estoque Mínimo para Alerta</label>
+        <input type="number" id="ajuste-prod-minimo" min="1" value="3">
+      </div>
+
+      <div class="form-group">
+        <label>Tipo da Operação</label>
+        <select id="ajuste-prod-tipo">
+          <option value="entrada">Entrada (Produção / Fornada / Devolução)</option>
+          <option value="ajuste">Ajuste de Balanço / Inventário</option>
+          <option value="saida">Saída Manual / Descarte / Perda</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Motivo ou Justificativa</label>
+        <input type="text" id="ajuste-prod-motivo" placeholder="Ex: Fornada fresca de brigadeiros, quebra, etc.">
+      </div>
+
+      <div class="form-group" style="margin-bottom:20px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px;">
+          <input type="checkbox" id="ajuste-prod-controlar" checked style="width:16px; height:16px; accent-color:var(--primary);">
+          Controlar estoque estritamente (bloqueia quando zerar)
+        </label>
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <button onclick="fecharModalAjusteEstoque()" class="btn-outline" style="flex:1;">Cancelar</button>
+        <button onclick="salvarAjusteEstoqueModal()" id="btn-salvar-ajuste-estoque" style="flex:2;"><i class="fa-solid fa-check"></i> Confirmar Ajuste</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Novo Lançamento Financeiro -->
+  <div id="modal-novo-lancamento" class="modal-overlay">
+    <div class="modal-content" style="max-width: 440px; text-align: left;">
+      <span class="close-modal" onclick="fecharModalNovaDespesa()">&times;</span>
+      <h3 style="margin-top:0; color:var(--text-dark); font-size:17px;"><i class="fa-solid fa-receipt" style="color:var(--primary);"></i> Lançar Despesa ou Receita</h3>
+
+      <div class="form-group">
+        <label>Tipo de Lançamento</label>
+        <select id="fin-novo-tipo">
+          <option value="despesa">Despesa (Saída de Caixa)</option>
+          <option value="receita">Receita Extra (Entrada de Caixa)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Categoria</label>
+        <select id="fin-novo-categoria">
+          <option value="Ingredientes & Insumos">Ingredientes & Insumos (Leite condensado, chocolate, frutas)</option>
+          <option value="Embalagens & Caixas">Embalagens & Caixas</option>
+          <option value="Utilidades & Contas">Utilidades (Energia, Gás, Água)</option>
+          <option value="Equipamentos & Utensílios">Equipamentos & Utensílios</option>
+          <option value="Logística & Entregas">Logística & Entregas</option>
+          <option value="Marketing & Divulgação">Marketing & Divulgação</option>
+          <option value="Taxas Bancárias & Meios">Taxas e Meios de Pagamento</option>
+          <option value="Outras Despesas">Outras Despesas</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Descrição</label>
+        <input type="text" id="fin-novo-desc" placeholder="Ex: Compra de 10 latas de Leite Condensado Moça">
+      </div>
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <div class="form-group" style="flex:1; min-width:130px;">
+          <label>Valor (R$)</label>
+          <input type="number" step="0.01" id="fin-novo-valor" placeholder="0.00" min="0.01" style="font-weight:bold; font-size:15px;">
+        </div>
+        <div class="form-group" style="flex:1; min-width:130px;">
+          <label>Data</label>
+          <input type="date" id="fin-novo-data">
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:20px;">
+        <label>Forma de Pagamento</label>
+        <select id="fin-novo-forma">
+          <option value="pix">PIX</option>
+          <option value="cartao">Cartão de Crédito / Débito</option>
+          <option value="dinheiro">Dinheiro em Espécie</option>
+          <option value="transferencia">Transferência Bancária</option>
+          <option value="outro">Outro</option>
+        </select>
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <button onclick="fecharModalNovaDespesa()" class="btn-outline" style="flex:1;">Cancelar</button>
+        <button onclick="salvarNovoLancamentoFinanceiro()" id="btn-salvar-lancamento" style="flex:2;"><i class="fa-solid fa-save"></i> Gravar Lançamento</button>
+      </div>
     </div>
   </div>
 
@@ -304,6 +562,8 @@
   <script src="https://sdk.mercadopago.com/js/v2"></script>
   <script src="js/mercadopago.js"></script>
   <script src="js/mercadopago-plugin.js"></script>
+  <script src="js/estoque.js"></script>
+  <script src="js/financeiro.js"></script>
   <script src="js/admin.js"></script>
 </body>
 </html>
