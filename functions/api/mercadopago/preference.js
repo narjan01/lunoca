@@ -1,6 +1,9 @@
+import { getCorsHeaders, handleCorsOptions } from '../_cors.js';
+
 export async function onRequestPost(context) {
   try {
     const { request, env } = context;
+    const corsHeaders = getCorsHeaders(request, env);
     const body = await request.json();
     const token = env.MERCADO_PAGO_ACCESS_TOKEN || body.customAccessToken;
 
@@ -9,7 +12,7 @@ export async function onRequestPost(context) {
         error: 'MERCADO_PAGO_ACCESS_TOKEN não configurado no Cloudflare Pages ou nas configurações do Lunoca.'
       }), {
         status: 400,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
       });
     }
 
@@ -74,7 +77,7 @@ export async function onRequestPost(context) {
         details: mpData
       }), {
         status: mpRes.status,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
       });
     }
 
@@ -85,24 +88,18 @@ export async function onRequestPost(context) {
       sandboxInitPoint: mpData.sandbox_init_point
     }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
 
   } catch (err) {
+    const corsHeaders = getCorsHeaders(context.request, context.env);
     return new Response(JSON.stringify({ error: err.message || 'Erro interno no servidor' }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
   }
 }
 
-export async function onRequestOptions() {
-  return new Response(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-    }
-  });
+export async function onRequestOptions(context) {
+  return handleCorsOptions(context.request, context.env);
 }

@@ -15,21 +15,47 @@ async function enviarPedido() {
         return alert("Seu carrinho está vazio!");
     }
         
-    let total = 0;
     let nomesItens = [];
-    let itensParaMP = [];
+    let itensParaValidar = [];
         
     for (let i = 0; i < carrinho.length; i++) {
-        total += parseFloat(carrinho[i].preco);
         nomesItens.push(carrinho[i].nome);
-        itensParaMP.push({
-            id: carrinho[i].id || (i + 1),
+        itensParaValidar.push({
+            id: carrinho[i].id || null,
             nome: carrinho[i].nome,
             preco: carrinho[i].preco
         });
     }
-        
+
     try {
+        // Validação server-side: recalcula o total com preços reais do banco
+        let total = 0;
+        let itensParaMP = itensParaValidar;
+        try {
+            const valRes = await fetch('/api/validate-order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ itens: itensParaValidar })
+            });
+            const valData = await valRes.json();
+            if (valRes.ok && valData.success) {
+                total = valData.totalValidado;
+                itensParaMP = valData.itensValidados;
+            } else {
+                // Fallback: calcula localmente se a validação falhar
+                console.warn('Validação server-side indisponível, usando total local:', valData.error);
+                for (let i = 0; i < carrinho.length; i++) {
+                    total += parseFloat(carrinho[i].preco);
+                }
+            }
+        } catch (valErr) {
+            // Fallback: calcula localmente se o endpoint estiver offline
+            console.warn('Endpoint de validação offline, usando total local:', valErr.message);
+            for (let i = 0; i < carrinho.length; i++) {
+                total += parseFloat(carrinho[i].preco);
+            }
+        }
+
         const { data: inserted, error } = await supabaseClient.from('pedidos').insert({
             cliente_id: usuarioAtual.id,
             nome_cliente: usuarioAtual.nome,
@@ -60,7 +86,7 @@ async function enviarPedido() {
         if (typeof iniciarPagamentoMercadoPago === 'function') {
             await iniciarPagamentoMercadoPago(pedidoId, total, itensParaMP, formaPagamento);
         } else {
-            alert("🎉 Pedido Confirmado! A Lunoca agradece a preferência.");
+            alert("Pedido Confirmado! A Lunoca agradece a preferência.");
             mostrarTela('menu-section');
         }
     } catch (err) {

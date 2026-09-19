@@ -32,7 +32,7 @@ window.alert = function(msg) {
   aviso.style.textAlign = 'center';
   aviso.style.width = '80%';
   aviso.style.maxWidth = '400px';
-  aviso.innerHTML = msg;
+  aviso.textContent = msg;
   document.body.appendChild(aviso);
   setTimeout(() => {
     aviso.style.opacity = '0';

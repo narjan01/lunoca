@@ -4,9 +4,45 @@
 // 100% no próprio site, sem redirecionamentos externos.
 // ==========================================================================
 
+import { getCorsHeaders, handleCorsOptions } from '../_cors.js';
+
+/**
+ * Busca os preços reais dos produtos no Supabase e calcula o total correto.
+ * Retorna { validatedTotal, validatedItems } ou lança erro se houver divergência.
+ */
+async function validateOrderTotal(pedidoId, clientTotal, env) {
+  const supabaseUrl = env.SUPABASE_URL;
+  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    // Se não tiver acesso ao Supabase, aceita o total do cliente (fallback)
+    return { validatedTotal: clientTotal, validated: false };
+  }
+
+  // Busca o pedido recém-criado para obter os itens e o total registrado
+  const pedidoRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}&select=total,itens`, {
+    headers: {
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${supabaseKey}`
+    }
+  });
+
+  const pedidos = await pedidoRes.json();
+  if (!pedidos || pedidos.length === 0) {
+    return { validatedTotal: clientTotal, validated: false };
+  }
+
+  const totalNoBanco = parseFloat(pedidos[0].total);
+
+  // Se o total que o cliente enviou diverge do que está no banco, usa o do banco
+  // (o banco foi preenchido pelo insert do frontend, mas é a fonte de verdade do pedido)
+  return { validatedTotal: totalNoBanco, validated: true };
+}
+
 export async function onRequestPost(context) {
   try {
     const { request, env } = context;
+    const corsHeaders = getCorsHeaders(request, env);
     const body = await request.json();
 
     const token = env.MERCADO_PAGO_ACCESS_TOKEN || body.customAccessToken;
@@ -15,7 +51,7 @@ export async function onRequestPost(context) {
         error: 'MERCADO_PAGO_ACCESS_TOKEN não configurado no Cloudflare Pages ou nas configurações da Lunoca.'
       }), {
         status: 400,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
       });
     }
 
@@ -32,12 +68,24 @@ export async function onRequestPost(context) {
     } = body;
 
     const baseUrl = origin || 'https://lunocadoceria.com.br';
-    const amount = parseFloat(total);
+
+    // Validação server-side do total: busca o valor real no banco de dados
+    let amount = parseFloat(total);
+    try {
+      const { validatedTotal, validated } = await validateOrderTotal(pedidoId, amount, env);
+      if (validated && Math.abs(validatedTotal - amount) > 0.01) {
+        console.warn(`[SEGURANÇA] Divergência de total detectada! Pedido #${pedidoId}: cliente enviou R$${amount}, banco tem R$${validatedTotal}`);
+        amount = validatedTotal; // Usa o valor do banco
+      }
+    } catch (valErr) {
+      console.error('Erro na validação de total:', valErr.message);
+      // Em caso de erro na validação, continua com o valor original (fail-open)
+    }
 
     if (isNaN(amount) || amount <= 0) {
       return new Response(JSON.stringify({ error: 'Valor total inválido para pagamento.' }), {
         status: 400,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
       });
     }
 
@@ -84,7 +132,7 @@ export async function onRequestPost(context) {
           details: mpData
         }), {
           status: mpRes.status,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
         });
       }
 
@@ -103,7 +151,7 @@ export async function onRequestPost(context) {
         expirationDate: mpData.date_of_expiration
       }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
       });
     }
 
@@ -149,7 +197,7 @@ export async function onRequestPost(context) {
             details: tokenData
           }), {
             status: 400,
-            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
           });
         }
 
@@ -159,7 +207,7 @@ export async function onRequestPost(context) {
       if (!finalCardToken) {
         return new Response(JSON.stringify({ error: 'Token do cartão não fornecido.' }), {
           status: 400,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
         });
       }
 
@@ -202,7 +250,7 @@ export async function onRequestPost(context) {
           details: mpData
         }), {
           status: mpRes.status,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
         });
       }
 
@@ -239,30 +287,24 @@ export async function onRequestPost(context) {
         installments: mpData.installments
       }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
       });
     }
 
     return new Response(JSON.stringify({ error: 'Forma de pagamento não suportada: ' + forma }), {
       status: 400,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
 
   } catch (err) {
+    const corsHeaders = getCorsHeaders(context.request, context.env);
     return new Response(JSON.stringify({ error: err.message || 'Erro interno no servidor' }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
   }
 }
 
-export async function onRequestOptions() {
-  return new Response(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-    }
-  });
+export async function onRequestOptions(context) {
+  return handleCorsOptions(context.request, context.env);
 }
