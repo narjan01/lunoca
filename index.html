@@ -8,7 +8,9 @@
   <link rel="shortcut icon" href="img/logo.jpg" type="image/jpeg">
   <link rel="icon" href="img/logo.jpg" type="image/jpeg">
 
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&family=Great+Vibes&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -17,8 +19,8 @@
   <header>
     <div class="header-top">
       <div style="width: 40px;"></div> 
-      <div class="header-logo" onclick="mostrarTela('menu-section')" style="cursor:pointer;">
-        <img src="img/logo.jpg" alt="Logo Lunoca"> 
+      <div class="header-logo" onclick="mostrarTela('menu-section')" style="cursor:pointer;" title="Lunoca Doceria - Cardápio">
+        <img src="img/logo.jpg" alt="Logo Lunoca Doceria"> 
         Lunoca
       </div>
       
@@ -28,7 +30,7 @@
       
       <div id="user-dropdown" class="user-dropdown"></div>
     </div>
-    <div id="user-greeting">Bem-vindo(a) à nossa Doceria!</div>
+    <div id="user-greeting"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--accent-gold); font-size:11px;"></i> Confeitaria Fina & Doces Artesanais</div>
   </header>
 
   <div class="container">
@@ -59,8 +61,44 @@
     </div>
 
     <div id="menu-section" class="screen active">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-        <h2 style="font-size:20px; margin: 0;"><i class="fa-solid fa-cake-candles" style="color:var(--primary)"></i> Doces Disponíveis</h2>
+      <!-- Boutique Hero Showcase -->
+      <div class="boutique-hero">
+        <div class="boutique-badge"><i class="fa-solid fa-heart" style="color:var(--secondary);"></i> 100% Feito à Mão</div>
+        <h1 class="boutique-title">Doces que encantam os olhos e abraçam o paladar</h1>
+        <p class="boutique-desc">Receitas autorais e doces artesanais preparados com chocolates nobres, frutas selecionadas e muito afeto para suas comemorações e momentos especiais.</p>
+        <div class="boutique-pillars">
+          <div class="pillar-item">
+            <div class="pillar-icon"><i class="fa-solid fa-cookie-bite"></i></div>
+            <div class="pillar-title">Chocolate Nobre</div>
+            <div class="pillar-sub">Ingredientes nobres</div>
+          </div>
+          <div class="pillar-item">
+            <div class="pillar-icon"><i class="fa-solid fa-gift"></i></div>
+            <div class="pillar-title">Embalagem Luxo</div>
+            <div class="pillar-sub">Pronto para presente</div>
+          </div>
+          <div class="pillar-item">
+            <div class="pillar-icon"><i class="fa-solid fa-truck-fast"></i></div>
+            <div class="pillar-title">Fornadas Frescas</div>
+            <div class="pillar-sub">Produção sob encomenda</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filtro de Categorias Charmoso -->
+      <div class="category-filter-bar">
+        <button class="cat-pill active" onclick="filtrarCategoriaCardapio('todos', this)"><i class="fa-solid fa-cake-candles"></i> Todos os Doces</button>
+        <button class="cat-pill" onclick="filtrarCategoriaCardapio('bolos', this)"><i class="fa-solid fa-birthday-cake"></i> Bolos & Fatias</button>
+        <button class="cat-pill" onclick="filtrarCategoriaCardapio('brigadeiros', this)"><i class="fa-solid fa-cookie"></i> Brigadeiros</button>
+        <button class="cat-pill" onclick="filtrarCategoriaCardapio('brownies', this)"><i class="fa-solid fa-square"></i> Brownies</button>
+        <button class="cat-pill" onclick="filtrarCategoriaCardapio('cento', this)"><i class="fa-solid fa-boxes-stacked"></i> Centos de Festa</button>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h2 style="font-size:22px; margin: 0; display:flex; align-items:center; gap:8px;">
+          <i class="fa-solid fa-sparkles" style="color:var(--accent-gold); font-size:16px;"></i> Cardápio Artesanal
+        </h2>
+        <span style="font-size:12px; color:var(--text-light); font-weight:500;"><i class="fa-regular fa-clock"></i> Feitos frescos</span>
       </div>
       <div id="produtos-lista">
         <div style="text-align:center; padding: 20px; color:#999;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i><br>Carregando delícias...</div>
@@ -428,7 +466,17 @@
         <div class="variations-title">Escolha o seu sabor (Obrigatório) <span style="color:red">*</span></div>
         <div id="modal-opcoes-lista"></div>
       </div>
-      <button style="width:100%; padding: 15px; font-size: 16px;" onclick="confirmarAdicaoCarrinho()"><i class="fa-solid fa-cart-plus"></i> Adicionar ao Carrinho</button>
+      <div class="modal-qtd-container">
+        <span class="modal-qtd-label"><i class="fa-solid fa-calculator" style="color:var(--primary); margin-right:4px;"></i> Quantidade</span>
+        <div class="qtd-stepper">
+          <button type="button" onclick="alterarQtdModal(-1)"><i class="fa-solid fa-minus"></i></button>
+          <span id="modal-qtd-val">1</span>
+          <button type="button" onclick="alterarQtdModal(1)"><i class="fa-solid fa-plus"></i></button>
+        </div>
+      </div>
+      <button id="btn-confirmar-add" style="width:100%; padding: 16px; font-size: 15px;" onclick="confirmarAdicaoCarrinho()">
+        <i class="fa-solid fa-bag-shopping"></i> <span id="btn-confirmar-add-txt">Adicionar ao Pedido</span>
+      </button>
     </div>
   </div>
 
@@ -546,9 +594,12 @@
       <div id="modal-mp-conteudo"></div>
     </div>
   </div>
-  <div id="btn-ver-carrinho" onclick="irParaCheckout()">
-    <span style="font-weight: 600;"><i class="fa-solid fa-cart-shopping"></i> Carrinho (<span id="qtd-carrinho">0</span>)</span>
-    <span style="font-weight: bold; background: var(--white); color: var(--text-dark); padding: 5px 12px; border-radius: 20px;">R$ <span id="valor-btn-carrinho">0.00</span></span>
+  <div id="btn-ver-carrinho" onclick="irParaCheckout()" title="Ver itens da sacola">
+    <span style="font-weight: 600; display:flex; align-items:center; gap:8px;">
+      <i class="fa-solid fa-bag-shopping" style="color:var(--secondary); font-size:16px;"></i> 
+      <span>Sua Sacola (<span id="qtd-carrinho">0</span>)</span>
+    </span>
+    <span class="carrinho-pill-total">R$ <span id="valor-btn-carrinho">0,00</span></span>
   </div>
 
   <!-- Scripts -->
