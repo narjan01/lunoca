@@ -11,7 +11,7 @@ function mudarTabAdmin(tab) {
     
     if(tab === 'calendario') renderizarCalendario();
     if(tab === 'usuarios') carregarUsuariosAdmin();
-    if(tab === 'pagamentos') carregarConfigInfinitePayAdmin();
+    if(tab === 'pagamentos') carregarConfigMercadoPagoAdmin();
 }
 
 async function carregarUsuariosAdmin() {
@@ -93,63 +93,58 @@ async function excluirUser(id) {
     }
 }
 // ==========================================================================
-
+// Configurações do Mercado Pago no Painel Admin
 // ==========================================================================
-// Configurações da InfinitePay no Painel Admin
-// ==========================================================================
-function carregarConfigInfinitePayAdmin() {
-    const cfg = typeof getInfinitePayConfig === 'function' ? getInfinitePayConfig() : {};
-    const handleInput = document.getElementById('infinitepay-handle');
-    const keyInput = document.getElementById('infinitepay-api-key');
-    const pixInput = document.getElementById('infinitepay-chave-pix');
+function carregarConfigMercadoPagoAdmin() {
+    const cfg = typeof getMercadoPagoConfig === 'function' ? getMercadoPagoConfig() : {};
+    const tokenInput = document.getElementById('mp-access-token');
+    const keyInput = document.getElementById('mp-public-key');
+    const pixInput = document.getElementById('mp-chave-pix');
 
-    if (handleInput) handleInput.value = cfg.handle || 'lunocadoceria';
-    if (keyInput) keyInput.value = cfg.apiKey || '';
+    if (tokenInput) tokenInput.value = cfg.accessToken || '';
+    if (keyInput) keyInput.value = cfg.publicKey || '';
     if (pixInput) pixInput.value = cfg.chavePixFallback || 'lunocadoceria@gmail.com';
 }
 
-function salvarConfigInfinitePayAdmin() {
-    let handle = (document.getElementById('infinitepay-handle')?.value || '').trim();
-    if (handle.startsWith('$')) handle = handle.substring(1);
-    const apiKey = (document.getElementById('infinitepay-api-key')?.value || '').trim();
-    const chavePix = (document.getElementById('infinitepay-chave-pix')?.value || '').trim();
+function salvarConfigMPAdmin() {
+    const token = (document.getElementById('mp-access-token')?.value || '').trim();
+    const key = (document.getElementById('mp-public-key')?.value || '').trim();
+    const pix = (document.getElementById('mp-chave-pix')?.value || '').trim();
 
-    if (!handle) {
-        return alert('Por favor, informe sua InfiniteTag (ex: lunocadoceria)');
-    }
-
-    if (typeof salvarInfinitePayConfig === 'function') {
-        salvarInfinitePayConfig({
-            handle: handle,
-            apiKey: apiKey,
-            chavePixFallback: chavePix || 'lunocadoceria@gmail.com'
+    if (typeof salvarMercadoPagoConfig === 'function') {
+        salvarMercadoPagoConfig({
+            accessToken: token,
+            publicKey: key,
+            chavePixFallback: pix || 'lunocadoceria@gmail.com'
         });
-        alert('Configurações da InfinitePay salvas com sucesso!');
+        alert('Configurações do Mercado Pago salvas com sucesso!');
     }
 }
 
-async function testarConexaoInfinitePay() {
-    let handle = (document.getElementById('infinitepay-handle')?.value || '').trim();
-    if (handle.startsWith('$')) handle = handle.substring(1);
-    const statusDiv = document.getElementById('infinitepay-status-teste');
+async function testarConexaoMP() {
+    const token = (document.getElementById('mp-access-token')?.value || '').trim();
+    const statusDiv = document.getElementById('mp-status-teste');
     if (!statusDiv) return;
 
-    if (!handle) {
-        statusDiv.innerHTML = '<div style="padding:10px; background:#fff1f2; color:#be123c; border-radius:8px; font-size:12px; border:1px solid #fecdd3;"><i class="fa-solid fa-circle-exclamation"></i> Informe a sua InfiniteTag (ex: lunocadoceria).</div>';
+    if (!token) {
+        statusDiv.innerHTML = '<div style="padding:10px; background:#fff1f2; color:#be123c; border-radius:8px; font-size:12px; border:1px solid #fecdd3;"><i class="fa-solid fa-circle-exclamation"></i> Por favor, insira o Access Token para testar a conexão.</div>';
         return;
     }
 
-    statusDiv.innerHTML = '<div style="padding:10px; background:#f0f9ff; color:#0369a1; border-radius:8px; font-size:12px;"><i class="fa-solid fa-spinner fa-spin"></i> Verificando InfiniteTag $' + escapeHTML(handle) + '...</div>';
+    statusDiv.innerHTML = '<div style="padding:10px; background:#f0f9ff; color:#0369a1; border-radius:8px; font-size:12px;"><i class="fa-solid fa-spinner fa-spin"></i> Testando credencial no Mercado Pago...</div>';
 
     try {
-        const linkTeste = 'https://infinitepay.io/pay/' + encodeURIComponent(handle);
-        statusDiv.innerHTML = '<div style="padding:12px; background:#ecfdf5; color:#065f46; border-radius:8px; font-size:12px; border:1px solid #a7f3d0;">' +
-            '<i class="fa-solid fa-circle-check"></i> <strong>InfiniteTag Ativa!</strong><br>' +
-            'Conta vinculada: <strong>$' + escapeHTML(handle) + '</strong><br>' +
-            'Link oficial: <a href="' + linkTeste + '" target="_blank" rel="noopener" style="color:#047857; text-decoration:underline; font-weight:bold;">' + linkTeste + '</a><br>' +
-            'Status: Pronto para processar PIX (taxa zero) e Cartão de Crédito em até 12x.' +
-        '</div>';
+        const res = await fetch('https://api.mercadopago.com/users/me', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+
+        if (res.ok && data.id) {
+            statusDiv.innerHTML = '<div style="padding:12px; background:#ecfdf5; color:#065f46; border-radius:8px; font-size:12px; border:1px solid #a7f3d0;"><i class="fa-solid fa-circle-check"></i> <strong>Conexão Aprovada!</strong><br>Conta: <strong>' + escapeHTML(data.nickname || data.first_name || 'Vendedor Mercado Pago') + '</strong> (ID: ' + data.id + ')<br>Status: Ativo e pronto para receber PIX e Cartão.</div>';
+        } else {
+            statusDiv.innerHTML = '<div style="padding:12px; background:#fff1f2; color:#be123c; border-radius:8px; font-size:12px; border:1px solid #fecdd3;"><i class="fa-solid fa-circle-xmark"></i> <strong>Falha na autenticação:</strong> ' + escapeHTML(data.message || 'Access Token inválido ou expirado.') + '</div>';
+        }
     } catch (err) {
-        statusDiv.innerHTML = '<div style="padding:10px; background:#fff1f2; color:#be123c; border-radius:8px; font-size:12px;"><i class="fa-solid fa-triangle-exclamation"></i> Erro: ' + escapeHTML(err.message) + '</div>';
+        statusDiv.innerHTML = '<div style="padding:10px; background:#fff1f2; color:#be123c; border-radius:8px; font-size:12px;"><i class="fa-solid fa-triangle-exclamation"></i> Erro de rede ao testar: ' + escapeHTML(err.message) + '</div>';
     }
 }

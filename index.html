@@ -114,10 +114,10 @@
           <textarea id="endereco-checkout" rows="2" placeholder="Preencha na aba 'Minha Conta' para carregar automaticamente ou digite aqui..." required></textarea>
         </div>
         <div class="form-group">
-          <label><i class="fa-solid fa-money-bill-wave"></i> Forma de Pagamento (InfinitePay)</label>
+          <label><i class="fa-solid fa-money-bill-wave"></i> Forma de Pagamento (Mercado Pago)</label>
           <select id="pagamento">
-            <option value="pix">PIX InfinitePay (Taxa Zero / Aprovação Imediata)</option>
-            <option value="cartao">Cartão de Crédito (InfinitePay - até 12x)</option>
+            <option value="pix">Pix (Mercado Pago - Liberação Imediata / QR Code)</option>
+            <option value="cartao">Cartão de Crédito (Mercado Pago - até 12x)</option>
           </select>
         </div>
         <div style="display: flex; gap: 10px;">
@@ -134,7 +134,7 @@
         <button id="tab-btn-calendario" onclick="mudarTabAdmin('calendario')"><i class="fa-regular fa-calendar-days"></i> Calendário</button>
         <button id="tab-btn-produtos" onclick="mudarTabAdmin('produtos')"><i class="fa-solid fa-box"></i> Produtos</button>
         <button id="tab-btn-usuarios" onclick="mudarTabAdmin('usuarios')"><i class="fa-solid fa-users"></i> Usuários</button>
-        <button id="tab-btn-pagamentos" onclick="mudarTabAdmin('pagamentos')"><i class="fa-solid fa-bolt"></i> InfinitePay</button>
+        <button id="tab-btn-pagamentos" onclick="mudarTabAdmin('pagamentos')"><i class="fa-solid fa-credit-card"></i> Mercado Pago</button>
       </div>
       <div id="admin-tab-pedidos" class="admin-tab active">
         <button onclick="carregarPedidosAdmin()" style="width: 100%; margin-bottom: 15px;" class="btn-outline"><i class="fa-solid fa-rotate-right"></i> Atualizar Pedidos</button>
@@ -203,40 +203,6 @@
         <button onclick="carregarUsuariosAdmin()" style="width: 100%; margin-bottom: 15px;" class="btn-outline"><i class="fa-solid fa-rotate-right"></i> Atualizar Lista</button>
         <div id="lista-usuarios-admin"></div>
       </div>
-
-      <div id="admin-tab-pagamentos" class="admin-tab">
-        <div class="panel-card" style="flex-direction: column; align-items: stretch;">
-          <h3 style="margin-top:0; color:var(--text-dark); display:flex; align-items:center; gap:8px;">
-            <i class="fa-solid fa-bolt" style="color:#16a34a;"></i>
-            Configurações da InfinitePay
-          </h3>
-          <p style="font-size:13px; color:#666; margin:0 0 15px 0;">
-            Receba pagamentos com <strong>PIX instantâneo (taxa zero)</strong> e <strong>Cartão de Crédito em até 12x</strong> com aprovação automática.
-          </p>
-          <div class="form-group">
-            <label><i class="fa-solid fa-tag"></i> InfiniteTag (Usuário na InfinitePay)</label>
-            <div style="display:flex; align-items:center;">
-              <span style="background:#e2e8f0; padding:10px 12px; border-radius:6px 0 0 6px; font-weight:bold; color:#475569; border:1px solid #cbd5e1; border-right:none;">$</span>
-              <input type="text" id="infinitepay-handle" placeholder="lunocadoceria" style="border-radius:0 6px 6px 0;">
-            </div>
-            <small style="font-size:11px; color:#888;">Informe a sua InfiniteTag cadastrada no aplicativo InfinitePay (ex: lunocadoceria).</small>
-          </div>
-          <div class="form-group">
-            <label><i class="fa-solid fa-key"></i> API Key / Token de Parceiro (Opcional)</label>
-            <input type="password" id="infinitepay-api-key" placeholder="Chave da API de Checkout (opcional)">
-          </div>
-          <div class="form-group">
-            <label><i class="fa-brands fa-pix" style="color:#0d9488;"></i> Chave PIX Manual de Reserva</label>
-            <input type="text" id="infinitepay-chave-pix" placeholder="ex: lunocadoceria@gmail.com ou CNPJ">
-            <small style="font-size:11px; color:#888;">Exibida caso o cliente precise fazer transferência direta.</small>
-          </div>
-          <div style="display:flex; gap:10px; margin-top:10px;">
-            <button class="btn-outline" style="flex:1;" onclick="testarConexaoInfinitePay()"><i class="fa-solid fa-plug"></i> Testar Tag</button>
-            <button style="flex:2;" onclick="salvarConfigInfinitePayAdmin()"><i class="fa-solid fa-floppy-disk"></i> Salvar Configurações</button>
-          </div>
-          <div id="infinitepay-status-teste" style="margin-top:15px;"></div>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -255,11 +221,11 @@
     </div>
   </div>
 
-  <!-- Modal de Pagamento InfinitePay -->
-  <div id="modal-pagamento-infinitepay" class="modal-overlay">
+  <!-- Modal de Pagamento Mercado Pago -->
+  <div id="modal-pagamento-mp" class="modal-overlay">
     <div class="modal-content" style="max-width: 440px;">
-      <span class="close-modal" onclick="fecharModalInfinitePay()">&times;</span>
-      <div id="modal-infinitepay-conteudo"></div>
+      <span class="close-modal" onclick="fecharModalMP()">&times;</span>
+      <div id="modal-mp-conteudo"></div>
     </div>
   </div>
   <div id="btn-ver-carrinho" onclick="irParaCheckout()">
@@ -275,8 +241,8 @@
   <script src="js/carrinho.js"></script>
   <script src="js/produtos.js"></script>
   <script src="js/pedidos.js"></script>
-  
-  <script src="js/infinitepay.js"></script>
+  <script src="https://sdk.mercadopago.com/js/v2"></script>
+  <script src="js/mercadopago.js"></script>
   <script src="js/admin.js"></script>
 </body>
 </html>
