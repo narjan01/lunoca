@@ -11,6 +11,7 @@ function mudarTabAdmin(tab) {
     
     if(tab === 'calendario') renderizarCalendario();
     if(tab === 'usuarios') carregarUsuariosAdmin();
+    if(tab === 'pagamentos') carregarConfigMercadoPagoAdmin();
 }
 
 async function carregarUsuariosAdmin() {
@@ -89,5 +90,61 @@ async function excluirUser(id) {
         clickExcluir = id;
         alert("Clique novamente na lixeira para confirmar a desativação deste usuário.");
         setTimeout(() => { clickExcluir = null; }, 3000);
+    }
+}
+// ==========================================================================
+// Configurações do Mercado Pago no Painel Admin
+// ==========================================================================
+function carregarConfigMercadoPagoAdmin() {
+    const cfg = typeof getMercadoPagoConfig === 'function' ? getMercadoPagoConfig() : {};
+    const tokenInput = document.getElementById('mp-access-token');
+    const keyInput = document.getElementById('mp-public-key');
+    const pixInput = document.getElementById('mp-chave-pix');
+
+    if (tokenInput) tokenInput.value = cfg.accessToken || '';
+    if (keyInput) keyInput.value = cfg.publicKey || '';
+    if (pixInput) pixInput.value = cfg.chavePixFallback || 'lunocadoceria@gmail.com';
+}
+
+function salvarConfigMPAdmin() {
+    const token = (document.getElementById('mp-access-token')?.value || '').trim();
+    const key = (document.getElementById('mp-public-key')?.value || '').trim();
+    const pix = (document.getElementById('mp-chave-pix')?.value || '').trim();
+
+    if (typeof salvarMercadoPagoConfig === 'function') {
+        salvarMercadoPagoConfig({
+            accessToken: token,
+            publicKey: key,
+            chavePixFallback: pix || 'lunocadoceria@gmail.com'
+        });
+        alert('Configurações do Mercado Pago salvas com sucesso!');
+    }
+}
+
+async function testarConexaoMP() {
+    const token = (document.getElementById('mp-access-token')?.value || '').trim();
+    const statusDiv = document.getElementById('mp-status-teste');
+    if (!statusDiv) return;
+
+    if (!token) {
+        statusDiv.innerHTML = '<div style="padding:10px; background:#fff1f2; color:#be123c; border-radius:8px; font-size:12px; border:1px solid #fecdd3;"><i class="fa-solid fa-circle-exclamation"></i> Por favor, insira o Access Token para testar a conexão.</div>';
+        return;
+    }
+
+    statusDiv.innerHTML = '<div style="padding:10px; background:#f0f9ff; color:#0369a1; border-radius:8px; font-size:12px;"><i class="fa-solid fa-spinner fa-spin"></i> Testando credencial no Mercado Pago...</div>';
+
+    try {
+        const res = await fetch('https://api.mercadopago.com/users/me', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+
+        if (res.ok && data.id) {
+            statusDiv.innerHTML = '<div style="padding:12px; background:#ecfdf5; color:#065f46; border-radius:8px; font-size:12px; border:1px solid #a7f3d0;"><i class="fa-solid fa-circle-check"></i> <strong>Conexão Aprovada!</strong><br>Conta: <strong>' + escapeHTML(data.nickname || data.first_name || 'Vendedor Mercado Pago') + '</strong> (ID: ' + data.id + ')<br>Status: Ativo e pronto para receber PIX e Cartão.</div>';
+        } else {
+            statusDiv.innerHTML = '<div style="padding:12px; background:#fff1f2; color:#be123c; border-radius:8px; font-size:12px; border:1px solid #fecdd3;"><i class="fa-solid fa-circle-xmark"></i> <strong>Falha na autenticação:</strong> ' + escapeHTML(data.message || 'Access Token inválido ou expirado.') + '</div>';
+        }
+    } catch (err) {
+        statusDiv.innerHTML = '<div style="padding:10px; background:#fff1f2; color:#be123c; border-radius:8px; font-size:12px;"><i class="fa-solid fa-triangle-exclamation"></i> Erro de rede ao testar: ' + escapeHTML(err.message) + '</div>';
     }
 }

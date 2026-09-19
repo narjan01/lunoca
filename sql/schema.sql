@@ -172,3 +172,11 @@ CREATE TRIGGER tr_check_profile_update
     BEFORE UPDATE ON public.profiles
     FOR EACH ROW
     EXECUTE FUNCTION public.check_profile_update();
+
+-- =======================================================
+-- ATUALIZAÇÃO: Integração Mercado Pago (PIX e Cartão)
+-- =======================================================
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS mercado_pago_id TEXT;
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS mercado_pago_status TEXT;
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS mercado_pago_preference_id TEXT;
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS mercado_pago_link TEXT;
