@@ -28,7 +28,7 @@ async function carregarProdutosServidor() {
 }
 
 function renderizarProdutosApp() {
-  const defaultImg = 'https://via.placeholder.com/150/fbf9ff/c496f2?text=Doce';
+  const defaultImg = 'img/logo.jpg';
   let html = '';
   for (let i = 0; i < produtos.length; i++) {
     let p = produtos[i];
