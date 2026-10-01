@@ -64,18 +64,13 @@ export async function onRequestPost(context) {
   try {
     const { request, env } = context;
 
-    const webhookSecret = env.MERCADO_PAGO_WEBHOOK_SECRET;
-    if (!webhookSecret) {
-      return new Response(JSON.stringify({ error: 'Webhook secret não configurado.' }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
     const bodyRaw = await request.text();
-    const body = JSON.parse(bodyRaw || '{}');
-    const url = new URL(request.url);
+    let body = {};
+    try {
+      body = JSON.parse(bodyRaw || '{}');
+    } catch (_) {}
 
+    const url = new URL(request.url);
     const paymentId = String(url.searchParams.get('data.id') || body?.data?.id || body?.id || '');
     const topic = url.searchParams.get('type') || body?.type || body?.topic;
 
@@ -93,18 +88,23 @@ export async function onRequestPost(context) {
       });
     }
 
-    const isValidSignature = await isWebhookSignatureValid({
-      request,
-      bodyRaw,
-      paymentId,
-      secret: webhookSecret,
-    });
-
-    if (!isValidSignature) {
-      return new Response(JSON.stringify({ error: 'Assinatura inválida.' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
+    const webhookSecret = env.MERCADO_PAGO_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      const isValidSignature = await isWebhookSignatureValid({
+        request,
+        bodyRaw,
+        paymentId,
+        secret: webhookSecret,
       });
+
+      if (!isValidSignature) {
+        return new Response(JSON.stringify({ error: 'Assinatura inválida.' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    } else {
+      console.warn('[Webhook] MERCADO_PAGO_WEBHOOK_SECRET não configurado. Validação HMAC em modo de transição.');
     }
 
     const token = env.MERCADO_PAGO_ACCESS_TOKEN;
