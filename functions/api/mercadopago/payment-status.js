@@ -11,9 +11,7 @@ export async function onRequestGet(context) {
     const corsHeaders = getCorsHeaders(request, env);
     const url = new URL(request.url);
     const paymentId = url.searchParams.get('id');
-    const customToken = url.searchParams.get('token');
-
-    const token = env.MERCADO_PAGO_ACCESS_TOKEN || customToken;
+    const token = env.MERCADO_PAGO_ACCESS_TOKEN;
     if (!token) {
       return new Response(JSON.stringify({ error: 'MERCADO_PAGO_ACCESS_TOKEN não disponível.' }), {
         status: 400,

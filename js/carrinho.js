@@ -14,7 +14,12 @@ function irParaCheckout() {
   let html = '';
   for (let i = 0; i < carrinho.length; i++) {
     let item = carrinho[i];
-    html += '<p style="font-size:14px; margin:8px 0; border-bottom: 1px solid #f0f0f0; padding-bottom: 5px;"><i class="fa-solid fa-angle-right" style="color:var(--primary); font-size:10px;"></i> ' + item.nome + '<strong style="float:right;">R$ ' + parseFloat(item.preco).toFixed(2) + '</strong></p>';
+    const nomeSeguro = typeof escapeHTML === 'function'
+      ? escapeHTML(item.nome)
+      : String(item.nome || 'Item').replace(/[&<>'"]/g, function(tag) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag;
+        });
+    html += '<p style="font-size:14px; margin:8px 0; border-bottom: 1px solid #f0f0f0; padding-bottom: 5px;"><i class="fa-solid fa-angle-right" style="color:var(--primary); font-size:10px;"></i> ' + nomeSeguro + '<strong style="float:right;">R$ ' + parseFloat(item.preco).toFixed(2) + '</strong></p>';
   }
   document.getElementById('itens-carrinho').innerHTML = html;
 }

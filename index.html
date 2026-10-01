@@ -243,12 +243,12 @@
           <h4 style="margin-top:0; margin-bottom: 15px; color: var(--text-dark);"><i class="fa-solid fa-key"></i> Credenciais da API</h4>
 
           <div class="form-group">
-            <label>Access Token (Produção ou Sandbox)</label>
+            <label>Access Token (segredo no servidor)</label>
             <div style="display: flex; gap: 8px;">
-              <input type="password" id="mp-access-token" placeholder="APP_USR-... ou TEST-..." style="font-family: monospace; font-size: 13px;">
-              <button type="button" class="btn-outline" onclick="toggleVisibilidadeTokenMP()" style="padding: 0 12px;" title="Ver/Ocultar"><i class="fa-regular fa-eye" id="icon-eye-mp"></i></button>
+              <input type="password" id="mp-access-token" placeholder="Configurado via Cloudflare Environment Variables" style="font-family: monospace; font-size: 13px;" disabled>
+              <button type="button" class="btn-outline" onclick="toggleVisibilidadeTokenMP()" style="padding: 0 12px;" title="Campo informativo" disabled><i class="fa-regular fa-eye" id="icon-eye-mp"></i></button>
             </div>
-            <span style="font-size: 11px; color: #666;">Obtenha no portal <a href="https://www.mercadopago.com.br/developers/panel/app" target="_blank" style="color:var(--primary); font-weight:bold;">Mercado Pago Developers</a></span>
+            <span style="font-size: 11px; color: #666;">Defina <code>MERCADO_PAGO_ACCESS_TOKEN</code> apenas no Cloudflare Pages. Nunca salve token no navegador.</span>
           </div>
 
           <div class="form-group">

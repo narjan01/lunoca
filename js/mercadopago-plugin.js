@@ -47,7 +47,6 @@
       }
       return {
         publicKey: '',
-        accessToken: '',
         chavePixFallback: 'lunocadoceria@gmail.com',
         modoTransparente: true,
       };
@@ -55,9 +54,16 @@
 
     saveConfig: function (cfg) {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
-        if (cfg.publicKey && typeof window.MercadoPago !== 'undefined') {
-          this.mpInstance = new window.MercadoPago(cfg.publicKey, { locale: 'pt-BR' });
+        const safeConfig = {
+          publicKey: cfg?.publicKey || '',
+          chavePixFallback: cfg?.chavePixFallback || 'lunocadoceria@gmail.com',
+          modoTransparente: cfg?.modoTransparente !== false,
+        };
+
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(safeConfig));
+
+        if (safeConfig.publicKey && typeof window.MercadoPago !== 'undefined') {
+          this.mpInstance = new window.MercadoPago(safeConfig.publicKey, { locale: 'pt-BR' });
         }
         return true;
       } catch (e) {
@@ -138,7 +144,6 @@
       `;
 
       try {
-        const cfg = this.getConfig();
         const payload = {
           pedidoId: orderData.pedidoId,
           total: orderData.total,
@@ -149,7 +154,6 @@
             email: window.usuarioAtual?.email || 'cliente@lunocadoceria.com.br',
             cpf: window.usuarioAtual?.cpf || '19119119100'
           },
-          customAccessToken: cfg.accessToken || '',
           origin: window.location.origin
         };
 
@@ -507,7 +511,6 @@
       }
 
       try {
-        const cfg = this.getConfig();
         const payload = {
           pedidoId: this.currentOrder.pedidoId,
           total: this.currentOrder.total,
@@ -526,7 +529,6 @@
             email: window.usuarioAtual?.email || 'cliente@lunocadoceria.com.br',
             cpf: cpf
           },
-          customAccessToken: cfg.accessToken || '',
           origin: window.location.origin
         };
 
@@ -598,7 +600,15 @@
       const errBox = document.getElementById('mp-card-error-msg');
       if (errBox) {
         errBox.style.display = 'block';
-        errBox.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> ' + msg;
+        errBox.innerHTML = '';
+
+        const icon = document.createElement('i');
+        icon.className = 'fa-solid fa-triangle-exclamation';
+
+        const text = document.createTextNode(' ' + String(msg || 'Erro ao processar pagamento.'));
+
+        errBox.appendChild(icon);
+        errBox.appendChild(text);
       }
     },
 
@@ -615,9 +625,8 @@
         }
 
         try {
-          const cfg = this.getConfig();
           // 1. Checar diretamente na API do Mercado Pago via endpoint local
-          const res = await fetch(`/api/mercadopago/payment-status?id=${paymentId}&token=${encodeURIComponent(cfg.accessToken || '')}`);
+          const res = await fetch(`/api/mercadopago/payment-status?id=${encodeURIComponent(paymentId)}`);
           if (res.ok) {
             const data = await res.json();
             if (data.status === 'approved') {
@@ -788,7 +797,7 @@
     },
 
     testToken: async function (token) {
-      const tk = (token || this.getConfig().accessToken || '').trim();
+      const tk = String(token || '').trim();
       if (!tk) return { success: false, error: 'Access Token não informado.' };
       try {
         const res = await fetch('/api/mercadopago/test-token', {

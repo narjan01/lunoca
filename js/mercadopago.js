@@ -15,7 +15,6 @@ function getMercadoPagoConfig() {
   } catch (e) {}
   return {
     publicKey: '',
-    accessToken: '',
     chavePixFallback: 'lunocadoceria@gmail.com',
     modoTransparente: true
   };

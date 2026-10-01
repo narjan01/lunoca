@@ -45,7 +45,7 @@ export async function onRequestPost(context) {
     const corsHeaders = getCorsHeaders(request, env);
     const body = await request.json();
 
-    const token = env.MERCADO_PAGO_ACCESS_TOKEN || body.customAccessToken;
+    const token = env.MERCADO_PAGO_ACCESS_TOKEN;
     if (!token) {
       return new Response(JSON.stringify({
         error: 'MERCADO_PAGO_ACCESS_TOKEN não configurado no Cloudflare Pages ou nas configurações da Lunoca.'
