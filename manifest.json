@@ -1,0 +1,30 @@
+{
+  "name": "Lunoca Doceria - Doces Artesanais",
+  "short_name": "Lunoca",
+  "description": "Peça doces artesanais, bolos, brigadeiros gourmet e brownies com encomenda online e pagamento instantâneo via PIX ou Cartão.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fbf9ff",
+  "theme_color": "#c496f2",
+  "orientation": "portrait-primary",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "img/logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "img/logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": [
+    "food",
+    "shopping"
+  ]
+}

@@ -2,15 +2,62 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lunoca Doceria - Doces Artesanais</title>
-  <meta name="description" content="Lunoca Doceria - Encomende doces artesanais feitos com amor">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Lunoca Doceria - Doces Artesanais & Encomendas</title>
+  <meta name="description" content="Lunoca Doceria - Encomende doces artesanais, bolos, brigadeiros gourmet e brownies feitos com amor. Peça online e pague com PIX ou Cartão.">
+
+  <!-- PWA & Mobile Web App -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#c496f2">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Lunoca">
+  <link rel="apple-touch-icon" href="img/logo.jpg">
+
+  <!-- Favicon -->
   <link rel="shortcut icon" href="img/logo.jpg" type="image/jpeg">
   <link rel="icon" href="img/logo.jpg" type="image/jpeg">
 
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&family=Great+Vibes&display=swap" rel="stylesheet">
+  <!-- Open Graph / Redes Sociais (WhatsApp, Instagram, Facebook) -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://lunocadoceria.com.br/">
+  <meta property="og:title" content="Lunoca Doceria | Doces Artesanais & Encomendas">
+  <meta property="og:description" content="Encomende bolos, brigadeiros gourmet, centos de doces e brownies feitos com amor. Peça online com entrega ou retirada e pague com PIX ou Cartão.">
+  <meta property="og:image" content="https://lunocadoceria.com.br/img/logo.jpg">
+  <meta property="og:image:width" content="512">
+  <meta property="og:image:height" content="512">
+  <meta property="og:locale" content="pt_BR">
+  <meta property="og:site_name" content="Lunoca Doceria">
+
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Lunoca Doceria | Doces Artesanais & Encomendas">
+  <meta name="twitter:description" content="Encomende bolos, brigadeiros gourmet e brownies artesanais online.">
+  <meta name="twitter:image" content="https://lunocadoceria.com.br/img/logo.jpg">
+
+  <!-- Preconnect & CDNs -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+
+  <!-- Fonts & Icons -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Great+Vibes&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="css/style.css">
+
+  <!-- Schema.org JSON-LD para Google (Bakery) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Bakery",
+    "name": "Lunoca Doceria",
+    "image": "https://lunocadoceria.com.br/img/logo.jpg",
+    "description": "Doceria artesanal especializada em bolos, brigadeiros gourmet, centos de doces e brownies com encomenda online.",
+    "url": "https://lunocadoceria.com.br",
+    "paymentAccepted": "Cash, Credit Card, Pix",
+    "currenciesAccepted": "BRL"
+  }
+  </script>
 </head>
 <body>
 
@@ -611,5 +658,16 @@
   <script src="js/estoque.js"></script>
   <script src="js/financeiro.js"></script>
   <script src="js/admin.js"></script>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(err => {
+          console.warn('[SW] Aviso no registro do Service Worker:', err);
+        });
+      });
+    }
+  </script>
 </body>
 </html>

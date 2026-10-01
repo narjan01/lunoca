@@ -36,7 +36,7 @@ function renderizarProdutosApp() {
     let nomeEsc = escapeHTML(p.nome);
     let descFormatada = p.desc ? escapeHTML(p.desc).replace(/\n/g, '<br>') : '';
     let precoFormatado = parseFloat(p.preco || 0).toFixed(2);
-    html += '<div class="produto-card"><div class="produto-header"><img src="' + imagemUrl + '" class="produto-img" alt="' + nomeEsc + '"><div class="produto-info"><h3>' + nomeEsc + '</h3></div></div><div class="produto-desc">' + descFormatada + '</div><div class="produto-footer"><div class="preco">R$ ' + precoFormatado + '</div><button class="btn-adicionar" onclick="abrirModalProduto(\'' + p.id + '\')"><i class="fa-solid fa-plus"></i></button></div></div>';
+    html += '<div class="produto-card"><div class="produto-header"><img src="' + imagemUrl + '" class="produto-img" alt="' + nomeEsc + '" loading="lazy" width="120" height="120"><div class="produto-info"><h3>' + nomeEsc + '</h3></div></div><div class="produto-desc">' + descFormatada + '</div><div class="produto-footer"><div class="preco">R$ ' + precoFormatado + '</div><button class="btn-adicionar" onclick="abrirModalProduto(\'' + p.id + '\')"><i class="fa-solid fa-plus"></i></button></div></div>';
   }
   if (html === '') {
     html = "<p style='text-align:center;'>Cardápio em atualização.</p>";
