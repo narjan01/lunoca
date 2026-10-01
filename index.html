@@ -68,19 +68,21 @@
     </div>
 
     <div id="conta-section" class="screen">
-      <h2 style="margin-top:0;"><i class="fa-solid fa-id-card" style="color:var(--primary)"></i> Meu Perfil</h2>
+      <h2 style="margin-top:0;"><i class="fa-solid fa-id-card" style="color:var(--primary)"></i> Minha Conta</h2>
       <div class="admin-nav" style="margin-bottom: 15px;">
-        <button id="tab-conta-pessoal" class="active" onclick="mudarTabConta('pessoal')">Dados Pessoais</button>
-        <button id="tab-conta-endereco" onclick="mudarTabConta('endereco')">Endereço</button>
+        <button id="tab-conta-pessoal" class="active" onclick="mudarTabConta('pessoal')"><i class="fa-solid fa-user"></i> Dados Pessoais</button>
+        <button id="tab-conta-endereco" onclick="mudarTabConta('endereco')"><i class="fa-solid fa-location-dot"></i> Endereço</button>
+        <button id="tab-conta-pedidos" onclick="mudarTabConta('pedidos')"><i class="fa-solid fa-box-open"></i> Meus Pedidos</button>
       </div>
       <div class="panel-card" style="flex-direction: column; align-items: stretch;">
         <div id="conta-tab-pessoal" class="admin-tab active">
           <div class="form-group"><label>Nome Completo</label><input type="text" id="perfil-nome"></div>
           <div class="form-group"><label>Email (Apenas Leitura)</label><input type="text" id="perfil-email" readonly style="background:#eee; color:#888;"></div>
           <div class="row-2">
-            <div class="form-group"><label>CPF</label><input type="text" id="perfil-cpf" placeholder="000.000.000-00"></div>
+            <div class="form-group"><label>CPF</label><input type="text" id="perfil-cpf" placeholder="000.000.000-00" maxlength="14" oninput="if(typeof mascaraCPF==='function')mascaraCPF(this)"></div>
             <div class="form-group"><label>Telefone / WhatsApp</label><input type="text" id="perfil-telefone" placeholder="(11) 90000-0000"></div>
           </div>
+          <button onclick="salvarPerfilUsuario()" id="btn-salvar-perfil" style="width: 100%; margin-top: 10px;"><i class="fa-solid fa-save"></i> Atualizar Dados</button>
         </div>
         <div id="conta-tab-endereco" class="admin-tab">
           <div class="form-group">
@@ -92,37 +94,81 @@
             <div class="form-group"><label>Número</label><input type="text" id="perfil-numero"></div>
             <div class="form-group"><label>Complemento</label><input type="text" id="perfil-complemento" placeholder="Apto, Casa 2"></div>
           </div>
+          <button onclick="salvarPerfilUsuario()" id="btn-salvar-perfil-end" style="width: 100%; margin-top: 10px;"><i class="fa-solid fa-save"></i> Atualizar Endereço</button>
         </div>
-        <button onclick="salvarPerfilUsuario()" id="btn-salvar-perfil" style="width: 100%; margin-top: 10px;"><i class="fa-solid fa-save"></i> Atualizar Dados</button>
+        <div id="conta-tab-pedidos" class="admin-tab">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h3 style="margin:0; font-size: 16px; color: var(--text-dark);"><i class="fa-solid fa-receipt" style="color:var(--primary);"></i> Suas Encomendas</h3>
+            <button class="btn-outline" onclick="carregarMeusPedidos()" style="padding: 5px 12px; font-size: 11px;"><i class="fa-solid fa-rotate-right"></i> Atualizar</button>
+          </div>
+          <div id="lista-meus-pedidos"></div>
+        </div>
       </div>
     </div>
 
     <div id="checkout-section" class="screen">
-      <h2><i class="fa-solid fa-bag-shopping" style="color:var(--primary)"></i> Seu Pedido</h2>
-      <div class="panel-card" style="flex-direction: column; align-items: stretch;">
-        <h3 style="margin-top:0; border-bottom: 2px dashed #eee; padding-bottom: 10px;">Resumo dos Itens</h3>
+      <h2><i class="fa-solid fa-bag-shopping" style="color:var(--primary)"></i> Finalizar Pedido</h2>
+      
+      <!-- Card do Carrinho Editavel -->
+      <div class="panel-card" style="flex-direction: column; align-items: stretch; margin-bottom: 15px;">
+        <h3 style="margin-top:0; border-bottom: 2px dashed #eee; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+          <span><i class="fa-solid fa-basket-shopping" style="color:var(--primary);"></i> Itens Escolhidos</span>
+          <button onclick="mostrarTela('menu-section')" class="btn-outline" style="font-size: 11px; padding: 4px 10px;"><i class="fa-solid fa-plus"></i> Adicionar mais doces</button>
+        </h3>
         <div id="itens-carrinho"></div>
-        <h3 style="text-align: right; color: var(--primary-dark); font-size: 20px;">Total: R$ <span id="total-carrinho">0.00</span></h3>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; padding-top: 12px; border-top: 2px solid #f1f5f9;">
+          <span style="font-size: 14px; color: #64748b; font-weight: 600;">Total a Pagar:</span>
+          <span style="color: var(--primary-dark); font-size: 22px; font-weight: 800;">R$ <span id="total-carrinho">0.00</span></span>
+        </div>
       </div>
+
+      <!-- Card de Dados de Entrega e Pagamento -->
       <div class="panel-card" style="flex-direction: column; align-items: stretch;">
+        <!-- Seletor de Modalidade: Entrega vs Retirada -->
         <div class="form-group">
-          <label><i class="fa-regular fa-calendar"></i> Data de Entrega (2 dias úteis)</label>
+          <label><i class="fa-solid fa-truck-ramp-box"></i> Modalidade de Recebimento</label>
+          <div class="delivery-options-toggle">
+            <button type="button" class="btn-toggle-modalidade active" id="btn-modalidade-entrega" onclick="selecionarModalidade('entrega')">
+              <i class="fa-solid fa-motorcycle"></i> Entrega em Domicílio
+            </button>
+            <button type="button" class="btn-toggle-modalidade" id="btn-modalidade-retirada" onclick="selecionarModalidade('retirada')">
+              <i class="fa-solid fa-store"></i> Retirada no Balcão
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label id="label-data-pedido"><i class="fa-regular fa-calendar"></i> Data de Entrega (Mínimo 2 dias úteis)</label>
           <input type="date" id="data-pedido" required>
         </div>
-        <div class="form-group">
-          <label><i class="fa-solid fa-location-dot"></i> Endereço de Entrega</label>
-          <textarea id="endereco-checkout" rows="2" placeholder="Preencha na aba 'Minha Conta' para carregar automaticamente ou digite aqui..." required></textarea>
+
+        <!-- Container do Endereco (oculta em caso de retirada) -->
+        <div id="campo-endereco-container" class="form-group">
+          <label><i class="fa-solid fa-location-dot"></i> Endereço Completo de Entrega</label>
+          <textarea id="endereco-checkout" rows="2" placeholder="Rua, número, complemento e bairro..." required></textarea>
         </div>
+
+        <div id="aviso-retirada-balcao" style="display: none; padding: 12px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; font-size: 13px; color: #065f46; margin-bottom: 15px;">
+          <i class="fa-solid fa-location-dot"></i> <strong>Ponto de Retirada:</strong> Seu pedido ficará disponível para retirada no balcão da Lunoca Doceria na data agendada.
+        </div>
+
+        <!-- Campo de CPF do Titular Obrigatório -->
         <div class="form-group">
-          <label><i class="fa-solid fa-money-bill-wave"></i> Forma de Pagamento (Mercado Pago)</label>
+          <label><i class="fa-solid fa-id-card"></i> CPF do Titular <span style="color:red;">*</span> <span style="font-weight:normal; color:#888; font-size:11px;">(Necessário para PIX / Cartão)</span></label>
+          <input type="text" id="checkout-cpf" placeholder="000.000.000-00" maxlength="14" oninput="if(typeof mascaraCPF==='function')mascaraCPF(this)" required>
+        </div>
+
+        <div class="form-group">
+          <label><i class="fa-solid fa-money-bill-wave"></i> Forma de Pagamento (Mercado Pago Oficial)</label>
           <select id="pagamento">
-            <option value="pix">Pix Transparente (QR Code na tela + Baixa Instantânea)</option>
+            <option value="pix">Pix Transparente (QR Code na tela + Confirmação Instantânea)</option>
             <option value="cartao">Cartão de Crédito Transparente (no próprio site até 12x)</option>
           </select>
         </div>
-        <div style="display: flex; gap: 10px;">
-          <button class="btn-outline" style="flex: 1;" onclick="mostrarTela('menu-section')">Voltar</button>
-          <button style="flex: 2;" onclick="enviarPedido()"><i class="fa-solid fa-check"></i> Confirmar</button>
+
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+          <button type="button" class="btn-outline" style="flex: 1;" onclick="mostrarTela('menu-section')">Voltar</button>
+          <button type="button" id="btn-confirmar-checkout" style="flex: 2;" onclick="enviarPedido()"><i class="fa-solid fa-check"></i> Confirmar Pedido</button>
         </div>
       </div>
     </div>

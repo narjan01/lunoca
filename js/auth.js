@@ -9,6 +9,7 @@ function toggleUserMenu() {
     dropdown.classList.remove('show');
   } else {
     let html = '<button onclick="abrirMinhaConta()"><i class="fa-solid fa-id-card"></i> Minha Conta</button>';
+    html += '<button onclick="abrirMeusPedidos()"><i class="fa-solid fa-box-open"></i> Meus Pedidos</button>';
     if (usuarioAtual.nivel === 'admin') {
       html += '<button onclick="mostrarTela(\'admin-section\')"><i class="fa-solid fa-screwdriver-wrench"></i> Painel Admin</button>';
     }
@@ -16,6 +17,11 @@ function toggleUserMenu() {
     dropdown.innerHTML = html;
     dropdown.classList.add('show');
   }
+}
+
+function abrirMeusPedidos() {
+  mostrarTela('conta-section');
+  mudarTabConta('pedidos');
 }
 
 function alternarModoAuth() {
@@ -197,13 +203,22 @@ async function salvarPerfilUsuario() {
 }
 
 function mudarTabConta(tab) {
-  document.getElementById('tab-conta-pessoal').classList.remove('active');
-  document.getElementById('tab-conta-endereco').classList.remove('active');
-  document.getElementById('conta-tab-pessoal').classList.remove('active');
-  document.getElementById('conta-tab-endereco').classList.remove('active');
+  const tabs = ['pessoal', 'endereco', 'pedidos'];
+  tabs.forEach(t => {
+    const btn = document.getElementById('tab-conta-' + t);
+    const content = document.getElementById('conta-tab-' + t);
+    if (btn) btn.classList.remove('active');
+    if (content) content.classList.remove('active');
+  });
   
-  document.getElementById('tab-conta-' + tab).classList.add('active');
-  document.getElementById('conta-tab-' + tab).classList.add('active');
+  const activeBtn = document.getElementById('tab-conta-' + tab);
+  const activeContent = document.getElementById('conta-tab-' + tab);
+  if (activeBtn) activeBtn.classList.add('active');
+  if (activeContent) activeContent.classList.add('active');
+
+  if (tab === 'pedidos' && typeof carregarMeusPedidos === 'function') {
+    carregarMeusPedidos();
+  }
 }
 
 function buscarCepViaAPI() {

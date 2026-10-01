@@ -91,6 +91,7 @@ function confirmarAdicaoCarrinho() {
   if (!produtoSendoVisto) return;
   
   let itemCarrinho = Object.assign({}, produtoSendoVisto);
+  let saborEscolhido = '';
   
   if (itemCarrinho.opcoes && itemCarrinho.opcoes.trim() !== "") {
     let selecionado = document.querySelector('input[name="sabor_escolhido"]:checked');
@@ -98,14 +99,32 @@ function confirmarAdicaoCarrinho() {
       alert("Por favor, escolha um sabor para continuar.");
       return;
     }
-    itemCarrinho.nome = itemCarrinho.nome + " (" + selecionado.value + ")";
+    saborEscolhido = selecionado.value;
+    itemCarrinho.nome = itemCarrinho.nome + " (" + saborEscolhido + ")";
+    itemCarrinho.sabor = saborEscolhido;
   }
   
-  carrinho.push(itemCarrinho);
+  if (!Array.isArray(carrinho)) carrinho = [];
+
+  // Agrupa se ja existir produto igual (mesmo ID e sabor)
+  let itemExistente = carrinho.find(it => 
+    String(it.id) === String(itemCarrinho.id) && 
+    (it.sabor || '') === (itemCarrinho.sabor || '')
+  );
+
+  if (itemExistente) {
+    itemExistente.quantidade = (parseInt(itemExistente.quantidade, 10) || 1) + 1;
+  } else {
+    itemCarrinho.quantidade = 1;
+    carrinho.push(itemCarrinho);
+  }
+  
   atualizarBotaoCarrinho();
   salvarCarrinhoLocal();
   fecharModalProduto();
-  document.getElementById('btn-ver-carrinho').style.display = 'flex';
+  
+  const btnCarrinho = document.getElementById('btn-ver-carrinho');
+  if (btnCarrinho) btnCarrinho.style.display = 'flex';
 }
 
 function editarProduto(id) {

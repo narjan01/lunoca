@@ -77,21 +77,23 @@ export async function onRequestPost(context) {
       }
 
       const precoReal = parseFloat(produtoDB.preco);
+      const qtd = Math.max(1, parseInt(item.quantidade || 1, 10));
       const precoCliente = parseFloat(item.preco);
 
-      // Detecta manipulação de preço
-      if (Math.abs(precoReal - precoCliente) > 0.01) {
+      // Detecta manipulação de preço unitário
+      if (!isNaN(precoCliente) && Math.abs(precoReal - precoCliente) > 0.01) {
         console.warn(
           `[SEGURANÇA] Preço manipulado detectado! Produto "${produtoDB.nome}": ` +
           `cliente enviou R$${precoCliente.toFixed(2)}, preço real R$${precoReal.toFixed(2)}`
         );
       }
 
-      totalValidado += precoReal;
+      totalValidado += precoReal * qtd;
       itensValidados.push({
         id: produtoDB.id,
-        nome: produtoDB.nome,
-        preco: precoReal
+        nome: item.nome || produtoDB.nome,
+        preco: precoReal,
+        quantidade: qtd
       });
     }
 

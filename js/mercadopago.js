@@ -33,16 +33,16 @@ function salvarMercadoPagoConfig(cfg) {
 }
 
 // Iniciar Checkout Transparente após finalizar o pedido
-async function iniciarPagamentoMercadoPago(pedidoId, total, itens, forma) {
+async function iniciarPagamentoMercadoPago(pedidoId, total, itens, forma, clienteCustom) {
   const orderData = {
     pedidoId: pedidoId,
     total: total,
     items: itens,
     forma: forma,
     cliente: {
-      nome: (window.usuarioAtual && window.usuarioAtual.nome) || 'Cliente Lunoca',
-      email: (window.usuarioAtual && window.usuarioAtual.email) || 'cliente@lunocadoceria.com.br',
-      cpf: (window.usuarioAtual && window.usuarioAtual.cpf) || '19119119100'
+      nome: clienteCustom?.nome || (window.usuarioAtual && window.usuarioAtual.nome) || 'Cliente Lunoca',
+      email: clienteCustom?.email || (window.usuarioAtual && window.usuarioAtual.email) || 'cliente@lunocadoceria.com.br',
+      cpf: clienteCustom?.cpf || (window.usuarioAtual && window.usuarioAtual.cpf) || '19119119100'
     }
   };
 
