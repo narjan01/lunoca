@@ -144,7 +144,7 @@ async function carregarPerfilUsuario(authUser) {
   }
 }
 
-function abrirMinhaConta() {
+function abrirMinhaConta(tabPadrao) {
   document.getElementById('perfil-nome').value = usuarioAtual.nome || "";
   document.getElementById('perfil-email').value = usuarioAtual.email || "";
   document.getElementById('perfil-cpf').value = usuarioAtual.cpf || "";
@@ -154,6 +154,7 @@ function abrirMinhaConta() {
   document.getElementById('perfil-numero').value = usuarioAtual.numero || "";
   document.getElementById('perfil-complemento').value = usuarioAtual.complemento || "";
   mostrarTela('conta-section');
+  mudarTabConta(tabPadrao || 'pessoal');
 }
 
 async function salvarPerfilUsuario() {
@@ -203,18 +204,17 @@ async function salvarPerfilUsuario() {
 }
 
 function mudarTabConta(tab) {
-  const tabs = ['pessoal', 'endereco', 'pedidos'];
-  tabs.forEach(t => {
-    const btn = document.getElementById('tab-conta-' + t);
-    const content = document.getElementById('conta-tab-' + t);
+  ['pessoal', 'endereco', 'pedidos'].forEach(function(nomeTab) {
+    const btn = document.getElementById('tab-conta-' + nomeTab);
+    const painel = document.getElementById('conta-tab-' + nomeTab);
     if (btn) btn.classList.remove('active');
-    if (content) content.classList.remove('active');
+    if (painel) painel.classList.remove('active');
   });
-  
-  const activeBtn = document.getElementById('tab-conta-' + tab);
-  const activeContent = document.getElementById('conta-tab-' + tab);
-  if (activeBtn) activeBtn.classList.add('active');
-  if (activeContent) activeContent.classList.add('active');
+
+  const btnAtiva = document.getElementById('tab-conta-' + tab);
+  const painelAtivo = document.getElementById('conta-tab-' + tab);
+  if (btnAtiva) btnAtiva.classList.add('active');
+  if (painelAtivo) painelAtivo.classList.add('active');
 
   if (tab === 'pedidos' && typeof carregarMeusPedidos === 'function') {
     carregarMeusPedidos();

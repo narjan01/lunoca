@@ -48,6 +48,14 @@ async function enviarPedido() {
         return;
     }
 
+    const btnConfirmar = document.getElementById('btn-confirmar-checkout');
+    const textoOriginalBtn = btnConfirmar ? btnConfirmar.innerHTML : '';
+
+    if (btnConfirmar) {
+        btnConfirmar.disabled = true;
+        btnConfirmar.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processando Pedido...';
+    }
+
     let data = document.getElementById('data-pedido').value;
     let formaPagamento = document.getElementById('pagamento').value;
     let modalidade = modalidadePedidoAtual || 'entrega';
@@ -58,27 +66,43 @@ async function enviarPedido() {
     } else {
         end = (document.getElementById('endereco-checkout')?.value || '').trim();
         if (!end) {
+            if (btnConfirmar) {
+                btnConfirmar.disabled = false;
+                btnConfirmar.innerHTML = textoOriginalBtn;
+            }
             return alert("Por favor, informe o endereço completo de entrega!");
         }
     }
-        
+
     if (!data) {
+        if (btnConfirmar) {
+            btnConfirmar.disabled = false;
+            btnConfirmar.innerHTML = textoOriginalBtn;
+        }
         return alert("Por favor, selecione a data agendada para " + (modalidade === 'retirada' ? 'a retirada!' : 'a entrega!'));
     }
 
     // Validação estrita do CPF digitado no checkout
     let cpfInput = (document.getElementById('checkout-cpf')?.value || '').replace(/\D/g, '');
     if (cpfInput.length !== 11) {
+        if (btnConfirmar) {
+            btnConfirmar.disabled = false;
+            btnConfirmar.innerHTML = textoOriginalBtn;
+        }
         return alert("Por favor, digite um CPF válido com 11 dígitos para emissão do pagamento.");
     }
 
     if (!carrinho || carrinho.length === 0) {
+        if (btnConfirmar) {
+            btnConfirmar.disabled = false;
+            btnConfirmar.innerHTML = textoOriginalBtn;
+        }
         return alert("Seu carrinho está vazio!");
     }
-        
+
     let nomesItens = [];
     let itensParaValidar = [];
-        
+
     for (let i = 0; i < carrinho.length; i++) {
         const item = carrinho[i];
         const qtd = Math.max(1, parseInt(item.quantidade || 1, 10));
@@ -90,14 +114,6 @@ async function enviarPedido() {
             preco: item.preco,
             quantidade: qtd
         });
-    }
-
-    const btnConfirmar = document.getElementById('btn-confirmar-checkout');
-    let textoOriginalBtn = '';
-    if (btnConfirmar) {
-        textoOriginalBtn = btnConfirmar.innerHTML;
-        btnConfirmar.disabled = true;
-        btnConfirmar.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processando Pedido...';
     }
 
     try {
@@ -152,15 +168,14 @@ async function enviarPedido() {
 
         const pedidoId = (inserted && inserted[0]) ? inserted[0].id : Date.now();
 
+        try {
+            localStorage.setItem('lunoca_ultimo_pedido_id', String(pedidoId));
+        } catch (e) {}
+
         // Baixa automática no estoque para os doces vendidos
         if (typeof darBaixaEstoqueAposPedido === 'function') {
             darBaixaEstoqueAposPedido(itensParaMP, pedidoId);
         }
-
-        // Limpar carrinho após inserção do pedido
-        carrinho = [];
-        salvarCarrinhoLocal();
-        atualizarBotaoCarrinho();
 
         // Dados completos do pagador com o CPF verificado
         const clienteDados = {
@@ -172,6 +187,7 @@ async function enviarPedido() {
         // Iniciar fluxo de pagamento Mercado Pago (Pix ou Cartão)
         if (typeof iniciarPagamentoMercadoPago === 'function') {
             await iniciarPagamentoMercadoPago(pedidoId, total, itensParaMP, formaPagamento, clienteDados);
+            alert('Pedido #' + pedidoId + ' criado. Acompanhe em Minha Conta > Meus Pedidos.');
         } else {
             alert("Pedido Confirmado! A Lunoca agradece a preferência.");
             mostrarTela('menu-section');
@@ -304,6 +320,59 @@ function renderizarCalendario() {
     }
     const corpo = document.getElementById('calendario-corpo');
     if (corpo) corpo.innerHTML = html;
+}
+
+async function carregarPedidosCliente() {
+    const lista = document.getElementById('lista-pedidos-cliente');
+    if (!lista) return;
+
+    if (!usuarioAtual || !usuarioAtual.id || usuarioAtual.nivel === 'visitante') {
+        lista.innerHTML = "<p style='text-align:center; color:#888;'>Faça login para ver seus pedidos.</p>";
+        return;
+    }
+
+    lista.innerHTML = "<p style='text-align:center;'><i class='fa-solid fa-spinner fa-spin'></i> Carregando seus pedidos...</p>";
+
+    try {
+        const { data: pedidos, error } = await supabaseClient
+            .from('pedidos')
+            .select('id,data_entrega,total,pagamento,status,mercado_pago_status,itens,created_at')
+            .eq('cliente_id', usuarioAtual.id)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+        if (error) throw error;
+
+        if (!pedidos || pedidos.length === 0) {
+            lista.innerHTML = "<p style='text-align:center; color:#888;'>Você ainda não fez pedidos.</p>";
+            return;
+        }
+
+        let html = '';
+        for (let i = 0; i < pedidos.length; i++) {
+            const p = pedidos[i];
+            const dataEntrega = p.data_entrega ? p.data_entrega.split('-').reverse().join('/') : 'A definir';
+            const statusPagamento = p.mercado_pago_status || 'pendente';
+            const corStatus = (p.status === 'Confirmado' || statusPagamento === 'approved') ? '#065f46' : '#92400e';
+            const bgStatus = (p.status === 'Confirmado' || statusPagamento === 'approved') ? '#ecfdf5' : '#fffbeb';
+
+            html += '<div style="border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff;">';
+            html += '<div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">';
+            html += '<strong>Pedido #' + escapeHTML(String(p.id)) + '</strong>';
+            html += '<span style="font-size:12px; background:' + bgStatus + '; color:' + corStatus + '; padding:3px 8px; border-radius:10px; font-weight:700;">' + escapeHTML(p.status || 'Pendente') + '</span>';
+            html += '</div>';
+            html += '<p style="margin:8px 0 4px 0; font-size:13px;"><strong>Entrega:</strong> ' + escapeHTML(dataEntrega) + '</p>';
+            html += '<p style="margin:4px 0; font-size:13px;"><strong>Total:</strong> R$ ' + Number(p.total || 0).toFixed(2) + '</p>';
+            html += '<p style="margin:4px 0; font-size:13px;"><strong>Pagamento:</strong> ' + escapeHTML(p.pagamento || '-') + ' · <strong>MP:</strong> ' + escapeHTML(statusPagamento) + '</p>';
+            html += '<p style="margin:8px 0 0 0; font-size:12px; color:#6b7280;"><strong>Itens:</strong> ' + escapeHTML(p.itens || '') + '</p>';
+            html += '</div>';
+        }
+
+        lista.innerHTML = html;
+    } catch (err) {
+        console.error(err);
+        lista.innerHTML = "<p style='text-align:center; color:#b91c1c;'>Erro ao carregar seus pedidos.</p>";
+    }
 }
 
 function mostrarPedidosDia(data) {

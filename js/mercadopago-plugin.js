@@ -96,12 +96,28 @@
       }
     },
 
-    closeModal: function () {
+    closeModal: function (targetScreen) {
       if (this.pollInterval) clearInterval(this.pollInterval);
       const modal = document.getElementById('modal-pagamento-mp');
       if (modal) modal.classList.remove('active');
+      if (targetScreen === 'conta-pedidos' && typeof window.abrirMinhaConta === 'function') {
+        window.abrirMinhaConta('pedidos');
+        return;
+      }
       if (typeof window.mostrarTela === 'function') {
         window.mostrarTela('menu-section');
+      }
+    },
+
+    clearCartAfterPaymentSuccess: function () {
+      try {
+        if (Array.isArray(window.carrinho)) {
+          window.carrinho = [];
+        }
+        if (typeof window.salvarCarrinhoLocal === 'function') window.salvarCarrinhoLocal();
+        if (typeof window.atualizarBotaoCarrinho === 'function') window.atualizarBotaoCarrinho();
+      } catch (e) {
+        console.warn('[MercadoPagoPlugin] Não foi possível limpar carrinho automaticamente:', e);
       }
     },
 
@@ -678,6 +694,8 @@
 
     // Tela de Pagamento Aprovado com Sucesso
     renderSucessoAprovado: function (info) {
+      this.clearCartAfterPaymentSuccess();
+
       const conteudo = document.getElementById('modal-mp-conteudo');
       if (!conteudo) return;
 
@@ -719,7 +737,7 @@
             </div>
           </div>
 
-          <button onclick="window.MercadoPagoPlugin.closeModal()" style="width: 100%; padding: 14px; background: #059669; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);">
+          <button onclick="window.MercadoPagoPlugin.closeModal('conta-pedidos')" style="width: 100%; padding: 14px; background: #059669; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);">
             <i class="fa-solid fa-cake-candles"></i> Acompanhar em "Minha Conta"
           </button>
         </div>
@@ -753,34 +771,42 @@
       const cfg = this.getConfig();
       const chavePix = cfg.chavePixFallback || 'lunocadoceria@gmail.com';
       const formattedTotal = Number(total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      const esc = function (v) {
+        return String(v || '').replace(/[&<>'"]/g, function(tag) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag;
+        });
+      };
+      const motivoSeguro = esc(motivo || 'Não foi possível gerar o QR Code dinâmico agora.');
+      const chavePixSegura = esc(chavePix);
 
       container.innerHTML = `
         <div style="text-align: center;">
-          <div style="display:inline-block; padding: 10px; background: #ecfdf5; border-radius: 50%; color: #059669; font-size: 26px; margin-bottom: 12px;">
-            <i class="fa-brands fa-pix"></i>
+          <div style="display:inline-block; padding: 10px; background: #fff7ed; border-radius: 50%; color: #c2410c; font-size: 26px; margin-bottom: 12px;">
+            <i class="fa-solid fa-circle-exclamation"></i>
           </div>
-          <h3 style="margin: 0 0 6px 0; color: #0f172a; font-size: 19px;">Pagamento via Pix Manual</h3>
+          <h3 style="margin: 0 0 6px 0; color: #0f172a; font-size: 19px;">QR Code indisponível no momento</h3>
+          <p style="font-size: 12px; color: #7c2d12; margin: 0 0 14px 0; background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:8px;">${motivoSeguro}</p>
           <p style="font-size: 13px; color: #64748b; margin: 0 0 14px 0;">Pedido #${pedidoId} &bull; Total: <strong>${formattedTotal}</strong></p>
 
+          <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+            <button onclick="window.MercadoPagoPlugin.switchToCard()" style="flex:1; padding: 10px; background: #0284c7; color: #fff; border: none; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer;">
+              <i class="fa-solid fa-credit-card"></i> Tentar Cartão de Crédito
+            </button>
+          </div>
+
           <div style="background: #f8fafc; border: 1px dashed #cbd5e1; padding: 14px; border-radius: 12px; margin-bottom: 14px; text-align: left;">
-            <span style="font-size: 11px; color: #64748b; display: block; margin-bottom: 4px; font-weight: 700;">CHAVE PIX (E-MAIL):</span>
+            <span style="font-size: 11px; color: #64748b; display: block; margin-bottom: 4px; font-weight: 700;">PIX MANUAL (CONTINGÊNCIA):</span>
             <div style="display: flex; gap: 8px; align-items: center;">
-              <code id="texto-chave-pix-fallback" style="flex: 1; font-size: 13px; color: #0f172a; font-weight: 700; word-break: break-all;">${chavePix}</code>
-              <button onclick="window.MercadoPagoPlugin.copyFallbackKey('${chavePix}')" id="btn-copy-fallback-pix"
+              <code id="texto-chave-pix-fallback" style="flex: 1; font-size: 13px; color: #0f172a; font-weight: 700; word-break: break-all;">${chavePixSegura}</code>
+              <button onclick="window.MercadoPagoPlugin.copyFallbackKeyFromElement()" id="btn-copy-fallback-pix"
                 style="background: #059669; color: white; border: none; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;">
                 Copiar
               </button>
             </div>
           </div>
 
-          ${window.usuarioAtual?.nivel === 'admin' ? `
-            <div style="background: #fffbeb; border: 1px solid #fef3c7; padding: 10px; border-radius: 8px; font-size: 11px; color: #92400e; margin-bottom: 14px; text-align: left;">
-              <strong>Dica de Administrador:</strong> Configure o <em>Access Token do Mercado Pago</em> na aba de Configurações no Painel Admin para gerar o QR Code dinâmico com aprovação automática na tela.
-            </div>
-          ` : ''}
-
-          <button onclick="window.MercadoPagoPlugin.closeModal()" style="width: 100%; padding: 12px; background: #0f172a; color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer;">
-            Concluir e Voltar ao Início
+          <button onclick="window.MercadoPagoPlugin.closeModal('conta-pedidos')" style="width: 100%; padding: 12px; background: #0f172a; color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer;">
+            Ver status em Minha Conta
           </button>
         </div>
       `;
@@ -794,6 +820,14 @@
           setTimeout(() => { btn.innerHTML = 'Copiar'; }, 2000);
         }
       });
+    },
+
+    copyFallbackKeyFromElement: function () {
+      const el = document.getElementById('texto-chave-pix-fallback');
+      if (!el) return;
+      const chave = (el.textContent || '').trim();
+      if (!chave) return;
+      this.copyFallbackKey(chave);
     },
 
     testToken: async function (token) {

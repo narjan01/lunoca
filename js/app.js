@@ -65,6 +65,10 @@ function mostrarTela(telaId) {
     if (usuarioAtual.cep) endCompleto += (endCompleto ? " (CEP: " : "(CEP: ") + usuarioAtual.cep + ")";
     document.getElementById('endereco-checkout').value = endCompleto;
   }
+
+  if (telaId === 'conta-section' && typeof carregarMeusPedidos === 'function') {
+    carregarMeusPedidos();
+  }
 }
 
 function configurarRegraData() {
