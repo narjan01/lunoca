@@ -56,47 +56,58 @@ async function enviarPedido() {
         btnConfirmar.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processando Pedido...';
     }
 
+    // Coleta dos dados do formulário
+    let nomeInput = (document.getElementById('checkout-nome')?.value || usuarioAtual.nome || '').trim();
+    let whatsappInput = (document.getElementById('checkout-whatsapp')?.value || usuarioAtual.telefone || '').trim();
+    let cpfInput = (document.getElementById('checkout-cpf')?.value || usuarioAtual.cpf || '').replace(/\D/g, '');
+    let cepInput = (document.getElementById('checkout-cep')?.value || usuarioAtual.cep || '').trim();
+    let ruaInput = (document.getElementById('checkout-rua')?.value || usuarioAtual.endereco || '').trim();
+    let numeroInput = (document.getElementById('checkout-numero')?.value || usuarioAtual.numero || '').trim();
+    let complementoInput = (document.getElementById('checkout-complemento')?.value || usuarioAtual.complemento || '').trim();
+
     let data = document.getElementById('data-pedido').value;
     let formaPagamento = document.getElementById('pagamento').value;
     let modalidade = modalidadePedidoAtual || 'entrega';
     let end = '';
 
+    // Validações
+    if (!nomeInput) {
+        if (btnConfirmar) { btnConfirmar.disabled = false; btnConfirmar.innerHTML = textoOriginalBtn; }
+        return alert("Por favor, informe seu nome completo!");
+    }
+
+    const foneLimpo = whatsappInput.replace(/\D/g, '');
+    if (foneLimpo.length < 10 || foneLimpo.length > 11) {
+        if (btnConfirmar) { btnConfirmar.disabled = false; btnConfirmar.innerHTML = textoOriginalBtn; }
+        return alert("Por favor, informe um WhatsApp válido com DDD (ex: (21) 98765-4321) para acompanhar seu pedido!");
+    }
+
+    if (cpfInput.length !== 11) {
+        if (btnConfirmar) { btnConfirmar.disabled = false; btnConfirmar.innerHTML = textoOriginalBtn; }
+        return alert("Por favor, digite um CPF válido com 11 dígitos para emissão do pagamento.");
+    }
+
     if (modalidade === 'retirada') {
         end = 'Retirada no Balcão (Loja Lunoca)';
     } else {
-        end = (document.getElementById('endereco-checkout')?.value || '').trim();
+        if (ruaInput) {
+            end = ruaInput + (numeroInput ? ', ' + numeroInput : '') + (complementoInput ? ' - ' + complementoInput : '') + (cepInput ? ' (CEP: ' + cepInput + ')' : '');
+        } else {
+            end = (document.getElementById('endereco-checkout')?.value || '').trim();
+        }
         if (!end) {
-            if (btnConfirmar) {
-                btnConfirmar.disabled = false;
-                btnConfirmar.innerHTML = textoOriginalBtn;
-            }
+            if (btnConfirmar) { btnConfirmar.disabled = false; btnConfirmar.innerHTML = textoOriginalBtn; }
             return alert("Por favor, informe o endereço completo de entrega!");
         }
     }
 
     if (!data) {
-        if (btnConfirmar) {
-            btnConfirmar.disabled = false;
-            btnConfirmar.innerHTML = textoOriginalBtn;
-        }
+        if (btnConfirmar) { btnConfirmar.disabled = false; btnConfirmar.innerHTML = textoOriginalBtn; }
         return alert("Por favor, selecione a data agendada para " + (modalidade === 'retirada' ? 'a retirada!' : 'a entrega!'));
     }
 
-    // Validação estrita do CPF digitado no checkout
-    let cpfInput = (document.getElementById('checkout-cpf')?.value || '').replace(/\D/g, '');
-    if (cpfInput.length !== 11) {
-        if (btnConfirmar) {
-            btnConfirmar.disabled = false;
-            btnConfirmar.innerHTML = textoOriginalBtn;
-        }
-        return alert("Por favor, digite um CPF válido com 11 dígitos para emissão do pagamento.");
-    }
-
     if (!carrinho || carrinho.length === 0) {
-        if (btnConfirmar) {
-            btnConfirmar.disabled = false;
-            btnConfirmar.innerHTML = textoOriginalBtn;
-        }
+        if (btnConfirmar) { btnConfirmar.disabled = false; btnConfirmar.innerHTML = textoOriginalBtn; }
         return alert("Seu carrinho está vazio!");
     }
 
@@ -117,7 +128,7 @@ async function enviarPedido() {
     }
 
     try {
-        // Validação server-side: recalcula o total com preços reais do banco e quantidades
+        // Validação server-side de preços e totais
         let total = 0;
         let itensParaMP = itensParaValidar;
         try {
@@ -131,29 +142,46 @@ async function enviarPedido() {
                 total = valData.totalValidado;
                 itensParaMP = valData.itensValidados;
             } else {
-                console.warn('Validação server-side indisponível, usando total local:', valData.error);
                 for (let i = 0; i < carrinho.length; i++) {
                     const qtd = Math.max(1, parseInt(carrinho[i].quantidade || 1, 10));
                     total += parseFloat(carrinho[i].preco) * qtd;
                 }
             }
         } catch (valErr) {
-            console.warn('Endpoint de validação offline, usando total local:', valErr.message);
             for (let i = 0; i < carrinho.length; i++) {
                 const qtd = Math.max(1, parseInt(carrinho[i].quantidade || 1, 10));
                 total += parseFloat(carrinho[i].preco) * qtd;
             }
         }
 
-        // Salva/atualiza o CPF do cliente no perfil do Supabase de forma transparente
-        if (usuarioAtual.id && usuarioAtual.cpf !== cpfInput) {
-            usuarioAtual.cpf = cpfInput;
-            supabaseClient.from('profiles').update({ cpf: cpfInput }).eq('id', usuarioAtual.id).catch(() => {});
+        // =====================================================================
+        // Sincronização Automática dos Dados da Compra no Perfil do Cliente
+        // =====================================================================
+        if (usuarioAtual && usuarioAtual.id) {
+            const dadosAtualizados = {
+                nome: nomeInput,
+                cpf: cpfInput,
+                telefone: whatsappInput,
+                cep: cepInput,
+                endereco: ruaInput || end,
+                numero: numeroInput,
+                complemento: complementoInput
+            };
+
+            try {
+                await supabaseClient.from('profiles').update(dadosAtualizados).eq('id', usuarioAtual.id);
+                Object.assign(usuarioAtual, dadosAtualizados);
+                if (typeof atualizarInterfaceUsuario === 'function') atualizarInterfaceUsuario();
+            } catch (errPerfil) {
+                console.warn('Aviso: Perfil não atualizou no Supabase:', errPerfil);
+            }
         }
 
-        const { data: inserted, error } = await supabaseClient.from('pedidos').insert({
+        // Inserção do pedido com dados completos e WhatsApp
+        let inserted = null;
+        const payloadComTelefone = {
             cliente_id: usuarioAtual.id,
-            nome_cliente: usuarioAtual.nome,
+            nome_cliente: nomeInput,
             email_cliente: usuarioAtual.email,
             data_pedido: new Date().toISOString().split('T')[0],
             data_entrega: data,
@@ -161,10 +189,22 @@ async function enviarPedido() {
             pagamento: formaPagamento,
             status: 'Pendente',
             itens: nomesItens.join(' + '),
-            endereco_entrega: end
-        }).select();
+            endereco_entrega: end,
+            telefone_cliente: whatsappInput
+        };
 
-        if (error) throw error;
+        const resInsert = await supabaseClient.from('pedidos').insert(payloadComTelefone).select();
+        if (resInsert.error) {
+            console.warn('Tentativa com coluna telefone_cliente falhou, inserindo sem ela:', resInsert.error.message);
+            // Fallback caso a migração da coluna telefone_cliente ainda não tenha sido rodada
+            delete payloadComTelefone.telefone_cliente;
+            payloadComTelefone.endereco_entrega = `${end} [WhatsApp: ${whatsappInput}]`;
+            const resFallback = await supabaseClient.from('pedidos').insert(payloadComTelefone).select();
+            if (resFallback.error) throw resFallback.error;
+            inserted = resFallback.data;
+        } else {
+            inserted = resInsert.data;
+        }
 
         const pedidoId = (inserted && inserted[0]) ? inserted[0].id : Date.now();
 
@@ -172,22 +212,23 @@ async function enviarPedido() {
             localStorage.setItem('lunoca_ultimo_pedido_id', String(pedidoId));
         } catch (e) {}
 
-        // Baixa automática no estoque para os doces vendidos
+        // Baixa automática no estoque
         if (typeof darBaixaEstoqueAposPedido === 'function') {
             darBaixaEstoqueAposPedido(itensParaMP, pedidoId);
         }
 
-        // Dados completos do pagador com o CPF verificado
+        // Dados do pagador com WhatsApp e CPF
         const clienteDados = {
-            nome: usuarioAtual.nome || 'Cliente Lunoca',
+            nome: nomeInput || 'Cliente Lunoca',
             email: usuarioAtual.email || 'cliente@lunocadoceria.com.br',
-            cpf: cpfInput
+            cpf: cpfInput,
+            telefone: whatsappInput
         };
 
-        // Iniciar fluxo de pagamento Mercado Pago (Pix ou Cartão)
+        // Iniciar fluxo de pagamento Mercado Pago
         if (typeof iniciarPagamentoMercadoPago === 'function') {
             await iniciarPagamentoMercadoPago(pedidoId, total, itensParaMP, formaPagamento, clienteDados);
-            alert('Pedido #' + pedidoId + ' criado. Acompanhe em Minha Conta > Meus Pedidos.');
+            alert('Pedido #' + pedidoId + ' criado com sucesso! Acompanhe o status pelo seu WhatsApp.');
         } else {
             alert("Pedido Confirmado! A Lunoca agradece a preferência.");
             mostrarTela('menu-section');
@@ -201,6 +242,16 @@ async function enviarPedido() {
             btnConfirmar.innerHTML = textoOriginalBtn || '<i class="fa-solid fa-check"></i> Confirmar Pedido';
         }
     }
+}
+
+function obterTelefonePedido(p) {
+    if (!p) return '';
+    if (p.telefone_cliente) return p.telefone_cliente;
+    if (p.endereco_entrega) {
+        const match = p.endereco_entrega.match(/\[WhatsApp:\s*([0-9()\-\s]+)\]/i);
+        if (match && match[1]) return match[1].trim();
+    }
+    return '';
 }
 
 async function carregarPedidosAdmin() {
@@ -226,8 +277,9 @@ async function carregarPedidosAdmin() {
             let p = pedidosGlobal[i];
             let dtaStr = p.data_entrega ? p.data_entrega.split('-').reverse().join('/') : "Data Indefinida";
             let statusAtual = p.status || 'Pendente';
+            let telCliente = obterTelefonePedido(p);
 
-            let selectStatus = '<select onchange="atualizarStatusPedido(\'' + p.id + '\', this.value)" style="font-size:12px; font-weight:bold; padding:4px 8px; border-radius:6px; border:1px solid #ccc; background:#fff; cursor:pointer;">';
+            let selectStatus = '<select onchange="atualizarStatusPedido(\'' + p.id + '\', this.value)" style="font-size:12px; font-weight:bold; padding:5px 8px; border-radius:8px; border:1px solid #cbd5e1; background:#fff; cursor:pointer;">';
             for (let s = 0; s < STATUS_OPTIONS.length; s++) {
                 let opt = STATUS_OPTIONS[s];
                 selectStatus += '<option value="' + opt + '" ' + (opt === statusAtual ? 'selected' : '') + '>' + opt + '</option>';
@@ -235,30 +287,41 @@ async function carregarPedidosAdmin() {
             selectStatus += '</select>';
 
             let tipoBadge = p.pagamento === 'pix' 
-                ? '<span style="background:#e6fffa; color:#0d9488; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;"><i class="fa-brands fa-pix"></i> PIX</span>'
-                : '<span style="background:#eff6ff; color:#2563eb; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold;"><i class="fa-solid fa-credit-card"></i> Cartão</span>';
+                ? '<span style="background:#e6fffa; color:#0d9488; padding:3px 8px; border-radius:10px; font-size:11px; font-weight:bold;"><i class="fa-brands fa-pix"></i> PIX</span>'
+                : '<span style="background:#eff6ff; color:#2563eb; padding:3px 8px; border-radius:10px; font-size:11px; font-weight:bold;"><i class="fa-solid fa-credit-card"></i> Cartão</span>';
 
             let linkMPBtn = p.mercado_pago_link 
                 ? `<a href="${p.mercado_pago_link}" target="_blank" rel="noopener" style="margin-left:8px; text-decoration:none;">
-                    <button style="padding:3px 8px; font-size:11px; background:#009ee3; color:#fff; border:none; border-radius:6px; cursor:pointer;">
-                      <i class="fa-solid fa-arrow-up-right-from-square"></i> Link Mercado Pago
+                    <button style="padding:4px 9px; font-size:11px; background:#009ee3; color:#fff; border:none; border-radius:6px; cursor:pointer;">
+                      <i class="fa-solid fa-arrow-up-right-from-square"></i> Mercado Pago
                     </button>
                    </a>`
                 : '';
 
-            html += '<div class="admin-item-card">' +
+            let waBtn = `<button type="button" onclick="abrirNotificacaoWhatsAppDireta('${p.id}', '${statusAtual}')" class="btn-whatsapp-sm" style="margin-left:8px;" title="Disparar WhatsApp para o cliente">
+                <i class="fa-brands fa-whatsapp"></i> Notificar Cliente
+            </button>`;
+
+            let telDisplay = telCliente 
+                ? `<span style="display:inline-flex; align-items:center; gap:4px; color:#128c7e; font-weight:600; margin-left:8px; font-size:12px;">
+                    <i class="fa-brands fa-whatsapp" style="color:#25d366;"></i> ${escapeHTML(telCliente)}
+                   </span>`
+                : '';
+
+            html += '<div class="admin-item-card" style="border-left: 5px solid var(--primary);">' +
                 '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">' +
-                    '<h4 style="margin:0; color:var(--primary); font-size: 16px;"><i class="fa-regular fa-calendar-check"></i> Entrega: ' + dtaStr + '</h4>' +
-                    '<div style="display:flex; align-items:center; gap:6px;">' +
+                    '<h4 style="margin:0; color:var(--primary-dark); font-size: 15px;"><i class="fa-regular fa-calendar-check"></i> Entrega: ' + dtaStr + '</h4>' +
+                    '<div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">' +
                         tipoBadge +
                         '<span style="font-size:12px; font-weight:bold; color:#555; margin-left:6px;">Status:</span> ' + selectStatus +
+                        waBtn +
                     '</div>' +
                 '</div>' +
                 '<div style="margin-top: 10px; font-size:13px; color: #555;">' +
-                    '<p style="margin:4px 0;"><strong>Cliente:</strong> ' + escapeHTML(p.nome_cliente) + '</p>' +
+                    '<p style="margin:4px 0;"><strong>Cliente:</strong> ' + escapeHTML(p.nome_cliente) + telDisplay + '</p>' +
                     '<p style="margin:4px 0;"><strong>Contato:</strong> ' + escapeHTML(p.email_cliente) + '</p>' +
                     '<p style="margin:4px 0;"><strong>Valor:</strong> R$ ' + parseFloat(p.total).toFixed(2) + ' | <strong>Endereço:</strong> ' + escapeHTML(p.endereco_entrega || 'Balcão') + linkMPBtn + '</p>' +
-                    '<p style="margin:8px 0 0 0; padding:8px; background:#f9f9f9; border-radius:6px; border:1px solid #eee;"><strong>Cesta:</strong> ' + escapeHTML(p.itens) + '</p>' +
+                    '<p style="margin:8px 0 0 0; padding:8px; background:#f9f9f9; border-radius:8px; border:1px solid #eee;"><strong>Cesta:</strong> ' + escapeHTML(p.itens) + '</p>' +
                 '</div>' +
             '</div>';
         }
@@ -273,14 +336,143 @@ async function atualizarStatusPedido(pedidoId, novoStatus) {
     try {
         const { error } = await supabaseClient.from('pedidos').update({ status: novoStatus }).eq('id', pedidoId);
         if (error) throw error;
-        alert("Status atualizado para: " + novoStatus);
+        
         let ped = pedidosGlobal.find(p => String(p.id) === String(pedidoId));
         if (ped) ped.status = novoStatus;
         if (typeof renderizarCalendario === 'function') renderizarCalendario();
+
+        // Notificação automática via WhatsApp
+        await notificarStatusPedidoWhatsApp(pedidoId, novoStatus);
+
     } catch (err) {
         console.error(err);
         alert("Erro ao atualizar status do pedido.");
     }
+}
+
+async function notificarStatusPedidoWhatsApp(pedidoId, novoStatus) {
+    try {
+        let p = pedidosGlobal.find(item => String(item.id) === String(pedidoId));
+        if (!p) {
+            const { data } = await supabaseClient.from('pedidos').select('*').eq('id', pedidoId).single();
+            p = data;
+        }
+        if (!p) return;
+
+        let telefone = obterTelefonePedido(p);
+        if (!telefone && p.cliente_id) {
+            try {
+                const { data: prof } = await supabaseClient.from('profiles').select('telefone').eq('id', p.cliente_id).single();
+                if (prof && prof.telefone) telefone = prof.telefone;
+            } catch (e) {}
+        }
+
+        if (!telefone) {
+            alert(`Status atualizado para: ${novoStatus}. (Cliente sem WhatsApp cadastrado)`);
+            return;
+        }
+
+        const cfg = typeof getWhatsAppConfig === 'function' ? getWhatsAppConfig() : { disparoAutomatico: true, provedor: 'direct' };
+        if (cfg.disparoAutomatico === false) {
+            alert(`Status atualizado para: ${novoStatus}. (Disparo automático desativado)`);
+            return;
+        }
+
+        // Mapeia template correspondente
+        let tplKey = 'confirmado';
+        const st = (novoStatus || '').toLowerCase();
+        if (st.includes('preparo')) tplKey = 'preparo';
+        else if (st.includes('pronto')) tplKey = 'pronto';
+        else if (st.includes('entregue')) tplKey = 'entregue';
+        else if (st.includes('cancelado')) tplKey = 'cancelado';
+        else if (st.includes('confirmado')) tplKey = 'confirmado';
+
+        const tpls = typeof getWhatsAppTemplates === 'function' ? getWhatsAppTemplates() : (typeof TEMPLATES_PADRAO_WA !== 'undefined' ? TEMPLATES_PADRAO_WA : {});
+        const template = (tpls && tpls[tplKey]) || (typeof TEMPLATES_PADRAO_WA !== 'undefined' ? TEMPLATES_PADRAO_WA[tplKey] : '');
+
+        const dadosMsg = {
+            cliente: p.nome_cliente || 'Cliente',
+            pedido: String(p.id),
+            status: novoStatus,
+            total: p.total,
+            data: p.data_entrega ? p.data_entrega.split('-').reverse().join('/') : '',
+            itens: p.itens || ''
+        };
+
+        const mensagem = typeof formatarMensagemWhatsApp === 'function' 
+            ? formatarMensagemWhatsApp(template, dadosMsg) 
+            : `Olá ${p.nome_cliente}! O status do seu pedido #${p.id} na Lunoca Doceria mudou para: ${novoStatus}.`;
+        
+        const foneDigits = telefone.replace(/\D/g, '');
+
+        if (cfg.provedor && cfg.provedor !== 'direct' && cfg.instanciaUrl) {
+            const res = await fetch('/api/whatsapp/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    telefone: foneDigits,
+                    mensagem: mensagem,
+                    provedor: cfg.provedor,
+                    instanciaUrl: cfg.instanciaUrl,
+                    apiKey: cfg.apiKey,
+                    instanciaNome: cfg.instanciaNome
+                })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                alert(`✅ Status alterado para "${novoStatus}" e notificação enviada no WhatsApp do cliente!`);
+            } else {
+                console.warn('Aviso: Gateway WhatsApp indisponível:', data);
+                alert(`ℹ️ Status alterado para "${novoStatus}". Use o botão verde do pedido para notificar via WhatsApp.`);
+            }
+        } else {
+            alert(`ℹ️ Status alterado para "${novoStatus}". Clique no botão verde de WhatsApp do pedido para notificar o cliente!`);
+        }
+    } catch (err) {
+        console.error('Erro ao notificar via WhatsApp:', err);
+    }
+}
+
+function abrirNotificacaoWhatsAppDireta(pedidoId, statusAtual) {
+    let p = pedidosGlobal.find(item => String(item.id) === String(pedidoId));
+    if (!p) return alert('Pedido não encontrado.');
+
+    let telefone = obterTelefonePedido(p);
+    if (!telefone) {
+        return alert('Telefone/WhatsApp do cliente não encontrado neste pedido.');
+    }
+
+    let tplKey = 'confirmado';
+    const st = (statusAtual || '').toLowerCase();
+    if (st.includes('preparo')) tplKey = 'preparo';
+    else if (st.includes('pronto')) tplKey = 'pronto';
+    else if (st.includes('entregue')) tplKey = 'entregue';
+    else if (st.includes('cancelado')) tplKey = 'cancelado';
+    else if (st.includes('confirmado')) tplKey = 'confirmado';
+
+    const tpls = typeof getWhatsAppTemplates === 'function' ? getWhatsAppTemplates() : (typeof TEMPLATES_PADRAO_WA !== 'undefined' ? TEMPLATES_PADRAO_WA : {});
+    const template = (tpls && tpls[tplKey]) || (typeof TEMPLATES_PADRAO_WA !== 'undefined' ? TEMPLATES_PADRAO_WA[tplKey] : '');
+
+    const dadosMsg = {
+        cliente: p.nome_cliente || 'Cliente',
+        pedido: String(p.id),
+        status: statusAtual,
+        total: p.total,
+        data: p.data_entrega ? p.data_entrega.split('-').reverse().join('/') : '',
+        itens: p.itens || ''
+    };
+
+    const mensagem = typeof formatarMensagemWhatsApp === 'function' 
+        ? formatarMensagemWhatsApp(template, dadosMsg)
+        : `Olá ${p.nome_cliente}! Seu pedido #${p.id} está com status: ${statusAtual}.`;
+
+    let foneLimpo = telefone.replace(/\D/g, '');
+    if (foneLimpo.length === 10 || foneLimpo.length === 11) {
+        foneLimpo = '55' + foneLimpo;
+    }
+
+    const url = `https://api.whatsapp.com/send?phone=${foneLimpo}&text=${encodeURIComponent(mensagem)}`;
+    window.open(url, '_blank');
 }
 
 function mudarMes(delta) {

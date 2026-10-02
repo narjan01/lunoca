@@ -22,35 +22,94 @@ window.alert = function(msg) {
   aviso.style.bottom = '30px';
   aviso.style.left = '50%';
   aviso.style.transform = 'translateX(-50%)';
-  aviso.style.background = 'var(--primary-dark)';
+  aviso.style.background = 'linear-gradient(135deg, var(--primary-dark), #6d28d9)';
   aviso.style.color = '#fff';
-  aviso.style.padding = '12px 24px';
+  aviso.style.padding = '14px 28px';
   aviso.style.borderRadius = '30px';
   aviso.style.zIndex = '99999';
-  aviso.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)';
+  aviso.style.boxShadow = '0 12px 30px rgba(0,0,0,0.25)';
   aviso.style.fontWeight = '600';
+  aviso.style.fontSize = '14px';
   aviso.style.textAlign = 'center';
-  aviso.style.width = '80%';
-  aviso.style.maxWidth = '400px';
+  aviso.style.width = '85%';
+  aviso.style.maxWidth = '420px';
+  aviso.style.backdropFilter = 'blur(8px)';
+  aviso.style.border = '1px solid rgba(255,255,255,0.2)';
   aviso.textContent = msg;
   document.body.appendChild(aviso);
   setTimeout(() => {
     aviso.style.opacity = '0';
-    aviso.style.transition = 'opacity 0.4s';
-    setTimeout(() => aviso.remove(), 400);
-  }, 3000);
+    aviso.style.transform = 'translateX(-50%) translateY(10px)';
+    aviso.style.transition = 'all 0.35s ease';
+    setTimeout(() => aviso.remove(), 350);
+  }, 3200);
 };
 
-function mostrarTela(telaId) {
-  document.querySelectorAll('.screen').forEach(function(el) { el.classList.remove('active'); });
-  document.getElementById(telaId).classList.add('active');
-  document.getElementById('user-dropdown').classList.remove('show');
-  window.scrollTo(0, 0);
-
-  if (telaId === 'menu-section' && carrinho.length > 0 && usuarioAtual.nivel !== 'admin') {
-    document.getElementById('btn-ver-carrinho').style.display = 'flex';
+function mascaraTelefone(input) {
+  if (!input) return;
+  let v = String(input.value || '').replace(/\D/g, '');
+  if (v.length > 11) v = v.substring(0, 11);
+  if (v.length > 10) {
+    input.value = v.replace(/^(\d{2})(\d{5})(\d{4})$/, '($1) $2-$3');
+  } else if (v.length > 6) {
+    input.value = v.replace(/^(\d{2})(\d{4})(\d{0,4})$/, '($1) $2-$3');
+  } else if (v.length > 2) {
+    input.value = v.replace(/^(\d{2})(\d{0,5})$/, '($1) $2');
   } else {
-    document.getElementById('btn-ver-carrinho').style.display = 'none';
+    input.value = v;
+  }
+}
+
+function buscarCepCheckout() {
+  const cepEl = document.getElementById('checkout-cep');
+  if (!cepEl) return;
+  let cep = cepEl.value.replace(/\D/g, '');
+  if (cep.length === 8) {
+    const ruaEl = document.getElementById('checkout-rua');
+    if (ruaEl) ruaEl.placeholder = "Buscando endereço nos Correios...";
+    fetch('https://viacep.com.br/ws/' + cep + '/json/')
+      .then(res => res.json())
+      .then(data => {
+        if (!data.erro) {
+          if (ruaEl) {
+            ruaEl.value = (data.logradouro ? data.logradouro + ", " : "") + (data.bairro ? data.bairro + " - " : "") + (data.localidade || "") + (data.uf ? "/" + data.uf : "");
+          }
+          const numEl = document.getElementById('checkout-numero');
+          if (numEl) numEl.focus();
+        } else {
+          if (ruaEl) ruaEl.placeholder = "Ex: Rua das Flores, 123";
+          alert("CEP não encontrado. Preencha seu endereço manualmente.");
+        }
+      })
+      .catch(() => {
+        if (ruaEl) ruaEl.placeholder = "Ex: Rua das Flores, 123";
+      });
+  }
+}
+
+function mostrarTela(telaId) {
+  const screens = document.querySelectorAll('.screen');
+  screens.forEach(function(el) { 
+    el.classList.remove('active'); 
+  });
+  
+  const target = document.getElementById(telaId);
+  if (target) {
+    target.classList.add('active');
+  }
+  
+  const dropdown = document.getElementById('user-dropdown');
+  if (dropdown) dropdown.classList.remove('show');
+  
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  const btnCarrinho = document.getElementById('btn-ver-carrinho');
+  if (btnCarrinho) {
+    if (telaId === 'menu-section' && carrinho.length > 0 && usuarioAtual.nivel !== 'admin') {
+      btnCarrinho.style.display = 'flex';
+    } else {
+      btnCarrinho.style.display = 'none';
+    }
   }
 
   if (telaId === 'admin-section') {
@@ -59,11 +118,42 @@ function mostrarTela(telaId) {
   }
 
   if (telaId === 'checkout-section') {
-    let endCompleto = usuarioAtual.endereco || "";
-    if (usuarioAtual.numero) endCompleto += (endCompleto ? ", " : "") + usuarioAtual.numero;
-    if (usuarioAtual.complemento) endCompleto += (endCompleto ? " - " : "") + usuarioAtual.complemento;
-    if (usuarioAtual.cep) endCompleto += (endCompleto ? " (CEP: " : "(CEP: ") + usuarioAtual.cep + ")";
-    document.getElementById('endereco-checkout').value = endCompleto;
+    // Sincroniza dados do usuário logado diretamente nos campos de checkout
+    if (usuarioAtual) {
+      const nomeInput = document.getElementById('checkout-nome');
+      if (nomeInput && usuarioAtual.nome) nomeInput.value = usuarioAtual.nome;
+
+      const whatsInput = document.getElementById('checkout-whatsapp');
+      if (whatsInput && usuarioAtual.telefone) {
+        whatsInput.value = usuarioAtual.telefone;
+        mascaraTelefone(whatsInput);
+      }
+
+      const cpfInput = document.getElementById('checkout-cpf');
+      if (cpfInput && usuarioAtual.cpf) {
+        cpfInput.value = usuarioAtual.cpf;
+        if (typeof mascaraCPF === 'function') mascaraCPF(cpfInput);
+      }
+
+      const cepInput = document.getElementById('checkout-cep');
+      if (cepInput && usuarioAtual.cep) cepInput.value = usuarioAtual.cep;
+
+      const ruaInput = document.getElementById('checkout-rua');
+      if (ruaInput && usuarioAtual.endereco) ruaInput.value = usuarioAtual.endereco;
+
+      const numInput = document.getElementById('checkout-numero');
+      if (numInput && usuarioAtual.numero) numInput.value = usuarioAtual.numero;
+
+      const compInput = document.getElementById('checkout-complemento');
+      if (compInput && usuarioAtual.complemento) compInput.value = usuarioAtual.complemento;
+
+      let endCompleto = usuarioAtual.endereco || "";
+      if (usuarioAtual.numero) endCompleto += (endCompleto ? ", " : "") + usuarioAtual.numero;
+      if (usuarioAtual.complemento) endCompleto += (endCompleto ? " - " : "") + usuarioAtual.complemento;
+      if (usuarioAtual.cep) endCompleto += (endCompleto ? " (CEP: " : "(CEP: ") + usuarioAtual.cep + ")";
+      const endEl = document.getElementById('endereco-checkout');
+      if (endEl) endEl.value = endCompleto;
+    }
   }
 
   if (telaId === 'conta-section' && typeof carregarMeusPedidos === 'function') {

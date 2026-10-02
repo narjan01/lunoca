@@ -12,6 +12,7 @@ function mudarTabAdmin(tab) {
     if(tab === 'calendario') renderizarCalendario();
     if(tab === 'usuarios') carregarUsuariosAdmin();
     if(tab === 'pagamentos') carregarConfigMercadoPagoAdmin();
+    if(tab === 'whatsapp') carregarConfigWhatsAppAdmin();
     if(tab === 'estoque' && typeof carregarEstoqueAdmin === 'function') carregarEstoqueAdmin();
     if(tab === 'financeiro' && typeof carregarFinanceiroAdmin === 'function') carregarFinanceiroAdmin();
 }
@@ -162,4 +163,228 @@ function toggleVisibilidadeTokenMP() {
             icon.classList.add('fa-eye');
         }
     }
+}
+
+// ==========================================================================
+// Conector WhatsApp Oficial da Loja & Notificações de Status
+// ==========================================================================
+
+const WHATSAPP_STORAGE_KEY = 'lunoca_whatsapp_config';
+const WHATSAPP_TEMPLATES_KEY = 'lunoca_whatsapp_templates';
+
+const TEMPLATES_PADRAO_WA = {
+    confirmado: "🧁 *Lunoca Doceria* - Olá {cliente}!\n\nSeu pedido *#{pedido}* foi *CONFIRMADO* com sucesso!\n📦 *Itens:* {itens}\n💰 *Total:* R$ {total}\n📅 *Data Agendada:* {data}\n\nJá estamos organizando tudo para adoçar o seu dia! Qualquer dúvida estamos à disposição. ❤️",
+    preparo: "👩‍🍳 *Lunoca Doceria* - Olá {cliente}!\n\nSeu pedido *#{pedido}* já está *EM PREPARO* em nossa cozinha artesanal!\nNossas confeiteiras estão cuidando de cada detalhe com muito amor. Em breve avisaremos quando estiver pronto!",
+    pronto: "🎁 *Lunoca Doceria* - Olá {cliente}!\n\nSeu pedido *#{pedido}* está *PRONTO*!\nSe você optou por retirada no balcão, já pode vir nos visitar. Se escolheu entrega em domicílio, seu pedido logo sairá com nosso entregador!\n\nTe esperamos com muita doçura! 🍰",
+    entregue: "🎉 *Lunoca Doceria* - Olá {cliente}!\n\nSeu pedido *#{pedido}* foi *ENTREGUE*!\nEsperamos que você ame cada mordida! Fique à vontade para nos marcar no Instagram @lunocadoceria.\n\nMuito obrigado pelo carinho e preferência! ❤️🧁",
+    cancelado: "Olá {cliente}! Informamos que seu pedido *#{pedido}* na Lunoca Doceria foi alterado para *CANCELADO*. Caso tenha qualquer dúvida, estamos à disposição por este número."
+};
+
+function getWhatsAppConfig() {
+    try {
+        const raw = localStorage.getItem(WHATSAPP_STORAGE_KEY);
+        if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return {
+        provedor: 'direct', // 'direct', 'evolution', 'z-api', 'webhook'
+        instanciaUrl: '',
+        instanciaNome: '',
+        apiKey: '',
+        numeroLoja: '',
+        disparoAutomatico: true
+    };
+}
+
+function getWhatsAppTemplates() {
+    try {
+        const raw = localStorage.getItem(WHATSAPP_TEMPLATES_KEY);
+        if (raw) return { ...TEMPLATES_PADRAO_WA, ...JSON.parse(raw) };
+    } catch (e) {}
+    return { ...TEMPLATES_PADRAO_WA };
+}
+
+function alternarCamposProvedorWA() {
+    const prov = document.getElementById('wa-provedor')?.value || 'direct';
+    const camposDiv = document.getElementById('wa-campos-api');
+    const rowEvo = document.getElementById('wa-row-evolution-extra');
+    const lblUrl = document.getElementById('lbl-wa-url');
+    const helpUrl = document.getElementById('help-wa-url');
+    const dot = document.getElementById('whatsapp-dot-indicador');
+    const txtStatus = document.getElementById('whatsapp-status-texto');
+
+    if (camposDiv) {
+        if (prov === 'direct') {
+            camposDiv.style.display = 'none';
+            if (dot) { dot.className = 'whatsapp-pulse-dot direct'; }
+            if (txtStatus) txtStatus.textContent = 'Modo Direto 1-Clique Ativo (Sem Custos)';
+        } else {
+            camposDiv.style.display = 'block';
+            if (dot) { dot.className = 'whatsapp-pulse-dot online'; }
+            if (txtStatus) txtStatus.textContent = `Conector ${prov.toUpperCase()} Configurado`;
+        }
+    }
+
+    if (prov === 'evolution') {
+        if (rowEvo) rowEvo.style.display = 'flex';
+        if (lblUrl) lblUrl.textContent = 'URL Base da Evolution API';
+        if (helpUrl) helpUrl.textContent = 'Ex: https://api.meuzap.com (sem a rota final)';
+    } else if (prov === 'z-api') {
+        if (rowEvo) rowEvo.style.display = 'none';
+        if (lblUrl) lblUrl.textContent = 'URL Completa do Endpoint Z-API';
+        if (helpUrl) helpUrl.textContent = 'Ex: https://api.z-api.io/instances/SUA_INSTANCIA/token/SEU_TOKEN';
+    } else if (prov === 'webhook') {
+        if (rowEvo) rowEvo.style.display = 'none';
+        if (lblUrl) lblUrl.textContent = 'URL do Webhook (n8n, Make ou Servidor)';
+        if (helpUrl) helpUrl.textContent = 'Endpoint HTTP POST que receberá o payload da mensagem.';
+    }
+}
+
+function carregarConfigWhatsAppAdmin() {
+    const cfg = getWhatsAppConfig();
+    const tpls = getWhatsAppTemplates();
+
+    const provEl = document.getElementById('wa-provedor');
+    const urlEl = document.getElementById('wa-instancia-url');
+    const nomeEl = document.getElementById('wa-instancia-nome');
+    const keyEl = document.getElementById('wa-api-key');
+    const numEl = document.getElementById('wa-numero-loja');
+    const autoEl = document.getElementById('wa-disparo-automatico');
+
+    if (provEl) provEl.value = cfg.provedor || 'direct';
+    if (urlEl) urlEl.value = cfg.instanciaUrl || '';
+    if (nomeEl) nomeEl.value = cfg.instanciaNome || '';
+    if (keyEl) keyEl.value = cfg.apiKey || '';
+    if (numEl) numEl.value = cfg.numeroLoja || '';
+    if (autoEl) autoEl.checked = cfg.disparoAutomatico !== false;
+
+    // Preenche templates
+    const tplConf = document.getElementById('wa-tpl-confirmado');
+    const tplPrep = document.getElementById('wa-tpl-preparo');
+    const tplPron = document.getElementById('wa-tpl-pronto');
+    const tplEntr = document.getElementById('wa-tpl-entregue');
+    const tplCanc = document.getElementById('wa-tpl-cancelado');
+
+    if (tplConf) tplConf.value = tpls.confirmado || TEMPLATES_PADRAO_WA.confirmado;
+    if (tplPrep) tplPrep.value = tpls.preparo || TEMPLATES_PADRAO_WA.preparo;
+    if (tplPron) tplPron.value = tpls.pronto || TEMPLATES_PADRAO_WA.pronto;
+    if (tplEntr) tplEntr.value = tpls.entregue || TEMPLATES_PADRAO_WA.entregue;
+    if (tplCanc) tplCanc.value = tpls.cancelado || TEMPLATES_PADRAO_WA.cancelado;
+
+    alternarCamposProvedorWA();
+}
+
+function salvarConfigWhatsAppAdmin() {
+    const prov = document.getElementById('wa-provedor')?.value || 'direct';
+    const url = (document.getElementById('wa-instancia-url')?.value || '').trim();
+    const nome = (document.getElementById('wa-instancia-nome')?.value || '').trim();
+    const key = (document.getElementById('wa-api-key')?.value || '').trim();
+    const num = (document.getElementById('wa-numero-loja')?.value || '').trim();
+    const auto = document.getElementById('wa-disparo-automatico')?.checked !== false;
+
+    const novaCfg = {
+        provedor: prov,
+        instanciaUrl: url,
+        instanciaNome: nome,
+        apiKey: key,
+        numeroLoja: num,
+        disparoAutomatico: auto
+    };
+
+    try {
+        localStorage.setItem(WHATSAPP_STORAGE_KEY, JSON.stringify(novaCfg));
+        alert('Configurações do WhatsApp salvas com sucesso!');
+        alternarCamposProvedorWA();
+    } catch (e) {
+        alert('Erro ao salvar configurações do WhatsApp: ' + e.message);
+    }
+}
+
+function salvarTemplatesWhatsAppAdmin() {
+    const tpls = {
+        confirmado: document.getElementById('wa-tpl-confirmado')?.value || TEMPLATES_PADRAO_WA.confirmado,
+        preparo: document.getElementById('wa-tpl-preparo')?.value || TEMPLATES_PADRAO_WA.preparo,
+        pronto: document.getElementById('wa-tpl-pronto')?.value || TEMPLATES_PADRAO_WA.pronto,
+        entregue: document.getElementById('wa-tpl-entregue')?.value || TEMPLATES_PADRAO_WA.entregue,
+        cancelado: document.getElementById('wa-tpl-cancelado')?.value || TEMPLATES_PADRAO_WA.cancelado
+    };
+
+    try {
+        localStorage.setItem(WHATSAPP_TEMPLATES_KEY, JSON.stringify(tpls));
+        alert('Modelos de mensagem do WhatsApp atualizados com sucesso!');
+    } catch (e) {
+        alert('Erro ao salvar modelos: ' + e.message);
+    }
+}
+
+function restaurarTemplatesWhatsAppPadrao() {
+    if (confirm('Deseja restaurar todos os modelos de mensagem para os padrões da Lunoca Doceria?')) {
+        try {
+            localStorage.setItem(WHATSAPP_TEMPLATES_KEY, JSON.stringify(TEMPLATES_PADRAO_WA));
+            carregarConfigWhatsAppAdmin();
+            alert('Modelos padrão restaurados!');
+        } catch (e) {}
+    }
+}
+
+async function testarConexaoWhatsApp() {
+    const statusDiv = document.getElementById('wa-status-teste');
+    if (!statusDiv) return;
+
+    const cfg = getWhatsAppConfig();
+    const foneLoja = (document.getElementById('wa-numero-loja')?.value || cfg.numeroLoja || '').replace(/\D/g, '');
+
+    if (!foneLoja) {
+        return alert('Por favor, informe o WhatsApp da Loja no campo acima para receber o teste!');
+    }
+
+    statusDiv.innerHTML = '<div style="padding:10px; background:#f0fdf4; color:#166534; border-radius:8px; font-size:12px;"><i class="fa-solid fa-spinner fa-spin"></i> Disparando mensagem de teste para ' + foneLoja + '...</div>';
+
+    try {
+        const msgTeste = "🍰 *Lunoca Doceria* - Teste de Conexão WhatsApp realizado com sucesso! Sua loja está pronta para notificar clientes automaticamente.";
+        
+        if (cfg.provedor === 'direct' || !cfg.instanciaUrl) {
+            statusDiv.innerHTML = `<div style="padding:12px; background:#fffbeb; color:#92400e; border-radius:8px; font-size:12px; border:1px solid #fde68a;">
+                <i class="fa-solid fa-circle-info"></i> <strong>Modo Direto 1-Clique Ativo:</strong> Sem gateway externo configurado.<br>
+                <a href="https://api.whatsapp.com/send?phone=55${foneLoja}&text=${encodeURIComponent(msgTeste)}" target="_blank" class="btn-whatsapp-sm" style="margin-top:8px;">
+                    <i class="fa-brands fa-whatsapp"></i> Testar no WhatsApp Web / App
+                </a>
+            </div>`;
+            return;
+        }
+
+        const res = await fetch('/api/whatsapp/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                telefone: foneLoja,
+                mensagem: msgTeste,
+                provedor: cfg.provedor,
+                instanciaUrl: cfg.instanciaUrl,
+                apiKey: cfg.apiKey,
+                instanciaNome: cfg.instanciaNome
+            })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+            statusDiv.innerHTML = '<div style="padding:12px; background:#ecfdf5; color:#065f46; border-radius:8px; font-size:12px; border:1px solid #a7f3d0;"><i class="fa-solid fa-circle-check"></i> <strong>Mensagem enviada com sucesso!</strong> Verifique seu WhatsApp (' + foneLoja + ').</div>';
+        } else {
+            statusDiv.innerHTML = '<div style="padding:12px; background:#fff1f2; color:#be123c; border-radius:8px; font-size:12px; border:1px solid #fecdd3;"><i class="fa-solid fa-circle-xmark"></i> <strong>Falha no envio:</strong> ' + escapeHTML(data.error || 'Erro no gateway WhatsApp.') + '</div>';
+        }
+    } catch (err) {
+        statusDiv.innerHTML = '<div style="padding:10px; background:#fff1f2; color:#be123c; border-radius:8px; font-size:12px;"><i class="fa-solid fa-triangle-exclamation"></i> Erro de rede ao testar: ' + escapeHTML(err.message) + '</div>';
+    }
+}
+
+function formatarMensagemWhatsApp(template, dados) {
+    if (!template) return '';
+    let msg = template;
+    msg = msg.replace(/{cliente}/g, dados.cliente || 'Cliente');
+    msg = msg.replace(/{pedido}/g, dados.pedido || '');
+    msg = msg.replace(/{status}/g, dados.status || '');
+    msg = msg.replace(/{total}/g, Number(dados.total || 0).toFixed(2));
+    msg = msg.replace(/{data}/g, dados.data || 'A combinar');
+    msg = msg.replace(/{itens}/g, dados.itens || '');
+    msg = msg.replace(/{loja}/g, 'Lunoca Doceria');
+    return msg;
 }

@@ -171,6 +171,34 @@
 
       <!-- Card de Dados de Entrega e Pagamento -->
       <div class="panel-card" style="flex-direction: column; align-items: stretch;">
+        <!-- Seção 1: Dados do Cliente & WhatsApp -->
+        <h3 style="margin-top:0; border-bottom: 2px dashed #eee; padding-bottom: 10px; font-size: 15px; color: var(--text-dark); display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-user-check" style="color:var(--primary);"></i> Identificação do Cliente
+        </h3>
+
+        <div class="form-group">
+          <label><i class="fa-solid fa-user"></i> Nome Completo <span style="color:red;">*</span></label>
+          <input type="text" id="checkout-nome" placeholder="Seu nome completo" required>
+        </div>
+
+        <div class="row-2">
+          <div class="form-group">
+            <label><i class="fa-brands fa-whatsapp" style="color:#25d366;"></i> WhatsApp / Celular <span style="color:red;">*</span></label>
+            <input type="tel" id="checkout-whatsapp" placeholder="(00) 00000-0000" maxlength="15" oninput="if(typeof mascaraTelefone==='function')mascaraTelefone(this)" required>
+            <span style="font-size:11px; color:#666;">Você receberá o status do pedido via WhatsApp.</span>
+          </div>
+          <div class="form-group">
+            <label><i class="fa-solid fa-id-card"></i> CPF do Titular <span style="color:red;">*</span></label>
+            <input type="text" id="checkout-cpf" placeholder="000.000.000-00" maxlength="14" oninput="if(typeof mascaraCPF==='function')mascaraCPF(this)" required>
+            <span style="font-size:11px; color:#666;">Necessário para PIX / Cartão.</span>
+          </div>
+        </div>
+
+        <!-- Seção 2: Modalidade & Endereço -->
+        <h3 style="margin-top:15px; border-bottom: 2px dashed #eee; padding-bottom: 10px; font-size: 15px; color: var(--text-dark); display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-truck-fast" style="color:var(--primary);"></i> Entrega ou Retirada
+        </h3>
+
         <!-- Seletor de Modalidade: Entrega vs Retirada -->
         <div class="form-group">
           <label><i class="fa-solid fa-truck-ramp-box"></i> Modalidade de Recebimento</label>
@@ -190,20 +218,39 @@
         </div>
 
         <!-- Container do Endereco (oculta em caso de retirada) -->
-        <div id="campo-endereco-container" class="form-group">
-          <label><i class="fa-solid fa-location-dot"></i> Endereço Completo de Entrega</label>
-          <textarea id="endereco-checkout" rows="2" placeholder="Rua, número, complemento e bairro..." required></textarea>
+        <div id="campo-endereco-container">
+          <div class="form-group">
+            <label><i class="fa-solid fa-map-pin"></i> CEP <span style="font-weight:normal; color:#888; font-size:11px;">(Preenchimento automático)</span></label>
+            <div style="display:flex; gap:8px;">
+              <input type="text" id="checkout-cep" placeholder="00000-000" maxlength="9" onblur="if(typeof buscarCepCheckout==='function')buscarCepCheckout()">
+              <button type="button" class="btn-outline" onclick="if(typeof buscarCepCheckout==='function')buscarCepCheckout()" style="padding:0 12px; font-size:12px; white-space:nowrap;"><i class="fa-solid fa-magnifying-glass"></i> Buscar</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label><i class="fa-solid fa-location-dot"></i> Rua / Logradouro / Bairro</label>
+            <input type="text" id="checkout-rua" placeholder="Ex: Rua das Flores, 123 - Centro">
+          </div>
+          <div class="row-2">
+            <div class="form-group">
+              <label>Número</label>
+              <input type="text" id="checkout-numero" placeholder="123">
+            </div>
+            <div class="form-group">
+              <label>Complemento</label>
+              <input type="text" id="checkout-complemento" placeholder="Apto 42, Bloco B">
+            </div>
+          </div>
+          <input type="hidden" id="endereco-checkout">
         </div>
 
         <div id="aviso-retirada-balcao" style="display: none; padding: 12px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; font-size: 13px; color: #065f46; margin-bottom: 15px;">
           <i class="fa-solid fa-location-dot"></i> <strong>Ponto de Retirada:</strong> Seu pedido ficará disponível para retirada no balcão da Lunoca Doceria na data agendada.
         </div>
 
-        <!-- Campo de CPF do Titular Obrigatório -->
-        <div class="form-group">
-          <label><i class="fa-solid fa-id-card"></i> CPF do Titular <span style="color:red;">*</span> <span style="font-weight:normal; color:#888; font-size:11px;">(Necessário para PIX / Cartão)</span></label>
-          <input type="text" id="checkout-cpf" placeholder="000.000.000-00" maxlength="14" oninput="if(typeof mascaraCPF==='function')mascaraCPF(this)" required>
-        </div>
+        <!-- Seção 3: Pagamento -->
+        <h3 style="margin-top:15px; border-bottom: 2px dashed #eee; padding-bottom: 10px; font-size: 15px; color: var(--text-dark); display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-credit-card" style="color:var(--primary);"></i> Pagamento Seguro
+        </h3>
 
         <div class="form-group">
           <label><i class="fa-solid fa-money-bill-wave"></i> Forma de Pagamento (Mercado Pago Oficial)</label>
@@ -212,7 +259,7 @@
             <option value="cartao">Cartão de Crédito Transparente (no próprio site até 12x)</option>
           </select>
         </div>
-        <div style="display: flex; gap: 10px; margin-top: 10px;">
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
           <button type="button" class="btn-outline" style="flex: 1;" onclick="mostrarTela('menu-section')">Voltar</button>
           <button type="button" id="btn-confirmar-checkout" style="flex: 2;" onclick="enviarPedido()"><i class="fa-solid fa-check"></i> Confirmar Pedido</button>
         </div>
@@ -229,6 +276,7 @@
         <button id="tab-btn-financeiro" onclick="mudarTabAdmin('financeiro')"><i class="fa-solid fa-chart-line"></i> Financeiro</button>
         <button id="tab-btn-usuarios" onclick="mudarTabAdmin('usuarios')"><i class="fa-solid fa-users"></i> Usuários</button>
         <button id="tab-btn-pagamentos" onclick="mudarTabAdmin('pagamentos')"><i class="fa-solid fa-credit-card"></i> Mercado Pago</button>
+        <button id="tab-btn-whatsapp" onclick="mudarTabAdmin('whatsapp')"><i class="fa-brands fa-whatsapp" style="color:#25D366;"></i> WhatsApp</button>
       </div>
       <div id="admin-tab-pedidos" class="admin-tab active">
         <button onclick="carregarPedidosAdmin()" style="width: 100%; margin-bottom: 15px;" class="btn-outline"><i class="fa-solid fa-rotate-right"></i> Atualizar Pedidos</button>
@@ -370,6 +418,135 @@
           <div style="display: flex; gap: 8px;">
             <input type="text" readonly value="https://lunocadoceria.com.br/api/mercadopago/webhook" style="font-family: monospace; font-size: 12px; background: #f4f4f5; color: #333;" id="input-webhook-url-admin">
             <button class="btn-outline" onclick="navigator.clipboard.writeText('https://lunocadoceria.com.br/api/mercadopago/webhook'); alert('URL do Webhook copiada!');" style="white-space: nowrap;"><i class="fa-regular fa-copy"></i> Copiar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- ABA: Conector WhatsApp Oficial da Loja                           -->
+      <!-- ================================================================= -->
+      <div id="admin-tab-whatsapp" class="admin-tab">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 8px;">
+          <h3 style="margin:0;"><i class="fa-brands fa-whatsapp" style="color:#25d366;"></i> Conector WhatsApp da Loja</h3>
+          <div id="whatsapp-status-badge-container">
+            <span class="whatsapp-status-badge" style="font-size: 11px; background: #e8fdf0; color: #128c7e; padding: 5px 12px; border-radius: 20px; font-weight: bold; border: 1px solid #a7f3d0; display: inline-flex; align-items: center;">
+              <span class="whatsapp-pulse-dot direct" id="whatsapp-dot-indicador"></span> <span id="whatsapp-status-texto">Modo Direto 1-Clique Ativo</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- Banner Informativo -->
+        <div class="panel-card" style="flex-direction: column; align-items: stretch; border: 1px solid #bbf7d0; background: #f0fdf4; margin-bottom: 20px;">
+          <div style="display: flex; gap: 12px; align-items: flex-start;">
+            <i class="fa-brands fa-whatsapp" style="color: #16a34a; font-size: 24px; margin-top: 2px;"></i>
+            <div style="font-size: 13px; color: #166534; line-height: 1.5;">
+              <strong>Disparo Automático & Notificações de Status:</strong><br>
+              Vincule seu WhatsApp (via Evolution API, Z-API ou Webhook) para que a plataforma notifique seus clientes automaticamente quando o status do pedido mudar (Pendente &rarr; Confirmado &rarr; Em Preparo &rarr; Pronto &rarr; Entregue).
+              Você também conta com o <strong>botão verde de 1-clique</strong> em cada pedido para notificar diretamente via WhatsApp Web / App.
+            </div>
+          </div>
+        </div>
+
+        <!-- Card de Configuração do Provedor -->
+        <div class="panel-card" style="flex-direction: column; align-items: stretch;">
+          <h4 style="margin-top:0; margin-bottom: 15px; color: var(--text-dark); display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-tower-broadcast" style="color:var(--primary);"></i> Configuração do Gateway WhatsApp
+          </h4>
+
+          <div class="form-group">
+            <label>Tipo de Conexão / Provedor</label>
+            <select id="wa-provedor" onchange="alternarCamposProvedorWA()">
+              <option value="direct">WhatsApp Web Direto (1-Clique nativo sem custos de API)</option>
+              <option value="evolution" selected>Evolution API (Recomendado - Multidispositivo / Self-hosted / SaaS)</option>
+              <option value="z-api">Z-API (Gateway Brasileiro)</option>
+              <option value="webhook">Webhook Personalizado (n8n, Make, Flowise, etc.)</option>
+            </select>
+          </div>
+
+          <div id="wa-campos-api">
+            <div class="form-group">
+              <label id="lbl-wa-url">URL da Instância / Endpoint</label>
+              <input type="text" id="wa-instancia-url" placeholder="https://api.meuzap.com" style="font-family: monospace; font-size: 13px;">
+              <span style="font-size: 11px; color: #666;" id="help-wa-url">URL base da sua Evolution API ou endpoint Z-API.</span>
+            </div>
+
+            <div class="row-2" id="wa-row-evolution-extra">
+              <div class="form-group">
+                <label>Nome da Instância</label>
+                <input type="text" id="wa-instancia-nome" placeholder="lunoca" style="font-family: monospace; font-size: 13px;">
+              </div>
+              <div class="form-group">
+                <label>API Key / Token Global</label>
+                <input type="password" id="wa-api-key" placeholder="••••••••••••••••" style="font-family: monospace; font-size: 13px;">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>WhatsApp Remetente da Loja (com DDD)</label>
+              <input type="text" id="wa-numero-loja" placeholder="(21) 98765-4321" maxlength="15" oninput="if(typeof mascaraTelefone==='function')mascaraTelefone(this)">
+              <span style="font-size: 11px; color: #666;">Número de suporte exibido nas mensagens aos clientes.</span>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 10px; margin-bottom: 15px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600;">
+              <input type="checkbox" id="wa-disparo-automatico" checked style="width: 18px; height: 18px; accent-color: #25d366;">
+              Disparar mensagem no WhatsApp automaticamente ao alterar status do pedido
+            </label>
+          </div>
+
+          <div style="display: flex; gap: 10px; margin-top: 5px;">
+            <button onclick="salvarConfigWhatsAppAdmin()" style="flex: 2; background: #16a34a;"><i class="fa-solid fa-floppy-disk"></i> Salvar Conexão WhatsApp</button>
+            <button onclick="testarConexaoWhatsApp()" class="btn-outline" style="flex: 1;"><i class="fa-solid fa-paper-plane"></i> Testar Envio</button>
+          </div>
+
+          <div id="wa-status-teste" style="margin-top: 15px;"></div>
+        </div>
+
+        <!-- Card de Modelos de Mensagem (Templates) -->
+        <div class="panel-card" style="flex-direction: column; align-items: stretch; margin-top: 20px;">
+          <h4 style="margin-top:0; margin-bottom: 10px; color: var(--text-dark); display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-comments" style="color:var(--primary);"></i> Modelos de Mensagens por Status
+          </h4>
+          <p style="font-size: 12px; color: #666; margin-bottom: 12px;">
+            Tags dinâmicas disponíveis: 
+            <span class="whatsapp-tag-pill">{cliente}</span>
+            <span class="whatsapp-tag-pill">{pedido}</span>
+            <span class="whatsapp-tag-pill">{status}</span>
+            <span class="whatsapp-tag-pill">{total}</span>
+            <span class="whatsapp-tag-pill">{data}</span>
+            <span class="whatsapp-tag-pill">{itens}</span>
+            <span class="whatsapp-tag-pill">{loja}</span>
+          </p>
+
+          <div class="whatsapp-template-card">
+            <strong style="font-size: 13px; color: #0284c7;"><i class="fa-solid fa-circle-check"></i> Status: Confirmado</strong>
+            <textarea id="wa-tpl-confirmado" rows="3" style="width: 100%; margin-top: 6px; font-size: 12px; border-radius: 8px; border: 1px solid #cbd5e1; padding: 8px;"></textarea>
+          </div>
+
+          <div class="whatsapp-template-card">
+            <strong style="font-size: 13px; color: #d97706;"><i class="fa-solid fa-fire-burner"></i> Status: Em Preparo</strong>
+            <textarea id="wa-tpl-preparo" rows="3" style="width: 100%; margin-top: 6px; font-size: 12px; border-radius: 8px; border: 1px solid #cbd5e1; padding: 8px;"></textarea>
+          </div>
+
+          <div class="whatsapp-template-card">
+            <strong style="font-size: 13px; color: #7c3aed;"><i class="fa-solid fa-gift"></i> Status: Pronto para Retirada / Envio</strong>
+            <textarea id="wa-tpl-pronto" rows="3" style="width: 100%; margin-top: 6px; font-size: 12px; border-radius: 8px; border: 1px solid #cbd5e1; padding: 8px;"></textarea>
+          </div>
+
+          <div class="whatsapp-template-card">
+            <strong style="font-size: 13px; color: #16a34a;"><i class="fa-solid fa-truck-ramp-box"></i> Status: Entregue</strong>
+            <textarea id="wa-tpl-entregue" rows="3" style="width: 100%; margin-top: 6px; font-size: 12px; border-radius: 8px; border: 1px solid #cbd5e1; padding: 8px;"></textarea>
+          </div>
+
+          <div class="whatsapp-template-card">
+            <strong style="font-size: 13px; color: #dc2626;"><i class="fa-solid fa-circle-xmark"></i> Status: Cancelado</strong>
+            <textarea id="wa-tpl-cancelado" rows="3" style="width: 100%; margin-top: 6px; font-size: 12px; border-radius: 8px; border: 1px solid #cbd5e1; padding: 8px;"></textarea>
+          </div>
+
+          <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button onclick="salvarTemplatesWhatsAppAdmin()" style="flex: 1;"><i class="fa-solid fa-floppy-disk"></i> Salvar Modelos</button>
+            <button onclick="restaurarTemplatesWhatsAppPadrao()" class="btn-outline" style="flex: 1;"><i class="fa-solid fa-arrow-rotate-left"></i> Restaurar Padrões</button>
           </div>
         </div>
       </div>
