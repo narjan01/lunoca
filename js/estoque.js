@@ -416,16 +416,43 @@ function buscarEstoque(termo) {
 async function darBaixaEstoqueAposPedido(carrinhoItens, pedidoId) {
   if (!carrinhoItens || carrinhoItens.length === 0) return;
 
-  for (let i = 0; i < carrinhoItens.length; i++) {
-    const item = carrinhoItens[i];
-    if (!item.id) continue;
+  const itensFormatados = carrinhoItens.map(it => ({
+    id: it.id,
+    nome: it.nome,
+    quantidade: Math.max(1, parseInt(it.quantidade || 1, 10))
+  })).filter(it => it.id);
 
+  if (itensFormatados.length === 0) return;
+
+  try {
+    // 1. Tenta execução atômica em lote no banco (Melhor performance e sem N+1 queries)
+    const { data: resRpc, error: errRpc } = await supabaseClient.rpc('baixar_estoque_pedido_batch', {
+      p_pedido_id: pedidoId,
+      p_itens: itensFormatados
+    });
+
+    if (!errRpc && resRpc && resRpc.success) {
+      for (const item of itensFormatados) {
+        const prodLocal = produtos.find(p => p.id == item.id);
+        if (prodLocal && prodLocal.controlar_estoque !== false) {
+          const saldo = parseInt(prodLocal.estoque_qtd || 10, 10);
+          prodLocal.estoque_qtd = Math.max(0, saldo - item.quantidade);
+        }
+      }
+      return;
+    }
+  } catch (errBatch) {
+    console.warn('[Estoque] RPC batch indisponível, usando fallback resiliente:', errBatch);
+  }
+
+  // 2. Fallback resiliente com contagem exata da quantidade comprada
+  for (let i = 0; i < itensFormatados.length; i++) {
+    const item = itensFormatados[i];
     try {
-      // Chama a função SQL ou faz update direto
       const prodLocal = produtos.find(p => p.id == item.id);
       if (prodLocal && prodLocal.controlar_estoque !== false) {
         const saldoAtual = parseInt(prodLocal.estoque_qtd || 10, 10);
-        const novoSaldo = Math.max(0, saldoAtual - 1);
+        const novoSaldo = Math.max(0, saldoAtual - item.quantidade);
 
         await supabaseClient
           .from('produtos')
@@ -438,7 +465,7 @@ async function darBaixaEstoqueAposPedido(carrinhoItens, pedidoId) {
             produto_id: item.id,
             produto_nome: item.nome,
             tipo: 'venda',
-            quantidade: 1,
+            quantidade: item.quantidade,
             saldo_resultante: novoSaldo,
             motivo: `Venda no Pedido #${pedidoId}`,
             pedido_id: pedidoId,
@@ -448,7 +475,7 @@ async function darBaixaEstoqueAposPedido(carrinhoItens, pedidoId) {
         prodLocal.estoque_qtd = novoSaldo;
       }
     } catch (e) {
-      console.warn('Falha na baixa do item ' + item.id, e);
+      console.warn('[Estoque] Falha na baixa do item ' + item.id, e);
     }
   }
 }

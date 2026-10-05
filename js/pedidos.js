@@ -177,7 +177,7 @@ async function enviarPedido() {
             }
         }
 
-        // Inserção do pedido com dados completos e WhatsApp
+        // Inserção do pedido com dados completos, WhatsApp e itens estruturados JSONB
         let inserted = null;
         const payloadComTelefone = {
             cliente_id: usuarioAtual.id,
@@ -189,14 +189,16 @@ async function enviarPedido() {
             pagamento: formaPagamento,
             status: 'Pendente',
             itens: nomesItens.join(' + '),
+            itens_json: itensParaMP,
             endereco_entrega: end,
             telefone_cliente: whatsappInput
         };
 
         const resInsert = await supabaseClient.from('pedidos').insert(payloadComTelefone).select();
         if (resInsert.error) {
-            console.warn('Tentativa com coluna telefone_cliente falhou, inserindo sem ela:', resInsert.error.message);
-            // Fallback caso a migração da coluna telefone_cliente ainda não tenha sido rodada
+            console.warn('Tentativa com colunas estendidas falhou, aplicando fallback:', resInsert.error.message);
+            // Fallback caso a migração ainda não tenha sido rodada no Supabase
+            delete payloadComTelefone.itens_json;
             delete payloadComTelefone.telefone_cliente;
             payloadComTelefone.endereco_entrega = `${end} [WhatsApp: ${whatsappInput}]`;
             const resFallback = await supabaseClient.from('pedidos').insert(payloadComTelefone).select();
