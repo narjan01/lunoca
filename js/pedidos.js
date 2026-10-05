@@ -82,9 +82,9 @@ async function enviarPedido() {
         return alert("Por favor, informe um WhatsApp válido com DDD (ex: (21) 98765-4321) para acompanhar seu pedido!");
     }
 
-    if (cpfInput.length !== 11) {
+    if (!validarCPF(cpfInput)) {
         if (btnConfirmar) { btnConfirmar.disabled = false; btnConfirmar.innerHTML = textoOriginalBtn; }
-        return alert("Por favor, digite um CPF válido com 11 dígitos para emissão do pagamento.");
+        return alert("Por favor, digite um CPF válido e com dígitos verificadores corretos para o pagamento.");
     }
 
     if (modalidade === 'retirada') {

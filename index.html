@@ -69,7 +69,7 @@
         Lunoca
       </div>
       
-      <button id="btn-header-auth" class="user-menu-btn" onclick="toggleUserMenu()">
+      <button id="btn-header-auth" class="user-menu-btn" onclick="toggleUserMenu()" aria-label="Minha Conta e Login">
          <i class="fa-solid fa-user"></i>
       </button>
       
@@ -688,7 +688,7 @@
 
   <div id="modal-produto" class="modal-overlay">
     <div class="modal-content">
-      <span class="close-modal" onclick="fecharModalProduto()">&times;</span>
+      <span class="close-modal" role="button" aria-label="Fechar janela" onclick="fecharModalProduto()">&times;</span>
       <div class="modal-img-container"><img id="modal-img" src="" alt="Produto"></div>
       <h3 class="modal-title" id="modal-nome">Nome</h3>
       <div class="modal-price" id="modal-preco">R$ 0,00</div>
@@ -704,7 +704,7 @@
   <!-- Modal de Ajuste de Estoque -->
   <div id="modal-ajuste-estoque" class="modal-overlay">
     <div class="modal-content" style="max-width: 420px; text-align: left;">
-      <span class="close-modal" onclick="fecharModalAjusteEstoque()">&times;</span>
+      <span class="close-modal" role="button" aria-label="Fechar janela" onclick="fecharModalAjusteEstoque()">&times;</span>
       <h3 style="margin-top:0; color:var(--text-dark); font-size:17px;"><i class="fa-solid fa-sliders" style="color:var(--primary);"></i> Ajustar Estoque</h3>
       <p style="font-size:13px; color:#666; margin-top:-5px;">Doce: <strong id="ajuste-prod-nome" style="color:var(--text-dark);">--</strong> (Saldo Atual: <span id="ajuste-prod-atual" style="font-weight:bold; color:var(--primary);">--</span> un)</p>
 
@@ -749,7 +749,7 @@
   <!-- Modal de Novo Lançamento Financeiro -->
   <div id="modal-novo-lancamento" class="modal-overlay">
     <div class="modal-content" style="max-width: 440px; text-align: left;">
-      <span class="close-modal" onclick="fecharModalNovaDespesa()">&times;</span>
+      <span class="close-modal" role="button" aria-label="Fechar janela" onclick="fecharModalNovaDespesa()">&times;</span>
       <h3 style="margin-top:0; color:var(--text-dark); font-size:17px;"><i class="fa-solid fa-receipt" style="color:var(--primary);"></i> Lançar Despesa ou Receita</h3>
 
       <div class="form-group">
@@ -811,7 +811,7 @@
   <!-- Modal de Pagamento Mercado Pago -->
   <div id="modal-pagamento-mp" class="modal-overlay">
     <div class="modal-content" style="max-width: 440px;">
-      <span class="close-modal" onclick="fecharModalMP()">&times;</span>
+      <span class="close-modal" role="button" aria-label="Fechar janela" onclick="fecharModalMP()">&times;</span>
       <div id="modal-mp-conteudo"></div>
     </div>
   </div>

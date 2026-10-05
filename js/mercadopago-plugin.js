@@ -41,12 +41,18 @@
     getConfig: function () {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) return JSON.parse(raw);
+        if (raw) {
+          const cfg = JSON.parse(raw);
+          if (!cfg.publicKey) {
+            cfg.publicKey = 'APP_USR-d48d6815-b2df-44c6-996a-2720ebe60506';
+          }
+          return cfg;
+        }
       } catch (e) {
         console.error('[MercadoPagoPlugin] Erro ao ler localStorage:', e);
       }
       return {
-        publicKey: '',
+        publicKey: 'APP_USR-d48d6815-b2df-44c6-996a-2720ebe60506',
         chavePixFallback: 'lunocadoceria@gmail.com',
         modoTransparente: true,
       };
@@ -515,7 +521,10 @@
         this.showCardError('Código CVV inválido.');
         return;
       }
-      if (cpf.length !== 11) {
+      if (typeof window.validarCPF === 'function' && !window.validarCPF(cpf)) {
+        this.showCardError('CPF do titular inválido. Verifique os dígitos informados.');
+        return;
+      } else if (cpf.length !== 11) {
         this.showCardError('CPF do titular inválido (11 dígitos).');
         return;
       }
@@ -527,12 +536,37 @@
       }
 
       try {
+        let cardToken = null;
+
+        // Tokenização Segura no Navegador (Conformidade PCI-DSS)
+        if (this.mpInstance && typeof this.mpInstance.createCardToken === 'function') {
+          try {
+            const cleanExpYear = exp[1].length === 2 ? `20${exp[1]}` : exp[1];
+            const tokenRes = await this.mpInstance.createCardToken({
+              cardNumber: num,
+              cardholderName: holder,
+              cardExpirationMonth: exp[0],
+              cardExpirationYear: cleanExpYear,
+              securityCode: cvv,
+              identificationType: 'CPF',
+              identificationNumber: cpf
+            });
+            if (tokenRes && tokenRes.id) {
+              cardToken = tokenRes.id;
+            }
+          } catch (sdkTokenErr) {
+            console.warn('[MercadoPagoPlugin] Aviso na tokenização via SDK:', sdkTokenErr);
+          }
+        }
+
         const payload = {
           pedidoId: this.currentOrder.pedidoId,
           total: this.currentOrder.total,
           forma: 'cartao',
           parcelas: parseInt(installments, 10),
-          cardData: {
+          cardToken: cardToken || undefined,
+          // Apenas envia cardData se o SDK não estiver acessível (bloqueador de script, etc.)
+          cardData: cardToken ? undefined : {
             numero: num,
             nomeTitular: holder,
             mesExpiracao: exp[0],
@@ -628,35 +662,28 @@
       }
     },
 
-    // 3. MONITORAMENTO DE PIX EM TEMPO REAL
+    // 3. MONITORAMENTO DE PIX EM TEMPO REAL COM BACKOFF INTELIGENTE
     startRealtimePolling: function (paymentId, pedidoId) {
-      if (this.pollInterval) clearInterval(this.pollInterval);
+      if (this.pollInterval) clearTimeout(this.pollInterval);
       const startTime = Date.now();
       const maxTime = 20 * 60 * 1000; // 20 minutos
 
-      this.pollInterval = setInterval(async () => {
-        if (Date.now() - startTime > maxTime) {
-          clearInterval(this.pollInterval);
-          return;
-        }
+      const pollCycle = async () => {
+        const decorrido = Date.now() - startTime;
+        if (decorrido > maxTime) return;
 
         try {
-          // 1. Checar diretamente na API do Mercado Pago via endpoint local
+          // 1. Checa status oficial no Mercado Pago
           const res = await fetch(`/api/mercadopago/payment-status?id=${encodeURIComponent(paymentId)}`);
           if (res.ok) {
             const data = await res.json();
             if (data.status === 'approved') {
-              clearInterval(this.pollInterval);
-
-              // Atualizar Supabase se necessário
-              try {
-                if (typeof window.supabaseClient !== 'undefined') {
-                  await window.supabaseClient.from('pedidos').update({
-                    status: 'Confirmado',
-                    mercado_pago_status: 'approved'
-                  }).eq('id', pedidoId);
-                }
-              } catch (e) {}
+              if (typeof window.supabaseClient !== 'undefined') {
+                await window.supabaseClient.from('pedidos').update({
+                  status: 'Confirmado',
+                  mercado_pago_status: 'approved'
+                }).eq('id', pedidoId).catch(() => {});
+              }
 
               this.renderSucessoAprovado({
                 pedidoId: pedidoId,
@@ -668,7 +695,7 @@
             }
           }
 
-          // 2. Checar também via Supabase caso webhook tenha disparado antes
+          // 2. Checa via Supabase caso webhook já tenha aprovado
           if (typeof window.supabaseClient !== 'undefined') {
             const { data: pedido } = await window.supabaseClient
               .from('pedidos')
@@ -677,19 +704,32 @@
               .single();
 
             if (pedido && (pedido.status === 'Confirmado' || pedido.mercado_pago_status === 'approved')) {
-              clearInterval(this.pollInterval);
               this.renderSucessoAprovado({
                 pedidoId: pedidoId,
                 total: this.currentOrder?.total,
                 forma: 'pix',
                 paymentId: paymentId
               });
+              return;
             }
           }
         } catch (e) {
-          // silencia erros momentâneos
+          // Silencia falhas momentâneas de rede
         }
-      }, 3000); // Polling a cada 3 segundos
+
+        // Intervalo adaptativo: 3s nos primeiros 2 min, 5s até 5 min, 10s após
+        let proximoIntervalo = 3000;
+        if (decorrido > 5 * 60 * 1000) {
+          proximoIntervalo = 10000;
+        } else if (decorrido > 2 * 60 * 1000) {
+          proximoIntervalo = 5000;
+        }
+
+        this.pollInterval = setTimeout(pollCycle, proximoIntervalo);
+      };
+
+      // Inicia o primeiro ciclo imediatamente após 2.5s
+      this.pollInterval = setTimeout(pollCycle, 2500);
     },
 
     // Tela de Pagamento Aprovado com Sucesso

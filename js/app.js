@@ -16,33 +16,144 @@ var modoCadastro = false;
 var dataCalendario = new Date();
 var produtoSendoVisto = null;
 
+// Formatação monetária BRL unificada
+function formatarBRL(valor) {
+  const num = parseFloat(valor) || 0;
+  return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+// Validação real de CPF (Módulo 11 com checagem de dígitos verificadores)
+function validarCPF(cpf) {
+  if (!cpf) return false;
+  const limpo = String(cpf).replace(/\D/g, '');
+  if (limpo.length !== 11) return false;
+  
+  // Elimina sequências conhecidas de dígitos iguais
+  if (/^(\d)\1{10}$/.test(limpo)) return false;
+
+  let soma = 0;
+  let resto;
+
+  for (let i = 1; i <= 9; i++) {
+    soma += parseInt(limpo.substring(i - 1, i), 10) * (11 - i);
+  }
+  resto = (soma * 10) % 11;
+  if (resto === 10 || resto === 11) resto = 0;
+  if (resto !== parseInt(limpo.substring(9, 10), 10)) return false;
+
+  soma = 0;
+  for (let i = 1; i <= 10; i++) {
+    soma += parseInt(limpo.substring(i - 1, i), 10) * (12 - i);
+  }
+  resto = (soma * 10) % 11;
+  if (resto === 10 || resto === 11) resto = 0;
+  if (resto !== parseInt(limpo.substring(10, 11), 10)) return false;
+
+  return true;
+}
+
+// Máscara padronizada de CPF (000.000.000-00)
+function mascaraCPF(input) {
+  if (!input) return;
+  let v = String(input.value || '').replace(/\D/g, '');
+  if (v.length > 11) v = v.substring(0, 11);
+  if (v.length > 9) {
+    input.value = v.replace(/(\d{3})(\d{3})(\d{3})(\d{1,2})/, '$1.$2.$3-$4');
+  } else if (v.length > 6) {
+    input.value = v.replace(/(\d{3})(\d{3})(\d{1,3})/, '$1.$2.$3');
+  } else if (v.length > 3) {
+    input.value = v.replace(/(\d{3})(\d{1,3})/, '$1.$2');
+  } else {
+    input.value = v;
+  }
+}
+
+// Sistema de Notificações / Toasts Moderno e Não-Bloqueante
+function mostrarToast(msg, tipo = 'info', duracao = 3800) {
+  let container = document.getElementById('toast-container-global');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container-global';
+    container.style.position = 'fixed';
+    container.style.bottom = '25px';
+    container.style.left = '50%';
+    container.style.transform = 'translateX(-50%)';
+    container.style.zIndex = '999999';
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
+    container.style.gap = '10px';
+    container.style.width = '90%';
+    container.style.maxWidth = '420px';
+    container.style.pointerEvents = 'none';
+    document.body.appendChild(container);
+  }
+
+  let cores = {
+    sucesso: { bg: 'linear-gradient(135deg, #059669, #10b981)', icon: 'fa-circle-check', border: '#a7f3d0' },
+    erro: { bg: 'linear-gradient(135deg, #b91c1c, #ef4444)', icon: 'fa-circle-exclamation', border: '#fca5a5' },
+    aviso: { bg: 'linear-gradient(135deg, #d97706, #f59e0b)', icon: 'fa-triangle-exclamation', border: '#fcd34d' },
+    info: { bg: 'linear-gradient(135deg, var(--primary-dark, #8e4ec6), #6d28d9)', icon: 'fa-bell', border: 'rgba(255,255,255,0.25)' }
+  };
+
+  const estilo = cores[tipo] || cores.info;
+
+  const toast = document.createElement('div');
+  toast.setAttribute('role', 'alert');
+  toast.style.pointerEvents = 'auto';
+  toast.style.background = estilo.bg;
+  toast.style.color = '#ffffff';
+  toast.style.padding = '12px 18px';
+  toast.style.borderRadius = '16px';
+  toast.style.boxShadow = '0 12px 30px rgba(0,0,0,0.22)';
+  toast.style.fontWeight = '600';
+  toast.style.fontSize = '13.5px';
+  toast.style.display = 'flex';
+  toast.style.alignItems = 'center';
+  toast.style.gap = '10px';
+  toast.style.border = `1px solid ${estilo.border}`;
+  toast.style.backdropFilter = 'blur(10px)';
+  toast.style.opacity = '0';
+  toast.style.transform = 'translateY(12px) scale(0.98)';
+  toast.style.transition = 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)';
+
+  toast.innerHTML = `
+    <i class="fa-solid ${estilo.icon}" style="font-size: 16px; shrink: 0;"></i>
+    <span style="flex: 1; line-height: 1.35;">${escapeHTML(msg)}</span>
+    <button type="button" style="background: transparent; border: none; color: rgba(255,255,255,0.8); cursor: pointer; padding: 0 4px; font-size: 14px; box-shadow: none;" onclick="this.parentElement.remove()">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
+  `;
+
+  container.appendChild(toast);
+
+  // Animação de entrada
+  requestAnimationFrame(() => {
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0) scale(1)';
+  });
+
+  // Remoção programada
+  const timer = setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-8px) scale(0.95)';
+    setTimeout(() => toast.remove(), 320);
+  }, duracao);
+
+  toast.addEventListener('mouseenter', () => clearTimeout(timer));
+}
+
+// Fallback compatível para window.alert redirecionando para toasts contextuais
 window.alert = function(msg) {
-  let aviso = document.createElement('div');
-  aviso.style.position = 'fixed';
-  aviso.style.bottom = '30px';
-  aviso.style.left = '50%';
-  aviso.style.transform = 'translateX(-50%)';
-  aviso.style.background = 'linear-gradient(135deg, var(--primary-dark), #6d28d9)';
-  aviso.style.color = '#fff';
-  aviso.style.padding = '14px 28px';
-  aviso.style.borderRadius = '30px';
-  aviso.style.zIndex = '99999';
-  aviso.style.boxShadow = '0 12px 30px rgba(0,0,0,0.25)';
-  aviso.style.fontWeight = '600';
-  aviso.style.fontSize = '14px';
-  aviso.style.textAlign = 'center';
-  aviso.style.width = '85%';
-  aviso.style.maxWidth = '420px';
-  aviso.style.backdropFilter = 'blur(8px)';
-  aviso.style.border = '1px solid rgba(255,255,255,0.2)';
-  aviso.textContent = msg;
-  document.body.appendChild(aviso);
-  setTimeout(() => {
-    aviso.style.opacity = '0';
-    aviso.style.transform = 'translateX(-50%) translateY(10px)';
-    aviso.style.transition = 'all 0.35s ease';
-    setTimeout(() => aviso.remove(), 350);
-  }, 3200);
+  const txt = String(msg || '');
+  let tipo = 'info';
+  if (txt.includes('✅') || txt.toLowerCase().includes('sucesso') || txt.toLowerCase().includes('confirmado')) {
+    tipo = 'sucesso';
+  } else if (txt.includes('❌') || txt.toLowerCase().includes('erro') || txt.toLowerCase().includes('falha')) {
+    tipo = 'erro';
+  } else if (txt.includes('⚠️') || txt.toLowerCase().includes('atenção') || txt.toLowerCase().includes('preencha')) {
+    tipo = 'aviso';
+  }
+  mostrarToast(txt, tipo, tipo === 'erro' ? 5000 : 3800);
 };
 
 function mascaraTelefone(input) {
