@@ -55,12 +55,13 @@ async function iniciarPagamentoMercadoPago(pedidoId, total, itens, forma, client
 }
 
 function fecharModalMP() {
-  if (window.MercadoPagoPlugin) {
+  if (window.MercadoPagoPlugin && typeof window.MercadoPagoPlugin.closeModal === 'function') {
     window.MercadoPagoPlugin.closeModal();
-  } else {
-    const modal = document.getElementById('modal-pagamento-mp');
-    if (modal) modal.classList.remove('active');
-    if (typeof mostrarTela === 'function') mostrarTela('menu-section');
+  }
+  const modal = document.getElementById('modal-pagamento-mp');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.style.display = 'none';
   }
 }
 

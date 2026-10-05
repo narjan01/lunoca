@@ -103,9 +103,16 @@
     },
 
     closeModal: function (targetScreen) {
-      if (this.pollInterval) clearInterval(this.pollInterval);
+      if (this.pollInterval) {
+        clearTimeout(this.pollInterval);
+        clearInterval(this.pollInterval);
+        this.pollInterval = null;
+      }
       const modal = document.getElementById('modal-pagamento-mp');
-      if (modal) modal.classList.remove('active');
+      if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+      }
       if (targetScreen === 'conta-pedidos' && typeof window.abrirMinhaConta === 'function') {
         window.abrirMinhaConta('pedidos');
         return;
@@ -136,6 +143,7 @@
       if (!modal || !conteudo) return;
 
       modal.classList.add('active');
+      modal.style.display = 'flex';
 
       const forma = orderData.forma || 'pix';
       if (forma === 'pix') {
@@ -185,7 +193,12 @@
           body: JSON.stringify(payload)
         });
 
-        const data = await res.json();
+        let data = {};
+        try {
+          data = await res.json();
+        } catch (jsonErr) {
+          console.warn('[MercadoPagoPlugin] Resposta não-JSON recebida:', jsonErr);
+        }
 
         if (res.ok && data.success && data.qrCode) {
           // Atualizar o Supabase com o ID do pagamento gerado
@@ -218,7 +231,7 @@
           this.renderFallbackPix(conteudo, {
             pedidoId: orderData.pedidoId,
             total: orderData.total,
-            motivo: data.error
+            motivo: data.error || 'Aguardando validação de credencial ou instabilidade na conexão bancária.'
           });
         }
       } catch (err) {
@@ -226,7 +239,7 @@
         this.renderFallbackPix(conteudo, {
           pedidoId: orderData.pedidoId,
           total: orderData.total,
-          motivo: 'Erro de conexão.'
+          motivo: 'Não foi possível conectar ao gateway no momento. Utilize a chave abaixo para realizar o pagamento.'
         });
       }
     },

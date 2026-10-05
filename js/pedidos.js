@@ -227,10 +227,9 @@ async function enviarPedido() {
             telefone: whatsappInput
         };
 
-        // Iniciar fluxo de pagamento Mercado Pago
+        // Iniciar fluxo de pagamento Mercado Pago (PIX com QR Code ou Cartão)
         if (typeof iniciarPagamentoMercadoPago === 'function') {
             await iniciarPagamentoMercadoPago(pedidoId, total, itensParaMP, formaPagamento, clienteDados);
-            alert('Pedido #' + pedidoId + ' criado com sucesso! Acompanhe o status pelo seu WhatsApp.');
         } else {
             alert("Pedido Confirmado! A Lunoca agradece a preferência.");
             mostrarTela('menu-section');
