@@ -63,15 +63,23 @@
 
   <header>
     <div class="header-top">
-      <div style="width: 40px;"></div> 
-      <div class="header-logo" onclick="mostrarTela('menu-section')" style="cursor:pointer;">
+      <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; background: rgba(255,255,255,0.22); padding: 5px 11px; border-radius: 20px; font-weight: 600;">
+        <span class="whatsapp-pulse-dot online" style="margin: 0; width: 8px; height: 8px;"></span> Encomendas
+      </div> 
+      <div class="header-logo" onclick="mostrarTela('menu-section')" style="cursor:pointer;" title="Início">
         <img src="img/logo.jpg" alt="Logo Lunoca"> 
         Lunoca
       </div>
       
-      <button id="btn-header-auth" class="user-menu-btn" onclick="toggleUserMenu()" aria-label="Minha Conta e Login">
-         <i class="fa-solid fa-user"></i>
-      </button>
+      <div class="header-actions-group">
+        <button id="btn-header-cart" class="header-cart-quick-btn" onclick="irParaCheckout()" aria-label="Ver Carrinho" title="Ver Carrinho">
+          <i class="fa-solid fa-basket-shopping"></i>
+          <span id="badge-header-carrinho" class="header-cart-badge">0</span>
+        </button>
+        <button id="btn-header-auth" class="user-menu-btn" onclick="toggleUserMenu()" aria-label="Minha Conta e Login" title="Minha Conta">
+           <i class="fa-solid fa-user"></i>
+        </button>
+      </div>
       
       <div id="user-dropdown" class="user-dropdown"></div>
     </div>
@@ -106,11 +114,60 @@
     </div>
 
     <div id="menu-section" class="screen active">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-        <h2 style="font-size:20px; margin: 0;"><i class="fa-solid fa-cake-candles" style="color:var(--primary)"></i> Doces Disponíveis</h2>
+      <!-- Hero Banner Boutique -->
+      <div class="hero-boutique">
+        <div class="hero-badge-pill">
+          <i class="fa-solid fa-sparkles" style="color: #d4a373;"></i> Confeitaria Afetiva & Gourmet
+        </div>
+        <h1 class="hero-title">Doces Artesanais feitos com Amor</h1>
+        <p class="hero-subtitle">Massa leve, brigadeiro cremoso e ingredientes nobres para adoçar seus melhores momentos.</p>
+        <div class="hero-benefits-grid">
+          <div class="hero-benefit-item"><i class="fa-solid fa-calendar-check"></i> Entrega Agendada</div>
+          <div class="hero-benefit-item"><i class="fa-solid fa-shield-heart"></i> 100% Artesanal</div>
+          <div class="hero-benefit-item"><i class="fa-brands fa-pix" style="color: #0d9488;"></i> PIX ou Cartão até 12x</div>
+        </div>
       </div>
-      <div id="produtos-lista">
-        <div style="text-align:center; padding: 20px; color:#999;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i><br>Carregando delícias...</div>
+
+      <!-- Barra de Busca & Filtros por Categoria -->
+      <div class="store-controls-wrapper">
+        <div class="store-search-box">
+          <i class="fa-solid fa-magnifying-glass store-search-icon"></i>
+          <input type="text" id="store-search-input" placeholder="Buscar bolo, brigadeiro, brownie..." oninput="filtrarProdutosPorBuscaECategoria()">
+          <button id="store-search-clear" class="store-search-clear" onclick="limparBuscaProdutos()" aria-label="Limpar busca">
+            <i class="fa-solid fa-circle-xmark"></i>
+          </button>
+        </div>
+
+        <div class="category-chips-scroll" id="store-category-chips">
+          <button type="button" class="category-chip active" data-categoria="todos" onclick="selecionarCategoriaCardapio('todos', this)">
+            <i class="fa-solid fa-star"></i> Todos
+          </button>
+          <button type="button" class="category-chip" data-categoria="bolos" onclick="selecionarCategoriaCardapio('bolos', this)">
+            <i class="fa-solid fa-cake-candles"></i> Bolos
+          </button>
+          <button type="button" class="category-chip" data-categoria="brigadeiros" onclick="selecionarCategoriaCardapio('brigadeiros', this)">
+            <i class="fa-solid fa-cookie"></i> Brigadeiros
+          </button>
+          <button type="button" class="category-chip" data-categoria="brownies" onclick="selecionarCategoriaCardapio('brownies', this)">
+            <i class="fa-solid fa-square"></i> Brownies
+          </button>
+          <button type="button" class="category-chip" data-categoria="festas" onclick="selecionarCategoriaCardapio('festas', this)">
+            <i class="fa-solid fa-gift"></i> Centos & Festas
+          </button>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h2 style="font-size:18px; margin: 0; color: var(--text-dark); font-weight: 700;">
+          <i class="fa-solid fa-heart" style="color:var(--primary); font-size: 15px;"></i> Cardápio de Delícias
+        </h2>
+        <span id="store-items-count" style="font-size: 12px; color: var(--text-muted); font-weight: 600;">--</span>
+      </div>
+
+      <div id="produtos-lista" class="produtos-grid">
+        <div class="skeleton-card skeleton-box"></div>
+        <div class="skeleton-card skeleton-box"></div>
+        <div class="skeleton-card skeleton-box"></div>
       </div>
     </div>
 
@@ -687,17 +744,45 @@
   </div>
 
   <div id="modal-produto" class="modal-overlay">
-    <div class="modal-content">
+    <div class="modal-content" style="max-width: 480px; padding: 22px;">
       <span class="close-modal" role="button" aria-label="Fechar janela" onclick="fecharModalProduto()">&times;</span>
-      <div class="modal-img-container"><img id="modal-img" src="" alt="Produto"></div>
-      <h3 class="modal-title" id="modal-nome">Nome</h3>
-      <div class="modal-price" id="modal-preco">R$ 0,00</div>
-      <div class="modal-desc" id="modal-desc">Descrição</div>
-      <div id="modal-opcoes-container" class="variations-box" style="display:none;">
-        <div class="variations-title">Escolha o seu sabor (Obrigatório) <span style="color:red">*</span></div>
-        <div id="modal-opcoes-lista"></div>
+      
+      <div class="modal-hero-cover">
+        <img id="modal-img" src="" alt="Produto">
+        <div class="modal-price-tag-floating" id="modal-preco">R$ 0,00</div>
       </div>
-      <button style="width:100%; padding: 15px; font-size: 16px;" onclick="confirmarAdicaoCarrinho()"><i class="fa-solid fa-cart-plus"></i> Adicionar ao Carrinho</button>
+
+      <h3 class="modal-title" id="modal-nome" style="text-align: left; font-size: 20px; color: var(--text-dark);">Nome</h3>
+      <div class="modal-desc" id="modal-desc" style="text-align: left; margin-bottom: 15px; color: var(--text-muted); font-size: 13px;">Descrição</div>
+      
+      <div id="modal-opcoes-container" class="variations-box" style="display:none; background: #faf7fc; border-color: #ebdcf7; border-radius: 16px; padding: 14px;">
+        <div class="variations-title" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+          <span style="font-size: 13.5px;"><i class="fa-solid fa-cake-candles" style="color:var(--primary);"></i> Escolha o Sabor:</span>
+          <span style="font-size:11px; color:#e11d48; font-weight:700;">* Obrigatório</span>
+        </div>
+        <div id="modal-opcoes-lista" class="sabor-chip-grid"></div>
+      </div>
+
+      <!-- Seletor de Quantidade do Doce -->
+      <div class="modal-qty-container">
+        <div>
+          <strong style="font-size: 13px; color: var(--text-dark); display: block;">Quantidade</strong>
+          <span style="font-size: 11px; color: #776a66;" id="modal-subtotal-display">Total do item</span>
+        </div>
+        <div class="modal-qty-stepper">
+          <button type="button" class="modal-qty-btn" onclick="alterarQtdModalProduto(-1)" aria-label="Diminuir quantidade">
+            <i class="fa-solid fa-minus"></i>
+          </button>
+          <span id="modal-qtd-display" class="modal-qty-display">1</span>
+          <button type="button" class="modal-qty-btn" onclick="alterarQtdModalProduto(1)" aria-label="Aumentar quantidade">
+            <i class="fa-solid fa-plus"></i>
+          </button>
+        </div>
+      </div>
+
+      <button id="btn-adicionar-carrinho-modal" style="width:100%; padding: 14px; font-size: 15px; border-radius: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px;" onclick="confirmarAdicaoCarrinho()">
+        <i class="fa-solid fa-bag-shopping"></i> <span id="btn-adicionar-txt">Adicionar ao Carrinho</span>
+      </button>
     </div>
   </div>
 

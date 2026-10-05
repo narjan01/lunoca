@@ -1,4 +1,17 @@
+let categoriaSelecionada = 'todos';
+let termoBuscaCardapio = '';
+let modalQtdAtual = 1;
+
 async function carregarProdutosServidor() {
+  const container = document.getElementById('produtos-lista');
+  if (container && (!produtos || produtos.length === 0)) {
+    container.innerHTML = `
+      <div class="skeleton-card skeleton-box"></div>
+      <div class="skeleton-card skeleton-box"></div>
+      <div class="skeleton-card skeleton-box"></div>
+    `;
+  }
+
   try {
     const { data, error } = await supabaseClient
       .from('produtos')
@@ -14,34 +27,179 @@ async function carregarProdutosServidor() {
       preco: p.preco,
       desc: p.descricao,
       opcoes: p.opcoes,
-      img: p.img_url
+      img: p.img_url,
+      estoque_qtd: p.estoque_qtd,
+      controlar_estoque: p.controlar_estoque
     }));
     
     renderizarProdutosApp();
-    if (usuarioAtual.nivel === 'admin') {
+    if (usuarioAtual && usuarioAtual.nivel === 'admin') {
       if (typeof renderizarProdutosAdmin === 'function') renderizarProdutosAdmin();
     }
   } catch (error) {
     console.error("Erro ao carregar produtos:", error);
-    document.getElementById('produtos-lista').innerHTML = "<p style='text-align:center;'>Erro ao carregar cardápio.</p>";
+    if (container) {
+      container.innerHTML = `
+        <div style="text-align:center; padding: 30px; color:#888;">
+          <i class="fa-solid fa-triangle-exclamation" style="font-size: 32px; color: #f59e0b; margin-bottom: 10px; display: block;"></i>
+          <p style="margin: 0 0 10px;">Não foi possível carregar o cardápio no momento.</p>
+          <button class="btn-outline" onclick="carregarProdutosServidor()" style="margin: 0 auto; padding: 6px 14px; font-size: 12px;">
+            <i class="fa-solid fa-rotate-right"></i> Tentar Novamente
+          </button>
+        </div>
+      `;
+    }
   }
 }
 
+function identificarCategoriaProduto(p) {
+  const texto = ((p.nome || '') + ' ' + (p.desc || '')).toLowerCase();
+  if (texto.includes('bolo') || texto.includes('fatia')) return 'bolos';
+  if (texto.includes('brigadeiro')) return 'brigadeiros';
+  if (texto.includes('brownie')) return 'brownies';
+  if (texto.includes('cento') || texto.includes('festa') || texto.includes('caixa')) return 'festas';
+  return 'outros';
+}
+
 function renderizarProdutosApp() {
+  const container = document.getElementById('produtos-lista');
+  const countEl = document.getElementById('store-items-count');
+  if (!container) return;
+
   const defaultImg = 'img/logo.jpg';
+  
+  // Filtragem combinada: Categoria + Termo de Busca
+  const produtosFiltrados = produtos.filter(p => {
+    // Filtro por Categoria
+    if (categoriaSelecionada !== 'todos') {
+      const cat = identificarCategoriaProduto(p);
+      if (cat !== categoriaSelecionada) return false;
+    }
+    // Filtro por Busca
+    if (termoBuscaCardapio) {
+      const termo = termoBuscaCardapio.toLowerCase().trim();
+      const matchNome = (p.nome || '').toLowerCase().includes(termo);
+      const matchDesc = (p.desc || '').toLowerCase().includes(termo);
+      const matchOpcoes = (p.opcoes || '').toLowerCase().includes(termo);
+      if (!matchNome && !matchDesc && !matchOpcoes) return false;
+    }
+    return true;
+  });
+
+  if (countEl) {
+    countEl.innerText = `${produtosFiltrados.length} ${produtosFiltrados.length === 1 ? 'delícia' : 'delícias'}`;
+  }
+
+  if (produtosFiltrados.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; padding: 45px 15px; color: #887a77; background: #ffffff; border-radius: 20px; border: 1.5px dashed #ebdcf7;">
+        <i class="fa-solid fa-cookie-bite" style="font-size: 38px; color: var(--primary); margin-bottom: 12px; display: block; opacity: 0.7;"></i>
+        <h3 style="margin: 0 0 6px; font-size: 16px; color: var(--text-dark);">Nenhum doce encontrado</h3>
+        <p style="margin: 0 0 16px; font-size: 13px;">Tente buscar por outro termo ou explore todas as categorias.</p>
+        <button class="btn-outline" onclick="limparBuscaProdutos(true)" style="margin: 0 auto; font-size: 12px; padding: 8px 16px;">
+          <i class="fa-solid fa-sparkles"></i> Ver Todo o Cardápio
+        </button>
+      </div>
+    `;
+    return;
+  }
+
   let html = '';
-  for (let i = 0; i < produtos.length; i++) {
-    let p = produtos[i];
-    let imagemUrl = p.img ? escapeHTML(p.img) : defaultImg;
-    let nomeEsc = escapeHTML(p.nome);
-    let descFormatada = p.desc ? escapeHTML(p.desc).replace(/\n/g, '<br>') : '';
-    let precoFormatado = parseFloat(p.preco || 0).toFixed(2);
-    html += '<div class="produto-card"><div class="produto-header"><img src="' + imagemUrl + '" class="produto-img" alt="' + nomeEsc + '" loading="lazy" width="120" height="120"><div class="produto-info"><h3>' + nomeEsc + '</h3></div></div><div class="produto-desc">' + descFormatada + '</div><div class="produto-footer"><div class="preco">R$ ' + precoFormatado + '</div><button class="btn-adicionar" onclick="abrirModalProduto(\'' + p.id + '\')"><i class="fa-solid fa-plus"></i></button></div></div>';
+  for (let i = 0; i < produtosFiltrados.length; i++) {
+    const p = produtosFiltrados[i];
+    const imagemUrl = p.img ? escapeHTML(p.img) : defaultImg;
+    const nomeEsc = escapeHTML(p.nome);
+    const descFormatada = p.desc ? escapeHTML(p.desc) : '';
+    const precoFormatado = typeof formatarBRL === 'function' ? formatarBRL(p.preco) : `R$ ${parseFloat(p.preco || 0).toFixed(2)}`;
+
+    // Badges dinâmicos
+    let badgeTag = '<span class="produto-badge-tag"><i class="fa-solid fa-heart" style="color:var(--primary);"></i> Artesanal</span>';
+    if (p.controlar_estoque && p.estoque_qtd !== null && p.estoque_qtd <= 0) {
+      badgeTag = '<span class="produto-badge-tag" style="color:#b91c1c; background:#fee2e2;"><i class="fa-solid fa-circle-xmark"></i> Esgotado</span>';
+    } else if (p.opcoes && p.opcoes.includes(',')) {
+      badgeTag = '<span class="produto-badge-tag"><i class="fa-solid fa-sliders"></i> Sabores</span>';
+    }
+
+    // Pré-visualização de sabores
+    let previewSaboresHtml = '';
+    if (p.opcoes && p.opcoes.trim() !== '') {
+      const arr = p.opcoes.split(',').map(s => s.trim()).filter(Boolean);
+      if (arr.length > 0) {
+        const primeiros = arr.slice(0, 2);
+        previewSaboresHtml = '<div class="produto-sabores-preview">';
+        for (const s of primeiros) {
+          previewSaboresHtml += `<span class="sabor-mini-pill">${escapeHTML(s)}</span>`;
+        }
+        if (arr.length > 2) {
+          previewSaboresHtml += `<span class="sabor-mini-pill more">+${arr.length - 2} opções</span>`;
+        }
+        previewSaboresHtml += '</div>';
+      }
+    }
+
+    html += `
+      <div class="produto-card-boutique" onclick="abrirModalProduto('${p.id}')">
+        <div class="produto-thumb-wrap">
+          <img src="${imagemUrl}" alt="${nomeEsc}" loading="lazy" width="125" height="125">
+          ${badgeTag}
+        </div>
+        <div class="produto-body">
+          <div class="produto-title-wrap">
+            <h3 class="produto-nome-boutique">${nomeEsc}</h3>
+            <p class="produto-desc-boutique">${descFormatada}</p>
+            ${previewSaboresHtml}
+          </div>
+          <div class="produto-bottom-bar">
+            <div class="preco-boutique">
+              ${precoFormatado}
+              <small>por unidade</small>
+            </div>
+            <button type="button" class="btn-comprar-boutique" onclick="event.stopPropagation(); abrirModalProduto('${p.id}')" aria-label="Pedir ${nomeEsc}">
+              <i class="fa-solid fa-plus"></i> Pedir
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
   }
-  if (html === '') {
-    html = "<p style='text-align:center;'>Cardápio em atualização.</p>";
+
+  container.innerHTML = html;
+}
+
+function selecionarCategoriaCardapio(cat, btn) {
+  categoriaSelecionada = cat;
+  document.querySelectorAll('.category-chip').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderizarProdutosApp();
+}
+
+function filtrarProdutosPorBuscaECategoria() {
+  const input = document.getElementById('store-search-input');
+  const btnClear = document.getElementById('store-search-clear');
+  termoBuscaCardapio = (input?.value || '').trim();
+
+  if (btnClear) {
+    btnClear.style.display = termoBuscaCardapio.length > 0 ? 'block' : 'none';
   }
-  document.getElementById('produtos-lista').innerHTML = html;
+
+  renderizarProdutosApp();
+}
+
+function limparBuscaProdutos(resetarCategoria = false) {
+  const input = document.getElementById('store-search-input');
+  const btnClear = document.getElementById('store-search-clear');
+  if (input) input.value = '';
+  if (btnClear) btnClear.style.display = 'none';
+  termoBuscaCardapio = '';
+
+  if (resetarCategoria) {
+    categoriaSelecionada = 'todos';
+    document.querySelectorAll('.category-chip').forEach(b => {
+      b.classList.toggle('active', b.dataset.categoria === 'todos');
+    });
+  }
+
+  renderizarProdutosApp();
 }
 
 function abrirModalProduto(id) {
@@ -50,29 +208,47 @@ function abrirModalProduto(id) {
     return mostrarTela('login-section');
   }
   
-  let p = produtos.filter(function(prod) { return prod.id == id; })[0];
+  const p = produtos.find(prod => String(prod.id) === String(id));
   if (!p) return;
   
   produtoSendoVisto = p;
-  document.getElementById('modal-img').src = p.img || 'https://via.placeholder.com/150/fbf9ff/c496f2?text=Doce';
+  modalQtdAtual = 1;
+
+  const precoFormatado = typeof formatarBRL === 'function' ? formatarBRL(p.preco) : `R$ ${parseFloat(p.preco).toFixed(2)}`;
+
+  document.getElementById('modal-img').src = p.img || 'img/logo.jpg';
   document.getElementById('modal-nome').innerText = p.nome;
-  document.getElementById('modal-preco').innerText = "R$ " + parseFloat(p.preco).toFixed(2);
-  let mDesc = document.getElementById('modal-desc');
+  document.getElementById('modal-preco').innerText = precoFormatado;
+  
+  const mDesc = document.getElementById('modal-desc');
   if (mDesc) {
     mDesc.textContent = p.desc || '';
     mDesc.style.whiteSpace = 'pre-line';
   }
+
+  const elQtd = document.getElementById('modal-qtd-display');
+  if (elQtd) elQtd.innerText = '1';
+
+  atualizarSubtotalModal();
   
-  let containerOpcoes = document.getElementById('modal-opcoes-container');
-  let listaOpcoes = document.getElementById('modal-opcoes-lista');
+  const containerOpcoes = document.getElementById('modal-opcoes-container');
+  const listaOpcoes = document.getElementById('modal-opcoes-lista');
   
   if (p.opcoes && p.opcoes.trim() !== "") {
     containerOpcoes.style.display = 'block';
-    let arrayOpcoes = p.opcoes.split(',');
+    const arrayOpcoes = p.opcoes.split(',').map(s => s.trim()).filter(Boolean);
     let htmlOpcoes = '';
+
     for (let i = 0; i < arrayOpcoes.length; i++) {
-      let opcaoTexto = arrayOpcoes[i].trim();
-      htmlOpcoes += '<label class="variation-item"><input type="radio" name="sabor_escolhido" value="' + opcaoTexto + '">' + opcaoTexto + '</label>';
+      const opcaoTexto = escapeHTML(arrayOpcoes[i]);
+      const checkedAttr = i === 0 ? 'checked' : '';
+      htmlOpcoes += `
+        <label class="sabor-chip-label">
+          <input type="radio" name="sabor_escolhido" value="${opcaoTexto}" ${checkedAttr}>
+          <span class="sabor-indicator"><i class="fa-solid fa-check"></i></span>
+          <span>${opcaoTexto}</span>
+        </label>
+      `;
     }
     listaOpcoes.innerHTML = htmlOpcoes;
   } else {
@@ -82,9 +258,34 @@ function abrirModalProduto(id) {
   document.getElementById('modal-produto').style.display = 'flex';
 }
 
+function alterarQtdModalProduto(delta) {
+  modalQtdAtual = Math.max(1, modalQtdAtual + delta);
+  const elQtd = document.getElementById('modal-qtd-display');
+  if (elQtd) elQtd.innerText = modalQtdAtual;
+  atualizarSubtotalModal();
+}
+
+function atualizarSubtotalModal() {
+  if (!produtoSendoVisto) return;
+  const precoUnit = parseFloat(produtoSendoVisto.preco || 0);
+  const subtotal = precoUnit * modalQtdAtual;
+  const subtotalFmt = typeof formatarBRL === 'function' ? formatarBRL(subtotal) : `R$ ${subtotal.toFixed(2)}`;
+
+  const displayEl = document.getElementById('modal-subtotal-display');
+  if (displayEl) {
+    displayEl.innerText = `${modalQtdAtual}x por ${subtotalFmt}`;
+  }
+
+  const btnTxt = document.getElementById('btn-adicionar-txt');
+  if (btnTxt) {
+    btnTxt.innerText = `Adicionar ${modalQtdAtual} ${modalQtdAtual === 1 ? 'item' : 'itens'} • ${subtotalFmt}`;
+  }
+}
+
 function fecharModalProduto() {
   document.getElementById('modal-produto').style.display = 'none';
   produtoSendoVisto = null;
+  modalQtdAtual = 1;
 }
 
 function confirmarAdicaoCarrinho() {
@@ -94,7 +295,7 @@ function confirmarAdicaoCarrinho() {
   let saborEscolhido = '';
   
   if (itemCarrinho.opcoes && itemCarrinho.opcoes.trim() !== "") {
-    let selecionado = document.querySelector('input[name="sabor_escolhido"]:checked');
+    const selecionado = document.querySelector('input[name="sabor_escolhido"]:checked');
     if (!selecionado) {
       alert("Por favor, escolha um sabor para continuar.");
       return;
@@ -106,16 +307,18 @@ function confirmarAdicaoCarrinho() {
   
   if (!Array.isArray(carrinho)) carrinho = [];
 
-  // Agrupa se ja existir produto igual (mesmo ID e sabor)
-  let itemExistente = carrinho.find(it => 
+  const qtdAdicionar = Math.max(1, parseInt(modalQtdAtual || 1, 10));
+
+  // Agrupa se já existir produto idêntico (mesmo ID e sabor)
+  const itemExistente = carrinho.find(it => 
     String(it.id) === String(itemCarrinho.id) && 
     (it.sabor || '') === (itemCarrinho.sabor || '')
   );
 
   if (itemExistente) {
-    itemExistente.quantidade = (parseInt(itemExistente.quantidade, 10) || 1) + 1;
+    itemExistente.quantidade = (parseInt(itemExistente.quantidade, 10) || 1) + qtdAdicionar;
   } else {
-    itemCarrinho.quantidade = 1;
+    itemCarrinho.quantidade = qtdAdicionar;
     carrinho.push(itemCarrinho);
   }
   
@@ -123,6 +326,10 @@ function confirmarAdicaoCarrinho() {
   salvarCarrinhoLocal();
   fecharModalProduto();
   
+  // Feedback com Toast gourmet
+  const nomeDoce = itemCarrinho.nome.split(' (')[0];
+  mostrarToast(`✨ ${qtdAdicionar}x "${nomeDoce}" adicionado ao carrinho!`, 'sucesso', 3500);
+
   const btnCarrinho = document.getElementById('btn-ver-carrinho');
   if (btnCarrinho) btnCarrinho.style.display = 'flex';
 }
