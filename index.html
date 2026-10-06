@@ -404,9 +404,14 @@
             <h3 style="margin:0; color:var(--text-dark);"><i class="fa-solid fa-users-gear" style="color:var(--primary);"></i> Gestão de Usuários & Acessos</h3>
             <p style="margin:2px 0 0; font-size:12px; color:var(--text-muted);">Gerencie clientes, operadores e administradores da doceria</p>
           </div>
-          <button onclick="carregarUsuariosAdmin()" class="btn-outline" style="padding:6px 12px; font-size:12px;" title="Atualizar lista">
-            <i class="fa-solid fa-rotate-right"></i> Atualizar
-          </button>
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <button onclick="carregarUsuariosAdmin()" class="btn-outline" style="padding:6px 12px; font-size:12px;" title="Atualizar lista">
+              <i class="fa-solid fa-rotate-right"></i> Atualizar
+            </button>
+            <button onclick="abrirModalNovoUsuarioAdmin()" class="btn-primary" style="padding: 7px 14px; font-size: 13px; border-radius: 10px; background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);">
+              <i class="fa-solid fa-user-plus"></i> Novo Usuário
+            </button>
+          </div>
         </div>
 
         <!-- Métricas Rápidas de Usuários -->
@@ -534,11 +539,35 @@
           </div>
 
           <!-- Status Ativo/Inativo -->
-          <div class="form-group" style="margin-bottom: 18px;">
+          <div class="form-group" style="margin-bottom: 16px;">
             <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:600;">
               <input type="checkbox" id="admin-user-ativo" checked style="width:18px; height:18px; accent-color:var(--primary);">
               Conta Ativa (usuário pode fazer login e compras)
             </label>
+          </div>
+
+          <!-- Redefinição de Senha deste Usuário -->
+          <div style="background: #fff8f6; padding: 14px 16px; border-radius: 14px; border: 1.5px dashed #fca5a5; margin-bottom: 18px;">
+            <div style="font-weight: 700; font-size: 13.5px; color: #991b1b; margin-bottom: 4px;">
+              <i class="fa-solid fa-key"></i> Redefinir Senha de Acesso
+            </div>
+            <p style="margin: 0 0 10px; font-size: 12px; color: #7f1d1d; line-height: 1.4;">
+              Defina uma nova senha para este usuário caso ele tenha esquecido ou precise de primeiro acesso.
+            </p>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+              <div style="flex: 1; min-width: 180px; position: relative;">
+                <input type="password" id="admin-user-nova-senha" placeholder="Digite a nova senha (mín. 6 caracteres)" style="width: 100%; padding-right: 40px; margin: 0;">
+                <button type="button" onclick="toggleVisibilidadeInput('admin-user-nova-senha', this)" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #888; cursor: pointer; padding: 4px; box-shadow: none;" title="Mostrar/Ocultar Senha">
+                  <i class="fa-regular fa-eye"></i>
+                </button>
+              </div>
+              <button type="button" class="btn-outline" onclick="gerarSenhaParaInput('admin-user-nova-senha')" style="padding: 9px 12px; font-size: 12px; white-space: nowrap;" title="Gerar senha aleatória segura">
+                <i class="fa-solid fa-dice"></i> Gerar Senha
+              </button>
+              <button type="button" class="btn-primary" onclick="alterarSenhaUsuarioAdmin()" id="btn-alterar-senha-user" style="padding: 9px 16px; font-size: 12px; background: #dc2626; border-color: #dc2626; white-space: nowrap;">
+                <i class="fa-solid fa-shield-halved"></i> Salvar Senha
+              </button>
+            </div>
           </div>
 
           <div style="display: flex; gap: 10px;">
@@ -1022,6 +1051,108 @@
       <div style="display:flex; gap:10px;">
         <button onclick="fecharModalNovaDespesa()" class="btn-outline" style="flex:1;">Cancelar</button>
         <button onclick="salvarNovoLancamentoFinanceiro()" id="btn-salvar-lancamento" style="flex:2;"><i class="fa-solid fa-save"></i> Gravar Lançamento</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Criação de Novo Usuário (Admin) -->
+  <div id="modal-novo-usuario-admin" class="modal-overlay">
+    <div class="modal-content" style="max-width: 520px; width: 95%; max-height: 92vh; overflow-y: auto; text-align: left; padding: 24px; border-radius: 24px;">
+      <span class="close-modal" role="button" aria-label="Fechar janela" onclick="fecharModalNovoUsuarioAdmin()">&times;</span>
+      
+      <div style="margin-bottom: 16px; border-bottom: 1px solid #f1e9f7; padding-bottom: 12px;">
+        <h3 style="margin: 0; color: var(--text-dark); font-size: 18px; display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-user-plus" style="color: var(--primary);"></i> Cadastrar Novo Usuário
+        </h3>
+        <p style="margin: 4px 0 0; font-size: 12.5px; color: var(--text-muted);">
+          Crie o cadastro com e-mail e senha inicial para primeiro acesso direto ao sistema.
+        </p>
+      </div>
+
+      <div class="form-group">
+        <label>Nome Completo *</label>
+        <input type="text" id="novo-user-nome" placeholder="Ex: Maria Oliveira">
+      </div>
+
+      <div class="form-group">
+        <label>E-mail de Acesso *</label>
+        <input type="email" id="novo-user-email" placeholder="usuario@email.com">
+      </div>
+
+      <!-- Senha Inicial -->
+      <div class="form-group">
+        <label>Senha Inicial (Primeiro Acesso) *</label>
+        <div style="display: flex; gap: 8px; position: relative;">
+          <div style="flex: 1; position: relative;">
+            <input type="password" id="novo-user-senha" placeholder="Mínimo 6 caracteres" style="width: 100%; padding-right: 40px; margin: 0;">
+            <button type="button" onclick="toggleVisibilidadeInput('novo-user-senha', this)" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #888; cursor: pointer; padding: 4px; box-shadow: none;" title="Mostrar/Ocultar Senha">
+              <i class="fa-regular fa-eye"></i>
+            </button>
+          </div>
+          <button type="button" class="btn-outline" onclick="gerarSenhaParaInput('novo-user-senha')" style="padding: 8px 12px; font-size: 12px; white-space: nowrap;" title="Gerar senha aleatória">
+            <i class="fa-solid fa-dice"></i> Gerar Senha
+          </button>
+        </div>
+        <span style="font-size: 11px; color: var(--text-muted); margin-top: 4px; display: block;">
+          O e-mail será confirmado automaticamente para permitir o login imediato do usuário.
+        </span>
+      </div>
+
+      <!-- Nível de Acesso -->
+      <div class="form-group" style="background: #faf5ff; border: 1.5px solid #ebdcf7; padding: 12px; border-radius: 14px;">
+        <label style="color: var(--primary-dark); font-weight: 700; font-size: 13px; margin-bottom: 4px; display: block;">
+          <i class="fa-solid fa-shield-halved"></i> Tipo de Nível de Acesso
+        </label>
+        <select id="novo-user-nivel" style="font-weight: 600; font-size: 13.5px; border-color: var(--primary);">
+          <option value="cliente" selected>👤 Cliente — Acesso comum à loja, cardápio e compras</option>
+          <option value="operador">🛠️ Operador — Painel restrito (Apenas Cadastro de Produtos)</option>
+          <option value="admin">👑 Administrador — Acesso total ao sistema e financeiro</option>
+        </select>
+      </div>
+
+      <div class="row-2">
+        <div class="form-group">
+          <label><i class="fa-brands fa-whatsapp" style="color:#25D366;"></i> WhatsApp / Telefone</label>
+          <input type="text" id="novo-user-telefone" placeholder="(11) 98765-4321" oninput="if(typeof mascaraTelefone==='function')mascaraTelefone(this)">
+        </div>
+        <div class="form-group">
+          <label><i class="fa-solid fa-id-card"></i> CPF</label>
+          <input type="text" id="novo-user-cpf" placeholder="000.000.000-00" maxlength="14" oninput="if(typeof mascaraCPF==='function')mascaraCPF(this)">
+        </div>
+      </div>
+
+      <!-- Endereço -->
+      <div style="background: #faf7fc; padding: 12px; border-radius: 14px; border: 1px solid #ebdcf7; margin-bottom: 16px;">
+        <div style="font-weight: 700; font-size: 12px; color: var(--text-dark); margin-bottom: 8px;">
+          <i class="fa-solid fa-location-dot" style="color:var(--primary);"></i> Endereço (Opcional)
+        </div>
+        <div class="row-2">
+          <div class="form-group" style="flex:1;">
+            <label>CEP</label>
+            <input type="text" id="novo-user-cep" placeholder="00000-000" maxlength="9" onblur="buscarCepNovoUsuarioAdmin()">
+          </div>
+          <div class="form-group" style="flex:2;">
+            <label>Logradouro / Bairro</label>
+            <input type="text" id="novo-user-endereco" placeholder="Rua / Avenida">
+          </div>
+        </div>
+        <div class="row-2">
+          <div class="form-group" style="flex:1;">
+            <label>Número</label>
+            <input type="text" id="novo-user-numero" placeholder="Ex: 123">
+          </div>
+          <div class="form-group" style="flex:2;">
+            <label>Complemento</label>
+            <input type="text" id="novo-user-complemento" placeholder="Apto, Sala, Casa">
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 10px;">
+        <button type="button" onclick="fecharModalNovoUsuarioAdmin()" class="btn-outline" style="flex: 1;">Cancelar</button>
+        <button type="button" onclick="criarNovoUsuarioAdmin()" id="btn-criar-usuario-admin" class="btn-primary" style="flex: 2;">
+          <i class="fa-solid fa-user-plus"></i> Concluir Cadastro
+        </button>
       </div>
     </div>
   </div>

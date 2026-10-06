@@ -315,6 +315,8 @@ function prepararEdicaoUsuarioById(id) {
     document.getElementById('admin-user-numero').value = user.numero || '';
     document.getElementById('admin-user-complemento').value = user.complemento || '';
     document.getElementById('admin-user-ativo').checked = user.ativo !== false;
+    const senhaInput = document.getElementById('admin-user-nova-senha');
+    if (senhaInput) senhaInput.value = '';
 
     form.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -446,6 +448,257 @@ async function alternarStatusUsuario(id, statusAtual) {
         mostrarToast('Erro ao alterar status: ' + err.message, 'erro');
     }
 }
+
+// --------------------------------------------------------------------------
+// Utilitários de Senha e Modal de Novo Usuário (Admin)
+// --------------------------------------------------------------------------
+
+function toggleVisibilidadeInput(inputId, btnEl) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const isPass = input.type === 'password';
+    input.type = isPass ? 'text' : 'password';
+    if (btnEl) {
+        const icon = btnEl.querySelector('i');
+        if (icon) {
+            icon.className = isPass ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
+        }
+    }
+}
+
+function gerarSenhaParaInput(inputId) {
+    const charsMaiusc = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const charsMinusc = 'abcdefghjkmnpqrstuvwxyz';
+    const charsNum = '23456789';
+    const charsEsp = '!@#$';
+
+    let pass = '';
+    pass += charsMaiusc.charAt(Math.floor(Math.random() * charsMaiusc.length));
+    pass += charsMinusc.charAt(Math.floor(Math.random() * charsMinusc.length));
+    pass += charsMinusc.charAt(Math.floor(Math.random() * charsMinusc.length));
+    pass += charsNum.charAt(Math.floor(Math.random() * charsNum.length));
+    pass += charsNum.charAt(Math.floor(Math.random() * charsNum.length));
+    pass += charsEsp.charAt(Math.floor(Math.random() * charsEsp.length));
+
+    const todos = charsMaiusc + charsMinusc + charsNum;
+    for (let i = 0; i < 2; i++) {
+        pass += todos.charAt(Math.floor(Math.random() * todos.length));
+    }
+
+    pass = pass.split('').sort(() => 0.5 - Math.random()).join('');
+
+    const el = document.getElementById(inputId);
+    if (el) {
+        el.value = pass;
+        el.type = 'text';
+        const parent = el.parentElement;
+        if (parent) {
+            const icon = parent.querySelector('i');
+            if (icon) icon.className = 'fa-regular fa-eye-slash';
+        }
+        mostrarToast(`Senha forte gerada: ${pass}`, 'info');
+    }
+}
+
+function abrirModalNovoUsuarioAdmin() {
+    const modal = document.getElementById('modal-novo-usuario-admin');
+    if (!modal) return;
+
+    document.getElementById('novo-user-nome').value = '';
+    document.getElementById('novo-user-email').value = '';
+    document.getElementById('novo-user-senha').value = '';
+    document.getElementById('novo-user-nivel').value = 'cliente';
+    document.getElementById('novo-user-telefone').value = '';
+    document.getElementById('novo-user-cpf').value = '';
+    document.getElementById('novo-user-cep').value = '';
+    document.getElementById('novo-user-endereco').value = '';
+    document.getElementById('novo-user-numero').value = '';
+    document.getElementById('novo-user-complemento').value = '';
+
+    modal.classList.add('active');
+    setTimeout(() => {
+        const inputNome = document.getElementById('novo-user-nome');
+        if (inputNome) inputNome.focus();
+    }, 150);
+}
+
+function fecharModalNovoUsuarioAdmin() {
+    const modal = document.getElementById('modal-novo-usuario-admin');
+    if (modal) modal.classList.remove('active');
+}
+
+function buscarCepNovoUsuarioAdmin() {
+    const cepInput = document.getElementById('novo-user-cep');
+    if (!cepInput) return;
+    const cep = cepInput.value.replace(/\D/g, '');
+    if (cep.length === 8) {
+        const ruaInput = document.getElementById('novo-user-endereco');
+        if (ruaInput) ruaInput.placeholder = "Buscando logradouro...";
+        fetch(`https://viacep.com.br/ws/${cep}/json/`)
+            .then(res => res.json())
+            .then(data => {
+                if (!data.erro) {
+                    if (ruaInput) ruaInput.value = `${data.logradouro}, ${data.bairro} - ${data.localidade}/${data.uf}`;
+                    const numInput = document.getElementById('novo-user-numero');
+                    if (numInput) numInput.focus();
+                } else {
+                    mostrarToast('CEP não encontrado.', 'aviso');
+                }
+            })
+            .catch(() => {});
+    }
+}
+
+async function criarNovoUsuarioAdmin() {
+    const btn = document.getElementById('btn-criar-usuario-admin');
+    const txtOriginal = btn ? btn.innerHTML : '';
+
+    const nome = (document.getElementById('novo-user-nome')?.value || '').trim();
+    const email = (document.getElementById('novo-user-email')?.value || '').trim();
+    const password = (document.getElementById('novo-user-senha')?.value || '').trim();
+    const nivel = document.getElementById('novo-user-nivel')?.value || 'cliente';
+    const telefone = (document.getElementById('novo-user-telefone')?.value || '').trim();
+    const cpf = (document.getElementById('novo-user-cpf')?.value || '').trim();
+    const cep = (document.getElementById('novo-user-cep')?.value || '').trim();
+    const endereco = (document.getElementById('novo-user-endereco')?.value || '').trim();
+    const numero = (document.getElementById('novo-user-numero')?.value || '').trim();
+    const complemento = (document.getElementById('novo-user-complemento')?.value || '').trim();
+
+    if (!nome) {
+        return mostrarToast('Informe o nome completo do usuário.', 'aviso');
+    }
+    if (!email || !email.includes('@')) {
+        return mostrarToast('Informe um e-mail válido.', 'aviso');
+    }
+    if (!password || password.length < 6) {
+        return mostrarToast('A senha deve ter no mínimo 6 caracteres.', 'aviso');
+    }
+
+    const { data: sessionData, error: sessionErr } = await supabaseClient.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if (!token) {
+        return mostrarToast('Sua sessão expirou. Faça login novamente como administrador.', 'erro');
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Cadastrando...';
+    }
+
+    try {
+        const response = await fetch('/api/admin/users', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                action: 'create',
+                nome,
+                email,
+                password,
+                nivel,
+                telefone,
+                cpf,
+                cep,
+                endereco,
+                numero,
+                complemento
+            })
+        });
+
+        const resData = await response.json();
+
+        if (!response.ok) {
+            if (resData.needServiceRole) {
+                throw new Error('SUPABASE_SERVICE_ROLE_KEY não configurada no Cloudflare Pages. Por favor adicione a chave nas variáveis de ambiente do Cloudflare.');
+            }
+            throw new Error(resData.error || 'Erro ao criar usuário.');
+        }
+
+        mostrarToast(`✅ Usuário "${nome}" cadastrado com sucesso! Nível: ${nivel.toUpperCase()}`, 'sucesso');
+        fecharModalNovoUsuarioAdmin();
+        await carregarUsuariosAdmin();
+
+    } catch (err) {
+        console.error('Erro ao cadastrar usuário:', err);
+        mostrarToast('Erro: ' + (err.message || 'Falha ao processar requisição.'), 'erro');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = txtOriginal;
+        }
+    }
+}
+
+async function alterarSenhaUsuarioAdmin() {
+    const userId = document.getElementById('admin-user-id')?.value;
+    const nome = (document.getElementById('admin-user-nome')?.value || 'Usuário').trim();
+    const newPassword = (document.getElementById('admin-user-nova-senha')?.value || '').trim();
+    const btn = document.getElementById('btn-alterar-senha-user');
+    const txtOriginal = btn ? btn.innerHTML : '';
+
+    if (!userId) {
+        return mostrarToast('Nenhum usuário selecionado.', 'aviso');
+    }
+
+    if (!newPassword || newPassword.length < 6) {
+        return mostrarToast('A nova senha deve ter no mínimo 6 caracteres.', 'aviso');
+    }
+
+    if (!confirm(`Confirma a alteração da senha de acesso de "${nome}"?`)) {
+        return;
+    }
+
+    const { data: sessionData, error: sessionErr } = await supabaseClient.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if (!token) {
+        return mostrarToast('Sua sessão expirou. Faça login novamente como administrador.', 'erro');
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Atualizando...';
+    }
+
+    try {
+        const response = await fetch('/api/admin/users', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                action: 'update-password',
+                userId,
+                newPassword
+            })
+        });
+
+        const resData = await response.json();
+
+        if (!response.ok) {
+            if (resData.needServiceRole) {
+                throw new Error('SUPABASE_SERVICE_ROLE_KEY não configurada no Cloudflare Pages. Por favor adicione a chave nas variáveis de ambiente do Cloudflare.');
+            }
+            throw new Error(resData.error || 'Erro ao atualizar a senha do usuário.');
+        }
+
+        mostrarToast(`✅ Senha de "${nome}" atualizada com sucesso!`, 'sucesso');
+        const senhaInput = document.getElementById('admin-user-nova-senha');
+        if (senhaInput) senhaInput.value = '';
+
+    } catch (err) {
+        console.error('Erro ao alterar senha do usuário:', err);
+        mostrarToast('Erro: ' + (err.message || 'Falha ao alterar senha.'), 'erro');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = txtOriginal;
+        }
+    }
+}
+
 // ==========================================================================
 // Configurações do Mercado Pago no Painel Admin
 // ==========================================================================
