@@ -654,7 +654,7 @@ async function carregarMeusPedidos() {
             if (statusAtual === 'Pendente' && p.pagamento === 'pix') {
                 btnReabrirPix = `
                     <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e2e8f0;">
-                        <button onclick="reabrirPixPedido('${p.id}', ${p.total})" style="width:100%; padding:9px; background:#0284c7; color:#fff; border:none; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+                        <button id="btn-reabrir-pix-${p.id}" onclick="reabrirPixPedido('${p.id}', '${p.total}')" style="width:100%; padding:10px; background:#0284c7; color:#fff; border:none; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; transition:all 0.2s; box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25);">
                             <i class="fa-brands fa-pix"></i> Pagar Agora / Ver QR Code Pix
                         </button>
                     </div>
@@ -696,13 +696,53 @@ async function carregarMeusPedidos() {
     }
 }
 
-async function reabrirPixPedido(pedidoId, total) {
-    if (typeof iniciarPagamentoMercadoPago === 'function') {
+async function reabrirPixPedido(pedidoId, totalRaw) {
+    console.log('[Lunoca] Solicitando abertura de Pix para o pedido:', pedidoId, 'Valor original:', totalRaw);
+    const btn = document.getElementById(`btn-reabrir-pix-${pedidoId}`);
+    let txtOriginal = '';
+    if (btn) {
+        txtOriginal = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Abrindo QR Code Pix...';
+    }
+
+    try {
+        const total = parseFloat(String(totalRaw || '0').replace(',', '.')) || 0;
         const clienteDados = {
-            nome: usuarioAtual?.nome || 'Cliente Lunoca',
-            email: usuarioAtual?.email || 'cliente@lunocadoceria.com.br',
-            cpf: usuarioAtual?.cpf || '19119119100'
+            nome: (window.usuarioAtual && window.usuarioAtual.nome) || 'Cliente Lunoca',
+            email: (window.usuarioAtual && window.usuarioAtual.email) || 'cliente@lunocadoceria.com.br',
+            cpf: (window.usuarioAtual && window.usuarioAtual.cpf) || '19119119100',
+            telefone: (window.usuarioAtual && window.usuarioAtual.telefone) || ''
         };
-        await iniciarPagamentoMercadoPago(pedidoId, total, [], 'pix', clienteDados);
+
+        const orderData = {
+            pedidoId: pedidoId,
+            total: total,
+            items: [],
+            forma: 'pix',
+            cliente: clienteDados
+        };
+
+        if (window.MercadoPagoPlugin && typeof window.MercadoPagoPlugin.iniciarCheckoutTransparente === 'function') {
+            await window.MercadoPagoPlugin.iniciarCheckoutTransparente(orderData);
+        } else if (typeof iniciarPagamentoMercadoPago === 'function') {
+            await iniciarPagamentoMercadoPago(pedidoId, total, [], 'pix', clienteDados);
+        } else {
+            throw new Error('Módulo de pagamento Mercado Pago não encontrado no navegador.');
+        }
+    } catch (err) {
+        console.error('[Lunoca] Erro ao reabrir Pix:', err);
+        if (typeof mostrarToast === 'function') {
+            mostrarToast('Erro ao abrir QR Code Pix: ' + (err.message || 'Tente novamente.'), 'erro');
+        } else {
+            alert('Erro ao abrir QR Code Pix: ' + (err.message || 'Tente novamente.'));
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = txtOriginal || '<i class="fa-brands fa-pix"></i> Pagar Agora / Ver QR Code Pix';
+        }
     }
 }
+window.reabrirPixPedido = reabrirPixPedido;
+

@@ -144,6 +144,7 @@
 
       modal.classList.add('active');
       modal.style.display = 'flex';
+      modal.style.zIndex = '999999';
 
       const forma = orderData.forma || 'pix';
       if (forma === 'pix') {
@@ -168,7 +169,7 @@
           <h3 style="margin: 0 0 6px 0; color: #0f172a; font-size: 18px;">Gerando QR Code Pix...</h3>
           <p style="font-size: 13px; color: #64748b; margin: 0 0 12px 0;">Pedido #${orderData.pedidoId} &bull; Total: <strong>${formattedTotal}</strong></p>
           <div style="font-size: 12px; color: #0284c7; display: flex; align-items: center; justify-content: center; gap: 6px;">
-            <i class="fa-solid fa-spinner fa-spin"></i> Comunicando diretamente com o Mercado Pago
+            <i class="fa-solid fa-spinner fa-spin"></i> Conectando diretamente ao Mercado Pago
           </div>
         </div>
       `;
@@ -180,14 +181,19 @@
           forma: 'pix',
           items: orderData.items || [],
           cliente: orderData.cliente || {
-            nome: window.usuarioAtual?.nome || 'Cliente Lunoca',
-            email: window.usuarioAtual?.email || 'cliente@lunocadoceria.com.br',
-            cpf: window.usuarioAtual?.cpf || '19119119100'
+            nome: (window.usuarioAtual && window.usuarioAtual.nome) || 'Cliente Lunoca',
+            email: (window.usuarioAtual && window.usuarioAtual.email) || 'cliente@lunocadoceria.com.br',
+            cpf: (window.usuarioAtual && window.usuarioAtual.cpf) || '19119119100'
           },
           origin: window.location.origin
         };
 
-        const res = await fetch('/api/mercadopago/transparent-payment', {
+        let apiUrl = '/api/mercadopago/transparent-payment';
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:') {
+          apiUrl = 'https://lunocadoceria.com.br/api/mercadopago/transparent-payment';
+        }
+
+        const res = await fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -215,11 +221,12 @@
           this.startRealtimePolling(data.paymentId, orderData.pedidoId);
 
         } else {
-          console.warn('[MercadoPagoPlugin] Falha ao gerar PIX:', data.error);
+          const motivoFalha = data.error || (data.details && data.details.message) || 'Aguardando validação ou instabilidade na conexão bancária.';
+          console.warn('[MercadoPagoPlugin] Falha ao gerar PIX:', motivoFalha);
           this.renderFallbackPix(conteudo, {
             pedidoId: orderData.pedidoId,
             total: orderData.total,
-            motivo: data.error || 'Aguardando validação de credencial ou instabilidade na conexão bancária.'
+            motivo: motivoFalha
           });
         }
       } catch (err) {
@@ -826,9 +833,12 @@
           <p style="font-size: 12px; color: #7c2d12; margin: 0 0 14px 0; background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:8px;">${motivoSeguro}</p>
           <p style="font-size: 13px; color: #64748b; margin: 0 0 14px 0;">Pedido #${pedidoId} &bull; Total: <strong>${formattedTotal}</strong></p>
 
-          <div style="display: flex; gap: 8px; margin-bottom: 14px;">
-            <button onclick="window.MercadoPagoPlugin.switchToCard()" style="flex:1; padding: 10px; background: #0284c7; color: #fff; border: none; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer;">
-              <i class="fa-solid fa-credit-card"></i> Tentar Cartão de Crédito
+          <div style="display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;">
+            <button onclick="window.MercadoPagoPlugin.switchToPix()" style="flex:1; min-width: 140px; padding: 10px; background: #0284c7; color: #fff; border: none; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer;">
+              <i class="fa-solid fa-rotate-right"></i> Tentar Gerar QR Code
+            </button>
+            <button onclick="window.MercadoPagoPlugin.switchToCard()" style="flex:1; min-width: 140px; padding: 10px; background: #475569; color: #fff; border: none; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer;">
+              <i class="fa-solid fa-credit-card"></i> Pagar com Cartão
             </button>
           </div>
 
