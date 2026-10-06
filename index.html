@@ -719,9 +719,15 @@
             </label>
           </div>
 
-          <div style="display: flex; gap: 10px; margin-top: 5px;">
-            <button onclick="salvarConfigWhatsAppAdmin()" style="flex: 2; background: #16a34a;"><i class="fa-solid fa-floppy-disk"></i> Salvar Conexão WhatsApp</button>
-            <button onclick="testarConexaoWhatsApp()" class="btn-outline" style="flex: 1;"><i class="fa-solid fa-paper-plane"></i> Testar Envio</button>
+          <div style="display: flex; gap: 8px; margin-top: 5px; flex-wrap: wrap;">
+            <button type="button" onclick="salvarConfigWhatsAppAdmin()" style="flex: 2; min-width: 170px; background: #16a34a;"><i class="fa-solid fa-floppy-disk"></i> Salvar Conexão</button>
+            <button type="button" onclick="conectarEvolutionQrCodeAdmin()" id="btn-conectar-evolution-qr" class="btn-primary" style="flex: 2; min-width: 180px; background: #2563eb; border-color: #2563eb;"><i class="fa-solid fa-qrcode"></i> Gerar QR Code na Tela</button>
+            <button type="button" onclick="testarConexaoWhatsApp()" class="btn-outline" style="flex: 1; min-width: 130px;"><i class="fa-solid fa-paper-plane"></i> Testar Envio</button>
+          </div>
+
+          <!-- Caixa de QR Code do WhatsApp na Tela -->
+          <div id="wa-qrcode-box" style="display: none; margin-top: 16px; padding: 18px; border-radius: 16px; background: #ffffff; border: 2px dashed #2563eb; text-align: center;">
+            <div id="wa-qrcode-conteudo"></div>
           </div>
 
           <div id="wa-status-teste" style="margin-top: 15px;"></div>

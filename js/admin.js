@@ -1007,3 +1007,184 @@ function formatarMensagemWhatsApp(template, dados) {
     msg = msg.replace(/{loja}/g, 'Lunoca Doceria');
     return msg;
 }
+
+// --------------------------------------------------------------------------
+// Conexão e Leitura de QR Code Direta da Evolution API no Painel Admin
+// --------------------------------------------------------------------------
+let _waQrPollingTimer = null;
+
+function pararPollingEvolutionQrCode() {
+    if (_waQrPollingTimer) {
+        clearInterval(_waQrPollingTimer);
+        _waQrPollingTimer = null;
+    }
+}
+
+async function conectarEvolutionQrCodeAdmin() {
+    salvarConfigWhatsAppAdmin();
+    const cfg = getWhatsAppConfig();
+    const box = document.getElementById('wa-qrcode-box');
+    const conteudo = document.getElementById('wa-qrcode-conteudo');
+    const btn = document.getElementById('btn-conectar-evolution-qr');
+    const txtOriginal = btn ? btn.innerHTML : '';
+
+    if (!box || !conteudo) return;
+    pararPollingEvolutionQrCode();
+
+    if (!cfg.instanciaUrl || !cfg.apiKey) {
+        return alert('Por favor, informe a URL da Instância e a API Key antes de gerar o QR Code.');
+    }
+
+    box.style.display = 'block';
+    conteudo.innerHTML = `
+        <div style="padding: 15px; color: #1e293b;">
+            <i class="fa-solid fa-spinner fa-spin" style="font-size: 26px; color: #2563eb; margin-bottom: 10px;"></i>
+            <h4 style="margin: 0 0 6px;">Conectando com a Evolution API...</h4>
+            <p style="margin: 0; font-size: 12.5px; color: #64748b;">Solicitando criação de sessão e QR Code no servidor Render.</p>
+        </div>
+    `;
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Gerando QR Code...';
+    }
+
+    try {
+        const res = await fetch('/api/whatsapp/instance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'connect',
+                instanciaUrl: cfg.instanciaUrl,
+                apiKey: cfg.apiKey,
+                instanciaNome: cfg.instanciaNome || 'lunoca-whatsapp'
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.connected || data.state === 'open') {
+            conteudo.innerHTML = `
+                <div style="padding: 15px; background: #ecfdf5; border-radius: 12px; border: 1px solid #a7f3d0;">
+                    <i class="fa-solid fa-circle-check" style="font-size: 32px; color: #16a34a; margin-bottom: 8px;"></i>
+                    <h3 style="margin: 0 0 4px; color: #065f46; font-size: 16px;">WhatsApp 100% Conectado!</h3>
+                    <p style="margin: 0 0 12px; font-size: 13px; color: #047857;">A instância <strong>${escapeHTML(cfg.instanciaNome || 'lunoca-whatsapp')}</strong> está ativa e pronta para enviar mensagens automáticas.</p>
+                    <button type="button" class="btn-outline" onclick="fecharBoxQrCodeWhatsApp()" style="padding: 6px 14px; font-size: 12px;">Fechar Janela</button>
+                </div>
+            `;
+            const dot = document.getElementById('wa-status-dot');
+            if (dot) dot.className = 'whatsapp-pulse-dot online';
+            return;
+        }
+
+        if (data.qrcode) {
+            conteudo.innerHTML = `
+                <div>
+                    <h4 style="margin: 0 0 4px; color: var(--text-dark); font-size: 16px;">
+                        <i class="fa-brands fa-whatsapp" style="color: #25d366;"></i> Escaneie o QR Code no seu WhatsApp
+                    </h4>
+                    <p style="margin: 0 0 12px; font-size: 12.5px; color: #64748b;">
+                        1. Abra o WhatsApp no celular &bull; 2. Toque em <strong>Aparelhos Conectados</strong> &bull; 3. <strong>Conectar um Aparelho</strong>
+                    </p>
+                    <div style="display: inline-block; padding: 10px; background: #fff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0;">
+                        <img src="${data.qrcode}" alt="QR Code WhatsApp" style="width: 240px; height: 240px; display: block; border-radius: 8px;">
+                    </div>
+                    ${data.pairingCode ? `<div style="margin-top: 10px; font-size: 13px; color: #1e293b;">Código de Pareamento: <strong style="font-family: monospace; background: #f1f5f9; padding: 4px 8px; border-radius: 6px;">${escapeHTML(data.pairingCode)}</strong></div>` : ''}
+                    <div style="margin-top: 14px; font-size: 12px; color: #0284c7; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                        <i class="fa-solid fa-spinner fa-spin"></i> Aguardando leitura do QR Code pelo celular...
+                    </div>
+                    <div style="margin-top: 12px; display: flex; justify-content: center; gap: 8px;">
+                        <button type="button" class="btn-outline" onclick="conectarEvolutionQrCodeAdmin()" style="padding: 5px 12px; font-size: 11.5px;"><i class="fa-solid fa-rotate-right"></i> Atualizar QR Code</button>
+                        <button type="button" class="btn-danger" onclick="resetarInstanciaEvolutionAdmin()" style="padding: 5px 12px; font-size: 11.5px;"><i class="fa-solid fa-trash-can"></i> Resetar Instância</button>
+                        <button type="button" class="btn-outline" onclick="fecharBoxQrCodeWhatsApp()" style="padding: 5px 12px; font-size: 11.5px;">Fechar</button>
+                    </div>
+                </div>
+            `;
+
+            _waQrPollingTimer = setInterval(async () => {
+                try {
+                    const stRes = await fetch('/api/whatsapp/instance', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'status',
+                            instanciaUrl: cfg.instanciaUrl,
+                            apiKey: cfg.apiKey,
+                            instanciaNome: cfg.instanciaNome || 'lunoca-whatsapp'
+                        })
+                    });
+                    const stData = await stRes.json();
+                    if (stData.connected || stData.state === 'open') {
+                        pararPollingEvolutionQrCode();
+                        conteudo.innerHTML = `
+                            <div style="padding: 15px; background: #ecfdf5; border-radius: 12px; border: 1px solid #a7f3d0;">
+                                <i class="fa-solid fa-circle-check" style="font-size: 32px; color: #16a34a; margin-bottom: 8px;"></i>
+                                <h3 style="margin: 0 0 4px; color: #065f46; font-size: 16px;">WhatsApp Conectado com Sucesso!</h3>
+                                <p style="margin: 0 0 12px; font-size: 13px; color: #047857;">Seu número já está vinculado e pronto para disparos.</p>
+                                <button type="button" class="btn-primary" onclick="fecharBoxQrCodeWhatsApp()" style="padding: 6px 14px; font-size: 12px; background: #16a34a;">Concluir</button>
+                            </div>
+                        `;
+                        const dot = document.getElementById('wa-status-dot');
+                        if (dot) dot.className = 'whatsapp-pulse-dot online';
+                    }
+                } catch (pollErr) {}
+            }, 3000);
+
+            return;
+        }
+
+        conteudo.innerHTML = `
+            <div style="padding: 14px; background: #fff1f2; border-radius: 12px; border: 1px solid #fecdd3; color: #991b1b;">
+                <i class="fa-solid fa-triangle-exclamation" style="font-size: 24px; margin-bottom: 6px;"></i>
+                <h4 style="margin: 0 0 4px;">Não foi possível obter o QR Code</h4>
+                <p style="margin: 0 0 10px; font-size: 12.5px;">${escapeHTML(data.error || 'A Evolution API não retornou o código de conexão.')}</p>
+                <div style="display: flex; justify-content: center; gap: 8px;">
+                    <button type="button" class="btn-primary" onclick="resetarInstanciaEvolutionAdmin()" style="padding: 6px 12px; font-size: 12px; background: #dc2626;"><i class="fa-solid fa-rotate"></i> Resetar e Tentar Novamente</button>
+                    <button type="button" class="btn-outline" onclick="fecharBoxQrCodeWhatsApp()" style="padding: 6px 12px; font-size: 12px;">Fechar</button>
+                </div>
+            </div>
+        `;
+
+    } catch (err) {
+        conteudo.innerHTML = `
+            <div style="padding: 14px; background: #fff1f2; border-radius: 12px; border: 1px solid #fecdd3; color: #991b1b;">
+                <i class="fa-solid fa-circle-exclamation" style="font-size: 24px; margin-bottom: 6px;"></i>
+                <h4 style="margin: 0 0 4px;">Erro de conexão</h4>
+                <p style="margin: 0; font-size: 12px;">${escapeHTML(err.message)}</p>
+            </div>
+        `;
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = txtOriginal;
+        }
+    }
+}
+
+function fecharBoxQrCodeWhatsApp() {
+    pararPollingEvolutionQrCode();
+    const box = document.getElementById('wa-qrcode-box');
+    if (box) box.style.display = 'none';
+}
+
+async function resetarInstanciaEvolutionAdmin() {
+    if (!confirm('Deseja resetar a instância do WhatsApp para gerar um novo QR Code do zero?')) return;
+    const cfg = getWhatsAppConfig();
+    try {
+        await fetch('/api/whatsapp/instance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'delete',
+                instanciaUrl: cfg.instanciaUrl,
+                apiKey: cfg.apiKey,
+                instanciaNome: cfg.instanciaNome || 'lunoca-whatsapp'
+            })
+        });
+        mostrarToast('Instância resetada com sucesso! Gerando novo QR Code...', 'sucesso');
+        setTimeout(() => conectarEvolutionQrCodeAdmin(), 800);
+    } catch (e) {
+        mostrarToast('Erro ao resetar: ' + e.message, 'erro');
+    }
+}
+
