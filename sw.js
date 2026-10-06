@@ -2,7 +2,7 @@
 // LUNOCA DOCERIA - Service Worker para PWA (Progressive Web App)
 // ==========================================================================
 
-const CACHE_NAME = 'lunoca-cache-v2.8.0';
+const CACHE_NAME = 'lunoca-cache-v2.9.0';
 
 const PRECACHE_ASSETS = [
   '/',
