@@ -249,6 +249,22 @@ FOR EACH ROW EXECUTE FUNCTION public.validar_recalcular_total_pedido();
 -- 6. RPC: CRIAR PEDIDO SEGURO (Transação Atômica Server-Side)
 -- O cliente envia os itens e dados, o servidor valida produtos, estoque e calcula o preço
 -- ==========================================================================
+
+-- Limpeza preventiva de quaisquer assinaturas anteriores para evitar erro 42725
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN (
+    SELECT p.oid::regprocedure AS func_signature
+    FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE n.nspname = 'public' AND p.proname IN ('criar_pedido', 'confirmar_pagamento_pedido')
+  ) LOOP
+    EXECUTE 'DROP FUNCTION IF EXISTS ' || r.func_signature || ' CASCADE;';
+  END LOOP;
+END $$;
+
 CREATE OR REPLACE FUNCTION public.criar_pedido(
   p_itens JSONB,
   p_data_entrega DATE,
@@ -360,7 +376,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-GRANT EXECUTE ON FUNCTION public.criar_pedido TO authenticated;
+GRANT EXECUTE ON FUNCTION public.criar_pedido(JSONB, DATE, TEXT, TEXT, TEXT, TEXT) TO authenticated, service_role;
 
 -- ==========================================================================
 -- 7. TRANSAÇÃO ATÔMICA DE CONFIRMAÇÃO DE PAGAMENTO & BAIXA DE ESTOQUE
@@ -368,7 +384,10 @@ GRANT EXECUTE ON FUNCTION public.criar_pedido TO authenticated;
 -- ==========================================================================
 CREATE OR REPLACE FUNCTION public.confirmar_pagamento_pedido(
   p_pedido_id BIGINT,
-  p_mercado_pago_payment_id TEXT,
+  p_mercado_pago_payment_id TEXT DEFAULT NULL,
+  p_status TEXT DEFAULT 'approved',
+  p_forma_pagamento TEXT DEFAULT NULL,
+  p_valor NUMERIC DEFAULT NULL,
   p_origem TEXT DEFAULT 'webhook'
 )
 RETURNS JSON AS $$
@@ -482,8 +501,8 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 -- 8. FECHAMENTO DE RPCs DE ESTOQUE VULNERÁVEIS
 -- Revoga acesso público de baixar_estoque_pedido_batch e baixar_estoque_item
 -- ==========================================================================
-REVOKE EXECUTE ON FUNCTION public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT) FROM public, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT) TO service_role;
+REVOKE EXECUTE ON FUNCTION public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT, TEXT, NUMERIC, TEXT) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT, TEXT, NUMERIC, TEXT) TO service_role, authenticated;
 
 -- Reforço nas funções antigas para impedir uso indevido
 CREATE OR REPLACE FUNCTION public.baixar_estoque_pedido_batch(
@@ -497,7 +516,7 @@ BEGIN
   END IF;
 
   -- Redireciona para o fluxo oficial de confirmação
-  RETURN public.confirmar_pagamento_pedido(p_pedido_id, NULL, 'Admin Manual');
+  RETURN public.confirmar_pagamento_pedido(p_pedido_id, NULL, 'approved', NULL, NULL, 'Admin Manual');
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 

@@ -183,6 +183,20 @@ BEFORE INSERT OR UPDATE ON public.pedidos
 FOR EACH ROW EXECUTE FUNCTION public.validar_recalcular_total_pedido();
 
 -- 8. RPC: Criar Pedido Server-Side
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN (
+    SELECT p.oid::regprocedure AS func_signature
+    FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE n.nspname = 'public' AND p.proname IN ('criar_pedido', 'confirmar_pagamento_pedido')
+  ) LOOP
+    EXECUTE 'DROP FUNCTION IF EXISTS ' || r.func_signature || ' CASCADE;';
+  END LOOP;
+END $$;
+
 CREATE OR REPLACE FUNCTION public.criar_pedido(
   p_itens JSONB,
   p_data_entrega DATE,
@@ -265,12 +279,15 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-GRANT EXECUTE ON FUNCTION public.criar_pedido TO authenticated;
+GRANT EXECUTE ON FUNCTION public.criar_pedido(JSONB, DATE, TEXT, TEXT, TEXT, TEXT) TO authenticated, service_role;
 
 -- 9. RPC Atômica de Confirmação & Baixa de Estoque
 CREATE OR REPLACE FUNCTION public.confirmar_pagamento_pedido(
   p_pedido_id BIGINT,
-  p_mercado_pago_payment_id TEXT,
+  p_mercado_pago_payment_id TEXT DEFAULT NULL,
+  p_status TEXT DEFAULT 'approved',
+  p_forma_pagamento TEXT DEFAULT NULL,
+  p_valor NUMERIC DEFAULT NULL,
   p_origem TEXT DEFAULT 'webhook'
 )
 RETURNS JSON AS $$
@@ -339,8 +356,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-REVOKE EXECUTE ON FUNCTION public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT) FROM public, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT) TO service_role;
+REVOKE EXECUTE ON FUNCTION public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT, TEXT, NUMERIC, TEXT) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT, TEXT, NUMERIC, TEXT) TO service_role, authenticated;
 
 -- 10. Políticas RLS
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
