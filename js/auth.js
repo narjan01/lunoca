@@ -128,6 +128,20 @@ async function carregarPerfilUsuario(authUser) {
     if (error) throw error;
     
     if (data) {
+      if (data.ativo === false) {
+        console.warn('[Lunoca] Tentativa de login por conta desativada:', data.email);
+        await supabaseClient.auth.signOut();
+        usuarioAtual = { nivel: 'visitante', nome: '', email: '', id: null, ativo: false };
+        if (typeof mostrarToast === 'function') {
+          mostrarToast('Sua conta foi desativada pelo administrador. Entre em contato com o suporte.', 'erro', 6000);
+        } else {
+          alert('Sua conta foi desativada pelo administrador. Entre em contato com o suporte.');
+        }
+        if (typeof atualizarInterfaceUsuario === 'function') atualizarInterfaceUsuario();
+        if (typeof mostrarTela === 'function') mostrarTela('menu-section');
+        return;
+      }
+
       usuarioAtual = {
         id: data.id,
         nome: data.nome || authUser.user_metadata?.nome || '',
@@ -138,7 +152,8 @@ async function carregarPerfilUsuario(authUser) {
         endereco: data.endereco || '',
         numero: data.numero || '',
         complemento: data.complemento || '',
-        nivel: data.nivel || 'cliente'
+        nivel: data.nivel || 'cliente',
+        ativo: true
       };
     }
   } catch (error) {

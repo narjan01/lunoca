@@ -787,7 +787,15 @@ const TEMPLATES_PADRAO_WA = {
 function getWhatsAppConfig() {
     try {
         const raw = localStorage.getItem(WHATSAPP_STORAGE_KEY);
-        if (raw) return JSON.parse(raw);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.apiKey) {
+                // Remove credencial sensível residual do armazenamento local
+                delete parsed.apiKey;
+                try { localStorage.setItem(WHATSAPP_STORAGE_KEY, JSON.stringify(parsed)); } catch (_) {}
+            }
+            return parsed;
+        }
     } catch (e) {}
     return {
         provedor: 'direct', // 'direct', 'evolution', 'z-api', 'webhook'
@@ -881,15 +889,14 @@ function salvarConfigWhatsAppAdmin() {
     const prov = document.getElementById('wa-provedor')?.value || 'direct';
     const url = (document.getElementById('wa-instancia-url')?.value || '').trim();
     const nome = (document.getElementById('wa-instancia-nome')?.value || '').trim();
-    const key = (document.getElementById('wa-api-key')?.value || '').trim();
     const num = (document.getElementById('wa-numero-loja')?.value || '').trim();
     const auto = document.getElementById('wa-disparo-automatico')?.checked !== false;
 
+    // Chaves de API sensíveis não são salvas no localStorage (ficam no backend do Cloudflare)
     const novaCfg = {
         provedor: prov,
         instanciaUrl: url,
         instanciaNome: nome,
-        apiKey: key,
         numeroLoja: num,
         disparoAutomatico: auto
     };
@@ -946,7 +953,7 @@ async function testarConexaoWhatsApp() {
     try {
         const msgTeste = "🍰 *Lunoca Doceria* - Teste de Conexão WhatsApp realizado com sucesso! Sua loja está pronta para notificar clientes automaticamente.";
         
-        if (cfg.provedor === 'direct' || !cfg.instanciaUrl) {
+        if (cfg.provedor === 'direct') {
             statusDiv.innerHTML = `<div style="padding:12px; background:#fffbeb; color:#92400e; border-radius:8px; font-size:12px; border:1px solid #fde68a;">
                 <i class="fa-solid fa-circle-info"></i> <strong>Modo Direto 1-Clique Ativo:</strong> Sem gateway externo configurado.<br>
                 <a href="https://api.whatsapp.com/send?phone=55${foneLoja}&text=${encodeURIComponent(msgTeste)}" target="_blank" class="btn-whatsapp-sm" style="margin-top:8px;">
@@ -956,15 +963,20 @@ async function testarConexaoWhatsApp() {
             return;
         }
 
+        const session = (await window.supabaseClient?.auth?.getSession())?.data?.session;
+        const token = session?.access_token || '';
+
         const res = await fetch('/api/whatsapp/send', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
             body: JSON.stringify({
                 telefone: foneLoja,
                 mensagem: msgTeste,
                 provedor: cfg.provedor,
                 instanciaUrl: cfg.instanciaUrl,
-                apiKey: cfg.apiKey,
                 instanciaNome: cfg.instanciaNome
             })
         });
@@ -1031,16 +1043,12 @@ async function conectarEvolutionQrCodeAdmin() {
     if (!box || !conteudo) return;
     pararPollingEvolutionQrCode();
 
-    if (!cfg.instanciaUrl || !cfg.apiKey) {
-        return alert('Por favor, informe a URL da Instância e a API Key antes de gerar o QR Code.');
-    }
-
     box.style.display = 'block';
     conteudo.innerHTML = `
         <div style="padding: 15px; color: #1e293b;">
             <i class="fa-solid fa-spinner fa-spin" style="font-size: 26px; color: #2563eb; margin-bottom: 10px;"></i>
             <h4 style="margin: 0 0 6px;">Conectando com a Evolution API...</h4>
-            <p style="margin: 0; font-size: 12.5px; color: #64748b;">Solicitando criação de sessão e QR Code no servidor Render.</p>
+            <p style="margin: 0; font-size: 12.5px; color: #64748b;">Solicitando criação de sessão e QR Code no servidor.</p>
         </div>
     `;
 
@@ -1050,13 +1058,18 @@ async function conectarEvolutionQrCodeAdmin() {
     }
 
     try {
+        const session = (await window.supabaseClient?.auth?.getSession())?.data?.session;
+        const token = session?.access_token || '';
+
         const res = await fetch('/api/whatsapp/instance', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
             body: JSON.stringify({
                 action: 'connect',
                 instanciaUrl: cfg.instanciaUrl,
-                apiKey: cfg.apiKey,
                 instanciaNome: cfg.instanciaNome || 'lunoca-whatsapp'
             })
         });
@@ -1103,13 +1116,18 @@ async function conectarEvolutionQrCodeAdmin() {
 
             _waQrPollingTimer = setInterval(async () => {
                 try {
+                    const pollSession = (await window.supabaseClient?.auth?.getSession())?.data?.session;
+                    const pollToken = pollSession?.access_token || '';
+
                     const stRes = await fetch('/api/whatsapp/instance', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            ...(pollToken ? { 'Authorization': `Bearer ${pollToken}` } : {})
+                        },
                         body: JSON.stringify({
                             action: 'status',
                             instanciaUrl: cfg.instanciaUrl,
-                            apiKey: cfg.apiKey,
                             instanciaNome: cfg.instanciaNome || 'lunoca-whatsapp'
                         })
                     });
@@ -1171,13 +1189,18 @@ async function resetarInstanciaEvolutionAdmin() {
     if (!confirm('Deseja resetar a instância do WhatsApp para gerar um novo QR Code do zero?')) return;
     const cfg = getWhatsAppConfig();
     try {
+        const session = (await window.supabaseClient?.auth?.getSession())?.data?.session;
+        const token = session?.access_token || '';
+
         await fetch('/api/whatsapp/instance', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
             body: JSON.stringify({
                 action: 'delete',
                 instanciaUrl: cfg.instanciaUrl,
-                apiKey: cfg.apiKey,
                 instanciaNome: cfg.instanciaNome || 'lunoca-whatsapp'
             })
         });

@@ -14,5 +14,3 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // Inicializa o cliente do Supabase
 window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Chave da API do ImgBB para upload de imagens
-const IMGBB_API_KEY = '97dfa8989e6adbbc6faebb4b505686fe';

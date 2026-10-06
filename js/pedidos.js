@@ -177,47 +177,74 @@ async function enviarPedido() {
             }
         }
 
-        // Inserção do pedido com dados completos, WhatsApp e itens estruturados JSONB
-        let inserted = null;
-        const payloadComTelefone = {
-            cliente_id: usuarioAtual.id,
-            nome_cliente: nomeInput,
-            email_cliente: usuarioAtual.email,
-            data_pedido: new Date().toISOString().split('T')[0],
-            data_entrega: data,
-            total: total,
-            pagamento: formaPagamento,
-            status: 'Pendente',
-            itens: nomesItens.join(' + '),
-            itens_json: itensParaMP,
-            endereco_entrega: end,
-            telefone_cliente: whatsappInput
-        };
+        // =====================================================================
+        // Criação Transacional do Pedido Server-Side (Anti-Fraude de Total)
+        // O servidor valida produtos, estoque e calcula o total matematicamente
+        // =====================================================================
+        let pedidoId = null;
+        let totalFinal = 0;
 
-        const resInsert = await supabaseClient.from('pedidos').insert(payloadComTelefone).select();
-        if (resInsert.error) {
-            console.warn('Tentativa com colunas estendidas falhou, aplicando fallback:', resInsert.error.message);
-            // Fallback caso a migração ainda não tenha sido rodada no Supabase
-            delete payloadComTelefone.itens_json;
-            delete payloadComTelefone.telefone_cliente;
-            payloadComTelefone.endereco_entrega = `${end} [WhatsApp: ${whatsappInput}]`;
-            const resFallback = await supabaseClient.from('pedidos').insert(payloadComTelefone).select();
-            if (resFallback.error) throw resFallback.error;
-            inserted = resFallback.data;
-        } else {
-            inserted = resInsert.data;
+        try {
+            const { data: rpcRes, error: rpcErr } = await supabaseClient.rpc('criar_pedido', {
+                p_itens: itensParaMP,
+                p_data_entrega: data,
+                p_pagamento: formaPagamento,
+                p_endereco_entrega: end,
+                p_telefone_cliente: whatsappInput,
+                p_nome_cliente: nomeInput
+            });
+
+            if (rpcErr) throw rpcErr;
+
+            if (rpcRes && rpcRes.success) {
+                pedidoId = rpcRes.pedido_id;
+                totalFinal = parseFloat(rpcRes.total);
+            } else if (rpcRes && rpcRes.error) {
+                throw new Error(rpcRes.error);
+            } else {
+                throw new Error('Falha inesperada ao processar pedido no servidor.');
+            }
+        } catch (rpcError) {
+            console.warn('[Lunoca] RPC criar_pedido falhou ou pendente de migração, aplicando fallback com trigger:', rpcError);
+            
+            // Fallback seguro: O banco possui a trigger trigger_validar_recalcular_total_pedido que recalcula o total
+            const payloadFallback = {
+                cliente_id: usuarioAtual.id,
+                nome_cliente: nomeInput,
+                email_cliente: usuarioAtual.email,
+                telefone_cliente: whatsappInput,
+                data_pedido: new Date().toISOString().split('T')[0],
+                data_entrega: data,
+                total: total, // A trigger sobrescreverá se divergente
+                pagamento: formaPagamento,
+                status: 'Pendente',
+                itens: nomesItens.join(' + '),
+                itens_json: itensParaMP,
+                endereco_entrega: end
+            };
+
+            const resInsert = await supabaseClient.from('pedidos').insert(payloadFallback).select();
+            if (resInsert.error) {
+                // Fallback simplificado sem colunas estendidas caso schema antigo
+                delete payloadFallback.itens_json;
+                delete payloadFallback.telefone_cliente;
+                payloadFallback.endereco_entrega = `${end} [WhatsApp: ${whatsappInput}]`;
+                const resFallback = await supabaseClient.from('pedidos').insert(payloadFallback).select();
+                if (resFallback.error) throw resFallback.error;
+                pedidoId = resFallback.data[0].id;
+                totalFinal = parseFloat(resFallback.data[0].total);
+            } else {
+                pedidoId = resInsert.data[0].id;
+                totalFinal = parseFloat(resInsert.data[0].total);
+            }
         }
-
-        const pedidoId = (inserted && inserted[0]) ? inserted[0].id : Date.now();
 
         try {
             localStorage.setItem('lunoca_ultimo_pedido_id', String(pedidoId));
         } catch (e) {}
 
-        // Baixa automática no estoque
-        if (typeof darBaixaEstoqueAposPedido === 'function') {
-            darBaixaEstoqueAposPedido(itensParaMP, pedidoId);
-        }
+        // ATENÇÃO: A baixa de estoque NÃO ocorre mais aqui de forma prematura.
+        // O estoque só é baixado pelo servidor/webhook quando o pagamento for APROVADO.
 
         // Dados do pagador com WhatsApp e CPF
         const clienteDados = {
@@ -229,9 +256,9 @@ async function enviarPedido() {
 
         // Iniciar fluxo de pagamento Mercado Pago (PIX com QR Code ou Cartão)
         if (typeof iniciarPagamentoMercadoPago === 'function') {
-            await iniciarPagamentoMercadoPago(pedidoId, total, itensParaMP, formaPagamento, clienteDados);
+            await iniciarPagamentoMercadoPago(pedidoId, totalFinal, itensParaMP, formaPagamento, clienteDados);
         } else {
-            alert("Pedido Confirmado! A Lunoca agradece a preferência.");
+            alert("Pedido Criado com Sucesso! A Lunoca agradece a preferência.");
             mostrarTela('menu-section');
         }
     } catch (err) {
@@ -406,16 +433,20 @@ async function notificarStatusPedidoWhatsApp(pedidoId, novoStatus) {
         
         const foneDigits = telefone.replace(/\D/g, '');
 
-        if (cfg.provedor && cfg.provedor !== 'direct' && cfg.instanciaUrl) {
+        if (cfg.provedor && cfg.provedor !== 'direct') {
+            const session = (await window.supabaseClient?.auth?.getSession())?.data?.session;
+            const token = session?.access_token || '';
+
             const res = await fetch('/api/whatsapp/send', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                },
                 body: JSON.stringify({
                     telefone: foneDigits,
                     mensagem: mensagem,
                     provedor: cfg.provedor,
-                    instanciaUrl: cfg.instanciaUrl,
-                    apiKey: cfg.apiKey,
                     instanciaNome: cfg.instanciaNome
                 })
             });

@@ -1,17 +1,44 @@
 // ==========================================================================
-// LUNOCA DOCERIA - Cloudflare Pages Function: Disparo WhatsApp
-// Suporte a Evolution API, Z-API, Webhooks Customizados e Cloud API
+// LUNOCA DOCERIA - Cloudflare Pages Function: Disparo WhatsApp (Seguro & Anti-SSRF)
 // ==========================================================================
 
 import { getCorsHeaders, handleCorsOptions } from '../_cors.js';
+import { verifyAuth } from '../_auth.js';
 
 export async function onRequestOptions(context) {
   return handleCorsOptions(context.request, context.env);
 }
 
+function isSafeExternalUrl(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    if (u.protocol !== 'https:') return false;
+    const host = u.hostname.toLowerCase();
+    if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal')) return false;
+    if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|169\.254\.)/.test(host)) return false;
+    if (/^[0-9.]+$/.test(host)) return false;
+    if (host.includes(':')) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function onRequestPost(context) {
   const { request, env } = context;
   const corsHeaders = getCorsHeaders(request, env);
+
+  // 1. Autorização Obrigatória (Apenas operadores/admins logados podem disparar)
+  const authResult = await verifyAuth(request, env, ['admin', 'operador']);
+  if (!authResult.authorized) {
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: authResult.error 
+    }), {
+      status: authResult.status,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
 
   try {
     const body = await request.json();
@@ -19,9 +46,8 @@ export async function onRequestPost(context) {
       telefone, 
       mensagem, 
       provedor = 'evolution', 
-      instanciaUrl, 
-      apiKey, 
-      instanciaNome,
+      instanciaUrl: customUrl, 
+      instanciaNome: customNome,
       clientToken
     } = body;
 
@@ -35,75 +61,67 @@ export async function onRequestPost(context) {
       });
     }
 
-    // Normaliza o telefone do cliente para o formato internacional E.164 (55DDDNÚMERO)
     let foneLimpo = String(telefone).replace(/\D/g, '');
     if (foneLimpo.length === 10 || foneLimpo.length === 11) {
       foneLimpo = '55' + foneLimpo;
     }
 
-    // Se nenhum endpoint de gateway foi configurado, retorna instrução para fallback nativo
-    if (!instanciaUrl) {
-      return new Response(JSON.stringify({
-        success: false,
-        fallback: true,
-        error: 'Nenhuma URL de gateway WhatsApp configurada. Use o botão de envio direto via WhatsApp Web.',
-        telefoneFormatado: foneLimpo
-      }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
+    // 2. Resolução Segura de Credenciais (Server-Side Environment Variables)
+    const serverApiKey = env.EVOLUTION_API_KEY || env.WHATSAPP_API_KEY || '';
+    const defaultUrl = env.EVOLUTION_API_URL || env.WHATSAPP_API_URL || 'https://lunoca-whatsapp.onrender.com';
+    const serverInstanciaNome = env.EVOLUTION_INSTANCE_NAME || env.WHATSAPP_INSTANCE_NAME || customNome || 'lunoca-whatsapp';
+
+    let targetBaseUrl = defaultUrl;
+    if (customUrl && typeof customUrl === 'string' && customUrl.trim()) {
+      const trimmed = customUrl.trim();
+      if (!isSafeExternalUrl(trimmed)) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'URL de instância inválida ou não autorizada por política de segurança (Anti-SSRF).'
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      targetBaseUrl = trimmed;
     }
 
-    let targetUrl = instanciaUrl.trim();
+    let targetUrl = targetBaseUrl.replace(/\/+$/, '');
     let reqHeaders = { 'Content-Type': 'application/json' };
     let reqBody = {};
 
     if (provedor === 'evolution') {
-      // Suporte a Evolution API (v1 e v2)
-      if (apiKey) {
-        reqHeaders['apikey'] = apiKey.trim();
-        reqHeaders['Authorization'] = `Bearer ${apiKey.trim()}`;
+      if (serverApiKey) {
+        reqHeaders['apikey'] = serverApiKey.trim();
+        reqHeaders['Authorization'] = `Bearer ${serverApiKey.trim()}`;
       }
       
-      // Se a URL não terminar com o endpoint de texto, constrói adequadamente
-      if (!targetUrl.includes('/message/sendText') && instanciaNome) {
-        targetUrl = targetUrl.replace(/\/+$/, '') + `/message/sendText/${instanciaNome.trim()}`;
+      if (!targetUrl.includes('/message/sendText')) {
+        targetUrl = targetUrl + `/message/sendText/${encodeURIComponent(serverInstanciaNome.trim())}`;
       }
 
       reqBody = {
         number: foneLimpo,
         text: mensagem,
-        textMessage: { text: mensagem }, // Compatibilidade v1
+        textMessage: { text: mensagem },
         options: { delay: 1200, presence: 'composing' }
       };
     } else if (provedor === 'z-api') {
-      // Suporte a Z-API
-      if (clientToken) {
-        reqHeaders['Client-Token'] = clientToken.trim();
-      }
+      if (clientToken) reqHeaders['Client-Token'] = clientToken.trim();
       if (!targetUrl.includes('/send-text')) {
-        targetUrl = targetUrl.replace(/\/+$/, '') + '/send-text';
+        targetUrl = targetUrl + '/send-text';
       }
-
-      reqBody = {
-        phone: foneLimpo,
-        message: mensagem
-      };
+      reqBody = { phone: foneLimpo, message: mensagem };
     } else {
-      // Webhook Genérico / n8n / Make / Custom
-      if (apiKey) {
-        reqHeaders['Authorization'] = `Bearer ${apiKey.trim()}`;
-      }
+      if (serverApiKey) reqHeaders['Authorization'] = `Bearer ${serverApiKey.trim()}`;
       reqBody = {
         phone: foneLimpo,
         number: foneLimpo,
         message: mensagem,
-        text: mensagem,
         timestamp: new Date().toISOString()
       };
     }
 
-    // Dispara a requisição HTTP para o Gateway do WhatsApp
     const apiRes = await fetch(targetUrl, {
       method: 'POST',
       headers: reqHeaders,

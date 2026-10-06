@@ -127,34 +127,43 @@ export async function onRequestPost(context) {
       const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
 
       if (supabaseUrl && supabaseKey) {
-        const patchRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${orderId}`, {
-          method: 'PATCH',
-          headers: {
-            apikey: supabaseKey,
-            Authorization: `Bearer ${supabaseKey}`,
-            'Content-Type': 'application/json',
-            Prefer: 'return=minimal',
-          },
-          body: JSON.stringify({
-            status: 'Confirmado',
-            mercado_pago_id: String(paymentId),
-            mercado_pago_status: payment.status,
-          }),
-        });
-
-        if (!patchRes.ok) {
-          await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${orderId}`, {
-            method: 'PATCH',
+        try {
+          // Invoca a RPC atômica que confirma pedido, baixa estoque de todos os itens e credita no financeiro
+          const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/confirmar_pagamento_pedido`, {
+            method: 'POST',
             headers: {
               apikey: supabaseKey,
               Authorization: `Bearer ${supabaseKey}`,
               'Content-Type': 'application/json',
-              Prefer: 'return=minimal',
             },
             body: JSON.stringify({
-              status: 'Confirmado',
+              p_pedido_id: Number(orderId),
+              p_mercado_pago_payment_id: String(paymentId),
+              p_status: payment.status,
+              p_forma_pagamento: payment.payment_method_id || 'pix',
+              p_valor: Number(payment.transaction_amount || 0)
             }),
-          }).catch(() => {});
+          });
+
+          if (!rpcRes.ok) {
+            // Fallback para patch direto em caso de indisponibilidade da RPC
+            await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${orderId}`, {
+              method: 'PATCH',
+              headers: {
+                apikey: supabaseKey,
+                Authorization: `Bearer ${supabaseKey}`,
+                'Content-Type': 'application/json',
+                Prefer: 'return=minimal',
+              },
+              body: JSON.stringify({
+                status: 'Confirmado',
+                mercado_pago_id: String(paymentId),
+                mercado_pago_status: payment.status,
+              }),
+            });
+          }
+        } catch (rpcErr) {
+          console.error('[Webhook] Erro ao invocar confirmar_pagamento_pedido:', rpcErr.message);
         }
       }
     }

@@ -466,21 +466,27 @@ async function prepararUpload(input) {
         return;
       }
 
-      // 2. Fallback ImgBB caso o bucket ainda não esteja configurado
-      const IMGBB_API_KEY = (typeof window.IMGBB_API_KEY !== 'undefined') ? window.IMGBB_API_KEY : '97dfa8989e6adbbc6faebb4b505686fe';
+      // 2. Fallback seguro via Cloudflare Functions (/api/upload-image)
       let formData = new FormData();
       formData.append("image", file);
 
-      const resp = await fetch("https://api.imgbb.com/1/upload?key=" + IMGBB_API_KEY, { method: "POST", body: formData });
+      const session = (await window.supabaseClient?.auth?.getSession())?.data?.session;
+      const token = session?.access_token || '';
+
+      const resp = await fetch("/api/upload-image", {
+        method: "POST",
+        headers: token ? { "Authorization": `Bearer ${token}` } : {},
+        body: formData
+      });
       const data = await resp.json();
-      if (data.success) {
+      if (resp.ok && data.success && data.url) {
         document.getElementById('upload-status').innerText = "✅ Foto hospedada!";
         document.getElementById('upload-status').style.color = "green";
         document.getElementById('lbl-upload').innerHTML = "<i class='fa-solid fa-check'></i> " + escapeHTML(file.name);
-        document.getElementById('prod-img').value = data.data.url;
+        document.getElementById('prod-img').value = data.url;
         document.getElementById('btn-salvar-produto').disabled = false;
       } else {
-        throw new Error("Falha no upload.");
+        throw new Error(data.error || "Falha no upload.");
       }
     } catch (err) {
       console.error(err);

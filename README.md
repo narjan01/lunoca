@@ -14,8 +14,12 @@ Uma aplicação web Single Page Application (SPA) para docerias gerenciarem prod
 
 ### 2. Configurar o Banco de Dados
 1. No painel do Supabase, vá até a aba **SQL Editor**.
-2. Copie o conteúdo do arquivo `sql/schema.sql` deste projeto.
-3. Cole no editor e clique em **Run** para criar as tabelas, políticas RLS, e triggers.
+2. Copie e execute o conteúdo do arquivo `sql/install.sql` (ou `sql/schema.sql`).
+3. O script cria toda a estrutura unificada do sistema:
+   - Tabelas de Usuários (`profiles`), `produtos`, `pedidos`, `estoque`, `financeiro_lancamentos`.
+   - RPCs seguras: `criar_pedido`, `confirmar_pagamento_pedido`, `baixar_estoque_pedido_batch`.
+   - Políticas RLS rigorosas bloqueando usuários desativados (`ativo = false`).
+   - Trigger de proteção server-side para validação e recálculo de totais.
 
 ### 3. Configurar a Autenticação (Auth)
 1. Vá até a seção **Authentication** no Supabase.
@@ -24,8 +28,7 @@ Uma aplicação web Single Page Application (SPA) para docerias gerenciarem prod
 
 ### 4. Configurar as Chaves no Aplicativo
 1. Abra o arquivo `js/supabase.js`.
-2. Substitua `SUA_SUPABASE_URL_AQUI` pela URL do seu projeto Supabase.
-3. Substitua `SUA_SUPABASE_ANON_KEY_AQUI` pela sua chave `anon`.
+2. Assegure que `SUPABASE_URL` e `SUPABASE_ANON_KEY` correspondam ao seu projeto.
 
 ### 5. Promover o Primeiro Usuário a Admin
 1. Abra a aplicação e faça o cadastro do seu primeiro usuário através da interface (Login > Cadastre-se).
@@ -35,25 +38,24 @@ Uma aplicação web Single Page Application (SPA) para docerias gerenciarem prod
 UPDATE public.profiles SET nivel = 'admin' WHERE email = 'seu_email@exemplo.com';
 ```
 
-### 6. Hospedagem
-Você pode hospedar o frontend de forma simples via GitHub Pages ou Cloudflare Pages:
-1. Suba os arquivos do projeto para um repositório no GitHub.
-2. Nas configurações do repositório, vá em **Pages** e selecione a branch `main`.
+### 6. Hospedagem & Funções Serverless (Cloudflare Pages)
+> ⚠️ **Importante:** A aplicação utiliza funções serverless (`/functions/api/`) para o Checkout Transparente do Mercado Pago, Webhooks, envio seguro de WhatsApp e upload de imagens. Por isso, a hospedagem recomendada e suportada é o **Cloudflare Pages** (GitHub Pages estático não suporta rotas de API serverless).
 
-## Configuração de DNS (Exemplo Umbler)
-Se você possui um domínio próprio e utiliza serviços como Umbler:
-1. Vá até o painel de configuração de DNS.
-2. Adicione um registro **CNAME**.
-3. Aponta seu subdomínio ou domínio principal para o endereço gerado pelo GitHub Pages (ex: `seu-usuario.github.io`).
-
-## Migração de Dados (Google Sheets para Supabase)
-Se você tem dados antigos em uma planilha, pode migrá-los para o Supabase:
-1. Exporte sua planilha (Produtos ou Usuários) como CSV.
-2. No Supabase, vá na seção **Table Editor**.
-3. Selecione a tabela destino (ex: `produtos`).
-4. Clique em **Insert > Import data from CSV** e siga os passos na tela.
+1. Conecte seu repositório no [Cloudflare Pages](https://pages.cloudflare.com).
+2. Deixe o diretório raiz como build output (`/`).
+3. Em **Settings > Environment variables**, configure as variáveis de ambiente de produção:
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `MERCADO_PAGO_ACCESS_TOKEN`
+   - `MERCADO_PAGO_WEBHOOK_SECRET`
+   - `EVOLUTION_API_URL` (URL do seu servidor Evolution API no Render/Docker)
+   - `EVOLUTION_API_KEY` (Chave secreta da Evolution API)
+   - `IMGBB_API_KEY` (Opcional, para upload de fotos)
+   - `APP_BASE_URL` (ex: `https://lunocadoceria.com.br`)
 
 ## Solução de Problemas
 - **Produtos não aparecem?** Verifique se o RLS de `produtos` permite visualização pública e se há dados na tabela.
-- **Não consigo logar?** Confirme se desativou a confirmação de e-mail ou verifique a tabela `auth.users` no Supabase.
-- **Upload de fotos falha?** Verifique se a chave do ImgBB no arquivo `supabase.js` é válida e está sem aspas extras.
+- **Não consigo logar?** Confirme se desativou a confirmação de e-mail ou se o usuário está ativo (`ativo = true`).
+- **QR Code do Mercado Pago não gera?** Verifique se `MERCADO_PAGO_ACCESS_TOKEN` está configurado nas variáveis de ambiente do Cloudflare Pages.
+- **WhatsApp não conecta?** Verifique se o serviço Evolution API está ativo no Render e se `EVOLUTION_API_URL` e `EVOLUTION_API_KEY` estão configurados no Cloudflare Pages.

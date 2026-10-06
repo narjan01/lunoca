@@ -1,41 +1,88 @@
 // ==========================================================================
-// LUNOCA DOCERIA - Cloudflare Pages Function: Gestão de Instância WhatsApp
+// LUNOCA DOCERIA - Cloudflare Pages Function: Gestão de Instância WhatsApp (Segura)
 // Permite verificar status, gerar QR Code na tela e resetar instância (Evolution API v2)
 // ==========================================================================
 
 import { getCorsHeaders, handleCorsOptions } from '../_cors.js';
+import { verifyAuth } from '../_auth.js';
 
 export async function onRequestOptions(context) {
   return handleCorsOptions(context.request, context.env);
+}
+
+function isSafeExternalUrl(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    if (u.protocol !== 'https:') return false;
+    const host = u.hostname.toLowerCase();
+    if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal')) return false;
+    if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|169\.254\.)/.test(host)) return false;
+    if (/^[0-9.]+$/.test(host)) return false;
+    if (host.includes(':')) return false;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function onRequestPost(context) {
   const { request, env } = context;
   const corsHeaders = getCorsHeaders(request, env);
 
+  // 1. Autorização Obrigatória (Apenas administradores logados podem gerenciar instâncias)
+  const authResult = await verifyAuth(request, env, ['admin']);
+  if (!authResult.authorized) {
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: authResult.error 
+    }), {
+      status: authResult.status,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+
   try {
     const body = await request.json();
     const {
       action = 'status', // 'status', 'connect', 'delete'
-      instanciaUrl,
-      apiKey,
-      instanciaNome = 'lunoca-whatsapp'
+      instanciaUrl: customUrl,
+      instanciaNome: customNome = 'lunoca-whatsapp'
     } = body;
 
-    if (!instanciaUrl || !apiKey) {
+    // 2. Resolução Segura de Credenciais Server-Side
+    const serverApiKey = env.EVOLUTION_API_KEY || env.WHATSAPP_API_KEY || '';
+    const defaultUrl = env.EVOLUTION_API_URL || env.WHATSAPP_API_URL || 'https://lunoca-whatsapp.onrender.com';
+    const serverInstanciaNome = env.EVOLUTION_INSTANCE_NAME || env.WHATSAPP_INSTANCE_NAME || customNome;
+
+    let targetBaseUrl = defaultUrl;
+    if (customUrl && typeof customUrl === 'string' && customUrl.trim()) {
+      const trimmed = customUrl.trim();
+      if (!isSafeExternalUrl(trimmed)) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'URL de instância não permitida por política de segurança (Anti-SSRF).'
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      targetBaseUrl = trimmed;
+    }
+
+    if (!serverApiKey) {
       return new Response(JSON.stringify({
         success: false,
-        error: 'URL da Instância e API Key são obrigatórios.'
+        error: 'EVOLUTION_API_KEY não configurada nas variáveis de ambiente da Cloudflare.'
       }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    const baseUrl = instanciaUrl.replace(/\/+$/, '');
-    const cleanNome = encodeURIComponent(instanciaNome.trim());
+    const baseUrl = targetBaseUrl.replace(/\/+$/, '');
+    const cleanNome = encodeURIComponent(serverInstanciaNome.trim());
     const headers = {
-      'apikey': apiKey.trim(),
+      'apikey': serverApiKey.trim(),
       'Content-Type': 'application/json'
     };
 
@@ -76,7 +123,7 @@ export async function onRequestPost(context) {
       return new Response(JSON.stringify({
         success: true,
         exists: true,
-        state: state, // 'open' (conectado), 'connecting' (aguardando), 'close'
+        state: state,
         connected: state === 'open'
       }), {
         status: 200,
@@ -85,64 +132,55 @@ export async function onRequestPost(context) {
     }
 
     // ------------------------------------------------------------------------
-    // AÇÃO 2: CONECTAR / GERAR QR CODE (Cria se não existir)
+    // AÇÃO 2: CONECTAR / GERAR QR CODE COM BAILEYS
     // ------------------------------------------------------------------------
     if (action === 'connect') {
-      // 1. Tenta obter o QR code da instância existente
-      let connectRes = await fetch(`${baseUrl}/instance/connect/${cleanNome}`, {
+      const stateCheckRes = await fetch(`${baseUrl}/instance/connectionState/${cleanNome}`, {
         method: 'GET',
         headers
       });
 
-      // Se a instância não existir (404), cria automaticamente
-      if (connectRes.status === 404) {
+      if (stateCheckRes.status === 404) {
         const createRes = await fetch(`${baseUrl}/instance/create`, {
           method: 'POST',
           headers,
           body: JSON.stringify({
-            instanceName: instanciaNome.trim(),
+            instanceName: serverInstanciaNome.trim(),
+            token: '',
             qrcode: true,
-            integration: 'WHATSAPP-BAILEYS'
+            integration: 'WHATSAPP-BAILEYS',
+            reject_call: false,
+            msgCall: ''
           })
         });
 
-        const createData = await createRes.json().catch(() => ({}));
         if (!createRes.ok) {
+          const createErr = await createRes.json().catch(() => ({}));
           return new Response(JSON.stringify({
             success: false,
-            error: createData?.response?.message || createData?.message || createData?.error || 'Erro ao criar instância na Evolution API.'
+            error: createErr.message || 'Erro ao criar instância na Evolution API.'
           }), {
-            status: 400,
+            status: createRes.status,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
-
-        // Se a criação já retornou o QR Code
-        const qrBase64 = createData?.qrcode?.base64 || createData?.base64;
-        if (qrBase64) {
-          return new Response(JSON.stringify({
-            success: true,
-            state: 'connecting',
-            qrcode: qrBase64,
-            pairingCode: createData?.pairingCode || null
-          }), {
-            status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-
-        // Caso contrário, busca a conexão novamente
-        connectRes = await fetch(`${baseUrl}/instance/connect/${cleanNome}`, {
-          method: 'GET',
-          headers
-        });
       }
 
-      const connectData = await connectRes.json().catch(() => ({}));
-      const qrBase64 = connectData?.base64 || connectData?.qrcode?.base64 || connectData?.code;
+      const connectRes = await fetch(`${baseUrl}/instance/connect/${cleanNome}`, {
+        method: 'GET',
+        headers
+      });
 
-      // Se já estiver conectada
-      if (connectData?.instance?.state === 'open' || connectData?.state === 'open') {
+      const connectData = await connectRes.json().catch(() => ({}));
+      let qrBase64 = connectData?.base64 || connectData?.qrcode?.base64 || connectData?.code || '';
+
+      if (qrBase64 && qrBase64.startsWith('data:image/')) {
+        qrBase64 = qrBase64.split(',')[1] || qrBase64;
+      }
+
+      const isConnected = connectData?.instance?.state === 'open' || connectData?.state === 'open';
+
+      if (isConnected) {
         return new Response(JSON.stringify({
           success: true,
           connected: true,

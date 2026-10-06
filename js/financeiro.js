@@ -46,12 +46,17 @@ async function carregarFinanceiroAdmin() {
         .select('*')
         .order('data_lancamento', { ascending: false });
 
-      if (!error && lancs) {
-        financeiroLancamentos = lancs;
-      } else {
+      if (error) {
+        console.error('[Financeiro] Falha ao consultar financeiro_lancamentos no Supabase:', error.message);
+        if (typeof mostrarToast === 'function') {
+          mostrarToast('Atenção: Não foi possível sincronizar os lançamentos com o servidor. ' + error.message, 'aviso');
+        }
         financeiroLancamentos = JSON.parse(localStorage.getItem('lunoca_financeiro_local') || '[]');
+      } else if (lancs) {
+        financeiroLancamentos = lancs;
       }
     } catch (e) {
+      console.error('[Financeiro] Exceção ao carregar dados:', e);
       financeiroLancamentos = JSON.parse(localStorage.getItem('lunoca_financeiro_local') || '[]');
     }
 
@@ -484,12 +489,11 @@ async function salvarNovoLancamentoFinanceiro() {
       .select();
 
     if (error) {
-      // Fallback local se a tabela ainda não tiver sido criada no Supabase
-      console.warn('Salvando localmente devido a tabela ausente no Supabase:', error.message);
-      novoItem.id = 'local_' + Date.now();
-      financeiroLancamentos.unshift(novoItem);
-      localStorage.setItem('lunoca_financeiro_local', JSON.stringify(financeiroLancamentos));
-    } else if (inserted && inserted[0]) {
+      console.error('[Financeiro] Erro ao gravar lançamento no banco:', error);
+      throw new Error(`Falha ao salvar no banco de dados (${error.message}). O lançamento não foi registrado.`);
+    }
+
+    if (inserted && inserted[0]) {
       financeiroLancamentos.unshift(inserted[0]);
     }
 
@@ -500,10 +504,10 @@ async function salvarNovoLancamentoFinanceiro() {
     renderizarDRE();
     renderizarExtratoFinanceiro();
 
-    alert('✅ Lançamento gravado com sucesso!');
+    alert('✅ Lançamento gravado com sucesso no servidor!');
   } catch (err) {
     console.error('Erro ao gravar lançamento:', err);
-    alert('Erro ao gravar: ' + err.message);
+    alert('❌ ' + err.message);
   } finally {
     if (btn) btn.innerHTML = txtOriginal;
   }

@@ -5,22 +5,34 @@
 // ==========================================================================
 
 import { getCorsHeaders, handleCorsOptions } from '../_cors.js';
+import { verifyAuth } from '../_auth.js';
+
+function getSafeBaseUrl(origin, env) {
+  const allowedHostnames = ['lunocadoceria.com.br', 'www.lunocadoceria.com.br', 'localhost', '127.0.0.1'];
+  if (origin) {
+    try {
+      const u = new URL(origin);
+      if (allowedHostnames.includes(u.hostname) || u.hostname.endsWith('.pages.dev')) {
+        return u.origin;
+      }
+    } catch (_) {}
+  }
+  return env.APP_BASE_URL || 'https://lunocadoceria.com.br';
+}
 
 /**
- * Busca os preços reais dos produtos no Supabase e calcula o total correto.
- * Retorna { validatedTotal, validatedItems } ou lança erro se houver divergência.
+ * Busca o pedido no Supabase, valida status, titularidade e calcula o total correto.
+ * Retorna { validatedTotal, orderData } ou lança erro se houver divergência.
  */
-async function validateOrderTotal(pedidoId, clientTotal, env) {
+async function fetchAndValidateOrder(pedidoId, clientTotal, env, authUser) {
   const supabaseUrl = env.SUPABASE_URL;
   const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseKey) {
-    // Se não tiver acesso ao Supabase, aceita o total do cliente (fallback)
-    return { validatedTotal: clientTotal, validated: false };
+    return { validatedTotal: clientTotal, orderData: null };
   }
 
-  // Busca o pedido recém-criado para obter os itens e o total registrado
-  const pedidoRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}&select=total,itens`, {
+  const pedidoRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}&select=id,total,itens,cliente_id,status`, {
     headers: {
       'apikey': supabaseKey,
       'Authorization': `Bearer ${supabaseKey}`
@@ -29,14 +41,23 @@ async function validateOrderTotal(pedidoId, clientTotal, env) {
 
   const pedidos = await pedidoRes.json();
   if (!pedidos || pedidos.length === 0) {
-    return { validatedTotal: clientTotal, validated: false };
+    return { validatedTotal: clientTotal, orderData: null };
   }
 
-  const totalNoBanco = parseFloat(pedidos[0].total);
+  const order = pedidos[0];
 
-  // Se o total que o cliente enviou diverge do que está no banco, usa o do banco
-  // (o banco foi preenchido pelo insert do frontend, mas é a fonte de verdade do pedido)
-  return { validatedTotal: totalNoBanco, validated: true };
+  // Se o usuário estiver autenticado, garante que ele é o dono do pedido ou admin
+  if (authUser && authUser.id && order.cliente_id && authUser.id !== order.cliente_id && authUser.nivel !== 'admin' && authUser.nivel !== 'operador') {
+    throw new Error('Acesso negado: este pedido pertence a outro usuário.');
+  }
+
+  // Não permitir pagamento de pedido já confirmado ou cancelado
+  if (order.status === 'Confirmado' || order.status === 'Entregue') {
+    throw new Error(`Este pedido já se encontra com status "${order.status}".`);
+  }
+
+  const totalNoBanco = parseFloat(order.total);
+  return { validatedTotal: totalNoBanco, orderData: order };
 }
 
 export async function onRequestPost(context) {
@@ -55,6 +76,16 @@ export async function onRequestPost(context) {
       });
     }
 
+    // Validação opcional de usuário logado (se fornecido token Bearer)
+    let authUser = null;
+    const authHeader = request.headers.get('Authorization') || '';
+    if (authHeader.startsWith('Bearer ')) {
+      const authCheck = await verifyAuth(request, env);
+      if (authCheck.authorized) {
+        authUser = authCheck.user;
+      }
+    }
+
     const {
       pedidoId,
       total,
@@ -67,19 +98,24 @@ export async function onRequestPost(context) {
       origin
     } = body;
 
-    const baseUrl = origin || 'https://lunocadoceria.com.br';
+    const baseUrl = getSafeBaseUrl(origin, env);
 
-    // Validação server-side do total: busca o valor real no banco de dados
+    // Validação server-side do total e titularidade do pedido
     let amount = parseFloat(total);
     try {
-      const { validatedTotal, validated } = await validateOrderTotal(pedidoId, amount, env);
-      if (validated && Math.abs(validatedTotal - amount) > 0.01) {
-        console.warn(`[SEGURANÇA] Divergência de total detectada! Pedido #${pedidoId}: cliente enviou R$${amount}, banco tem R$${validatedTotal}`);
-        amount = validatedTotal; // Usa o valor do banco
+      const { validatedTotal } = await fetchAndValidateOrder(pedidoId, amount, env, authUser);
+      if (typeof validatedTotal === 'number' && !isNaN(validatedTotal)) {
+        if (Math.abs(validatedTotal - amount) > 0.01) {
+          console.warn(`[SEGURANÇA] Divergência de total detectada! Pedido #${pedidoId}: cliente enviou R$${amount}, banco tem R$${validatedTotal}`);
+        }
+        amount = validatedTotal; // Sempre prioriza o valor seguro do banco
       }
     } catch (valErr) {
-      console.error('Erro na validação de total:', valErr.message);
-      // Em caso de erro na validação, continua com o valor original (fail-open)
+      console.error('Erro na validação do pedido:', valErr.message);
+      return new Response(JSON.stringify({ error: valErr.message }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
     }
 
     if (isNaN(amount) || amount <= 0) {
@@ -91,8 +127,8 @@ export async function onRequestPost(context) {
 
     // 1. FLUXO PIX TRANSPARENTE
     if (forma === 'pix') {
-      const email = cliente?.email || 'cliente@lunocadoceria.com.br';
-      const nomeCompleto = (cliente?.nome || 'Cliente Lunoca').trim().split(' ');
+      const email = cliente?.email || (authUser?.email) || 'cliente@lunocadoceria.com.br';
+      const nomeCompleto = (cliente?.nome || authUser?.nome || 'Cliente Lunoca').trim().split(' ');
       const firstName = nomeCompleto[0] || 'Cliente';
       const lastName = nomeCompleto.slice(1).join(' ') || 'Doceria';
       const cpf = (cliente?.cpf || '00000000000').replace(/\D/g, '');
@@ -119,7 +155,7 @@ export async function onRequestPost(context) {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
-          'X-Idempotency-Key': `pix_${pedidoId}_${Date.now()}`
+          'X-Idempotency-Key': `order_${pedidoId}_pix_v1`
         },
         body: JSON.stringify(pixPayload)
       });
@@ -237,7 +273,7 @@ export async function onRequestPost(context) {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
-          'X-Idempotency-Key': `card_${pedidoId}_${Date.now()}`
+          'X-Idempotency-Key': `order_${pedidoId}_card_${parcelas || 1}_v1`
         },
         body: JSON.stringify(cardPaymentPayload)
       });
@@ -254,39 +290,47 @@ export async function onRequestPost(context) {
         });
       }
 
-      // Se aprovado, atualizar status no Supabase se as chaves estiverem no ambiente Cloudflare
+      // Se aprovado, invocar RPC atômica confirmar_pagamento_pedido (atualiza pedido, baixa estoque e lança financeiro)
       if (mpData.status === 'approved') {
         const supabaseUrl = env.SUPABASE_URL;
         const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
         if (supabaseUrl && supabaseKey) {
-          const patchRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}`, {
-            method: 'PATCH',
-            headers: {
-              'apikey': supabaseKey,
-              'Authorization': `Bearer ${supabaseKey}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'return=minimal'
-            },
-            body: JSON.stringify({
-              status: 'Confirmado',
-              mercado_pago_id: String(mpData.id),
-              mercado_pago_status: mpData.status
-            })
-          }).catch(() => null);
-
-          if (!patchRes || !patchRes.ok) {
-            await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}`, {
-              method: 'PATCH',
+          try {
+            const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/confirmar_pagamento_pedido`, {
+              method: 'POST',
               headers: {
                 'apikey': supabaseKey,
                 'Authorization': `Bearer ${supabaseKey}`,
-                'Content-Type': 'application/json',
-                'Prefer': 'return=minimal'
+                'Content-Type': 'application/json'
               },
               body: JSON.stringify({
-                status: 'Confirmado'
+                p_pedido_id: Number(pedidoId),
+                p_mercado_pago_payment_id: String(mpData.id),
+                p_status: mpData.status,
+                p_forma_pagamento: 'cartao',
+                p_valor: amount
               })
-            }).catch(() => {});
+            });
+
+            if (!rpcRes.ok) {
+              // Fallback para patch direto em caso de falha na RPC
+              await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}`, {
+                method: 'PATCH',
+                headers: {
+                  'apikey': supabaseKey,
+                  'Authorization': `Bearer ${supabaseKey}`,
+                  'Content-Type': 'application/json',
+                  'Prefer': 'return=minimal'
+                },
+                body: JSON.stringify({
+                  status: 'Confirmado',
+                  mercado_pago_id: String(mpData.id),
+                  mercado_pago_status: mpData.status
+                })
+              }).catch(() => {});
+            }
+          } catch (confirmErr) {
+            console.error('[MercadoPago] Erro ao confirmar pedido atômico:', confirmErr.message);
           }
         }
       }

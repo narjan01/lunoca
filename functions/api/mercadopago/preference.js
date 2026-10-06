@@ -1,4 +1,18 @@
 import { getCorsHeaders, handleCorsOptions } from '../_cors.js';
+import { verifyAuth } from '../_auth.js';
+
+function getSafeBaseUrl(origin, env) {
+  const allowedHostnames = ['lunocadoceria.com.br', 'www.lunocadoceria.com.br', 'localhost', '127.0.0.1'];
+  if (origin) {
+    try {
+      const u = new URL(origin);
+      if (allowedHostnames.includes(u.hostname) || u.hostname.endsWith('.pages.dev')) {
+        return u.origin;
+      }
+    } catch (_) {}
+  }
+  return env.APP_BASE_URL || 'https://lunocadoceria.com.br';
+}
 
 export async function onRequestPost(context) {
   try {
@@ -17,23 +31,63 @@ export async function onRequestPost(context) {
     }
 
     const { pedidoId, items, total, cliente, forma, origin } = body;
-    const baseUrl = origin || 'https://lunocadoceria.com.br';
+    const baseUrl = getSafeBaseUrl(origin, env);
+
+    // Validação de titularidade e busca de dados confiáveis no Supabase
+    let safeItems = items;
+    let safeTotal = total;
+
+    const supabaseUrl = env.SUPABASE_URL;
+    const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
+
+    if (supabaseUrl && supabaseKey && pedidoId) {
+      const pedRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}&select=id,total,itens,cliente_id,status`, {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`
+        }
+      });
+      const pedData = await pedRes.json();
+      if (Array.isArray(pedData) && pedData.length > 0) {
+        const ped = pedData[0];
+        // Checar autorização se token Bearer estiver presente
+        const authHeader = request.headers.get('Authorization') || '';
+        if (authHeader.startsWith('Bearer ')) {
+          const authCheck = await verifyAuth(request, env);
+          if (authCheck.authorized && authCheck.user) {
+            const u = authCheck.user;
+            if (ped.cliente_id && u.id !== ped.cliente_id && u.nivel !== 'admin' && u.nivel !== 'operador') {
+              return new Response(JSON.stringify({ error: 'Acesso negado a este pedido.' }), {
+                status: 403,
+                headers: { 'Content-Type': 'application/json', ...corsHeaders }
+              });
+            }
+          }
+        }
+
+        // Usar total do banco
+        safeTotal = parseFloat(ped.total);
+        if (ped.itens && Array.isArray(ped.itens) && ped.itens.length > 0) {
+          safeItems = ped.itens;
+        }
+      }
+    }
 
     // Montar preferência de checkout no Mercado Pago
     const preferencePayload = {
-      items: (items && items.length > 0) ? items.map((it, idx) => ({
+      items: (safeItems && safeItems.length > 0) ? safeItems.map((it, idx) => ({
         id: String(it.id || idx + 1),
         title: String(it.nome || 'Doce Artesanal Lunoca'),
-        quantity: 1,
+        quantity: parseInt(it.quantidade || 1, 10),
         currency_id: 'BRL',
-        unit_price: parseFloat(it.preco)
+        unit_price: parseFloat(it.preco_unitario || it.preco || (safeTotal / (safeItems.length || 1)))
       })) : [
         {
           id: String(pedidoId || '1'),
           title: `Pedido Lunoca Doceria #${pedidoId || ''}`,
           quantity: 1,
           currency_id: 'BRL',
-          unit_price: parseFloat(total)
+          unit_price: parseFloat(safeTotal)
         }
       ],
       payer: {

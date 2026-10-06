@@ -1,23 +1,14 @@
--- ==========================================
--- LUNOCA - Esquema de Banco de Dados Supabase
--- ==========================================
+-- ==========================================================================
+-- LUNOCA DOCERIA - ESQUEMA CONSOLIDADO & SEGURO (v3.0.0)
+-- Para instalação completa e idempotente, veja também: sql/install.sql
+-- ==========================================================================
 
--- 1. Função Auxiliar: Verificar se o usuário atual é admin
--- Usado nas políticas RLS (Row Level Security)
-CREATE OR REPLACE FUNCTION is_admin()
-RETURNS BOOLEAN AS $$
-DECLARE
-  is_admin BOOLEAN;
-BEGIN
-  SELECT (nivel = 'admin') INTO is_admin
-  FROM public.profiles
-  WHERE id = auth.uid();
-  RETURN COALESCE(is_admin, false);
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- Extensões
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- 2. Tabela de Perfis de Usuário (Profiles)
-CREATE TABLE public.profiles (
+-- 1. Profiles (Usuários)
+CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   nome TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
@@ -27,22 +18,14 @@ CREATE TABLE public.profiles (
   endereco TEXT,
   numero TEXT,
   complemento TEXT,
-  nivel TEXT CHECK (nivel IN ('cliente', 'admin')) DEFAULT 'cliente',
+  nivel TEXT CHECK (nivel IN ('cliente', 'operador', 'admin')) DEFAULT 'cliente',
   ativo BOOLEAN DEFAULT true,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Habilitar RLS para Profiles
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-
--- Políticas de RLS para Profiles
-CREATE POLICY "Usuários podem ver seu próprio perfil" ON public.profiles FOR SELECT USING (auth.uid() = id);
-CREATE POLICY "Admins podem ver todos os perfis" ON public.profiles FOR SELECT USING (is_admin());
-CREATE POLICY "Usuários podem atualizar seu próprio perfil" ON public.profiles FOR UPDATE USING (auth.uid() = id);
-CREATE POLICY "Admins podem atualizar todos os perfis" ON public.profiles FOR UPDATE USING (is_admin());
-
--- 3. Tabela de Produtos
-CREATE TABLE public.produtos (
+-- 2. Produtos
+CREATE TABLE IF NOT EXISTS public.produtos (
   id BIGSERIAL PRIMARY KEY,
   nome TEXT NOT NULL,
   preco DECIMAL(10,2) NOT NULL,
@@ -50,143 +33,328 @@ CREATE TABLE public.produtos (
   opcoes TEXT,
   img_url TEXT,
   ativo BOOLEAN DEFAULT true,
+  estoque_qtd INTEGER DEFAULT 0,
+  estoque_minimo INTEGER DEFAULT 5,
+  controlar_estoque BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Habilitar RLS para Produtos
-ALTER TABLE public.produtos ENABLE ROW LEVEL SECURITY;
-
--- Políticas de RLS para Produtos
-CREATE POLICY "Produtos são visíveis publicamente" ON public.produtos FOR SELECT USING (true);
-CREATE POLICY "Apenas admins podem inserir produtos" ON public.produtos FOR INSERT WITH CHECK (is_admin());
-CREATE POLICY "Apenas admins podem atualizar produtos" ON public.produtos FOR UPDATE USING (is_admin());
-CREATE POLICY "Apenas admins podem deletar produtos" ON public.produtos FOR DELETE USING (is_admin());
-
--- 4. Tabela de Pedidos
-CREATE TABLE public.pedidos (
+-- 3. Pedidos
+CREATE TABLE IF NOT EXISTS public.pedidos (
   id BIGSERIAL PRIMARY KEY,
   cliente_id UUID REFERENCES public.profiles(id),
   nome_cliente TEXT NOT NULL,
   email_cliente TEXT NOT NULL,
-  data_pedido DATE NOT NULL,
+  telefone_cliente TEXT,
+  data_pedido DATE NOT NULL DEFAULT CURRENT_DATE,
   data_entrega DATE NOT NULL,
   total DECIMAL(10,2) NOT NULL,
   pagamento TEXT CHECK (pagamento IN ('pix', 'cartao')) NOT NULL,
   status TEXT CHECK (status IN ('Pendente', 'Confirmado', 'Em Preparo', 'Pronto', 'Entregue', 'Cancelado')) DEFAULT 'Pendente',
   itens TEXT NOT NULL,
+  itens_json JSONB,
   endereco_entrega TEXT NOT NULL,
+  mercado_pago_status TEXT,
+  mercado_pago_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4. Movimentações de Estoque
+CREATE TABLE IF NOT EXISTS public.estoque_movimentacoes (
+  id BIGSERIAL PRIMARY KEY,
+  produto_id BIGINT REFERENCES public.produtos(id) ON DELETE CASCADE,
+  produto_nome TEXT NOT NULL,
+  tipo TEXT CHECK (tipo IN ('entrada', 'saida', 'venda', 'ajuste', 'perda')) NOT NULL,
+  quantidade INTEGER NOT NULL,
+  saldo_resultante INTEGER NOT NULL,
+  motivo TEXT,
+  pedido_id BIGINT REFERENCES public.pedidos(id) ON DELETE SET NULL,
+  usuario_nome TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Habilitar RLS para Pedidos
-ALTER TABLE public.pedidos ENABLE ROW LEVEL SECURITY;
+-- 5. Lançamentos Financeiros
+CREATE TABLE IF NOT EXISTS public.financeiro_lancamentos (
+  id BIGSERIAL PRIMARY KEY,
+  tipo TEXT CHECK (tipo IN ('receita', 'despesa')) NOT NULL,
+  categoria TEXT NOT NULL,
+  descricao TEXT NOT NULL,
+  valor DECIMAL(10,2) NOT NULL,
+  data_lancamento DATE DEFAULT CURRENT_DATE,
+  forma_pagamento TEXT CHECK (forma_pagamento IN ('pix', 'cartao', 'dinheiro', 'transferencia', 'boleto', 'outro')) DEFAULT 'pix',
+  pedido_id BIGINT REFERENCES public.pedidos(id) ON DELETE SET NULL,
+  comprovante_url TEXT,
+  observacoes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
--- Políticas de RLS para Pedidos
-CREATE POLICY "Usuários podem ver seus próprios pedidos" ON public.pedidos FOR SELECT USING (auth.uid() = cliente_id);
-CREATE POLICY "Admins podem ver todos os pedidos" ON public.pedidos FOR SELECT USING (is_admin());
-CREATE POLICY "Usuários podem criar seus próprios pedidos" ON public.pedidos FOR INSERT WITH CHECK (auth.uid() = cliente_id);
-CREATE POLICY "Admins podem atualizar pedidos" ON public.pedidos FOR UPDATE USING (is_admin());
+-- 6. Funções de Autorização & Proteção de Profiles
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND nivel = 'admin' AND ativo = true
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- 5. Triggers e Funções Adicionais
+CREATE OR REPLACE FUNCTION public.is_admin_or_operator()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND nivel IN ('admin', 'operador') AND ativo = true
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- Função para atualizar updated_at automaticamente na tabela produtos
-CREATE OR REPLACE FUNCTION update_updated_at()
+CREATE OR REPLACE FUNCTION public.is_user_active()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND ativo = true
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.check_profile_update()
 RETURNS TRIGGER AS $$
 BEGIN
+  IF NOT public.is_admin() THEN
+    IF NEW.nivel IS DISTINCT FROM OLD.nivel THEN
+      RAISE EXCEPTION 'Apenas administradores ativos podem alterar o nível de acesso.';
+    END IF;
+    IF NEW.ativo IS DISTINCT FROM OLD.ativo THEN
+      RAISE EXCEPTION 'Apenas administradores ativos podem ativar ou desativar contas.';
+    END IF;
+  END IF;
   NEW.updated_at = NOW();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-CREATE TRIGGER update_produtos_updated_at
-BEFORE UPDATE ON public.produtos
-FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+DROP TRIGGER IF EXISTS trigger_check_profile_update ON public.profiles;
+CREATE TRIGGER trigger_check_profile_update
+BEFORE UPDATE ON public.profiles
+FOR EACH ROW EXECUTE FUNCTION public.check_profile_update();
 
--- Trigger para criar um profile automaticamente após o cadastro no Supabase Auth
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger AS $$
-BEGIN
-  INSERT INTO public.profiles (id, nome, email, nivel)
-  VALUES (
-    new.id,
-    COALESCE(new.raw_user_meta_data->>'nome', new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)),
-    new.email,
-    'cliente'
-  );
-  RETURN new;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
-
--- 6. Índices para Otimização de Consultas
-CREATE INDEX idx_pedidos_data_entrega ON public.pedidos(data_entrega);
-CREATE INDEX idx_pedidos_cliente_id ON public.pedidos(cliente_id);
-CREATE INDEX idx_pedidos_status ON public.pedidos(status);
-CREATE INDEX idx_produtos_ativo ON public.produtos(ativo);
-CREATE INDEX idx_profiles_nivel ON public.profiles(nivel);
-CREATE INDEX idx_profiles_email ON public.profiles(email);
-
--- ==========================================
--- INSTRUÇÕES PÓS-CONFIGURAÇÃO:
--- Após executar este script e registrar o primeiro usuário pelo app,
--- torne esse usuário administrador executando o comando abaixo no SQL Editor:
--- 
--- UPDATE public.profiles SET nivel = 'admin' WHERE email = 'seu_email@exemplo.com';
--- ==========================================
-
-
--- =======================================================
--- ATUALIZAÇÃO DE SEGURANÇA: Proteção de Nível Admin e RLS
--- =======================================================
-
--- Trigger para impedir que usuários comuns alterem 'nivel' ou 'ativo'
-CREATE OR REPLACE FUNCTION public.check_profile_update()
+-- 7. Trigger Anti-Fraude de Total
+CREATE OR REPLACE FUNCTION public.validar_recalcular_total_pedido()
 RETURNS TRIGGER AS $$
 DECLARE
-    current_user_level TEXT;
+  v_item JSONB;
+  v_prod_id BIGINT;
+  v_qtd INTEGER;
+  v_prod_preco DECIMAL(10,2);
+  v_total_calculado DECIMAL(10,2) := 0;
+  v_possui_itens_validos BOOLEAN := false;
 BEGIN
-    SELECT nivel INTO current_user_level 
-    FROM public.profiles 
-    WHERE id = auth.uid();
+  IF NEW.itens_json IS NOT NULL AND jsonb_typeof(NEW.itens_json) = 'array' AND jsonb_array_length(NEW.itens_json) > 0 THEN
+    FOR v_item IN SELECT * FROM jsonb_array_elements(NEW.itens_json)
+    LOOP
+      v_prod_id := (v_item->>'id')::BIGINT;
+      v_qtd := GREATEST(1, COALESCE((v_item->>'quantidade')::INTEGER, 1));
 
-    IF current_user_level IS DISTINCT FROM 'admin' THEN
-        IF NEW.nivel IS DISTINCT FROM OLD.nivel THEN
-            RAISE EXCEPTION 'Operação não autorizada: você não pode alterar seu nível de privilégio.';
+      IF v_prod_id IS NOT NULL THEN
+        SELECT preco INTO v_prod_preco FROM public.produtos WHERE id = v_prod_id;
+        IF FOUND THEN
+          v_total_calculado := v_total_calculado + (v_prod_preco * v_qtd);
+          v_possui_itens_validos := true;
         END IF;
+      END IF;
+    END LOOP;
 
-        IF NEW.ativo IS DISTINCT FROM OLD.ativo THEN
-            RAISE EXCEPTION 'Operação não autorizada: você não pode alterar o status da conta.';
-        END IF;
+    IF v_possui_itens_validos AND v_total_calculado > 0 THEN
+      NEW.total := v_total_calculado;
+    END IF;
+  END IF;
+  NEW.updated_at := NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS trigger_validar_recalcular_total_pedido ON public.pedidos;
+CREATE TRIGGER trigger_validar_recalcular_total_pedido
+BEFORE INSERT OR UPDATE ON public.pedidos
+FOR EACH ROW EXECUTE FUNCTION public.validar_recalcular_total_pedido();
+
+-- 8. RPC: Criar Pedido Server-Side
+CREATE OR REPLACE FUNCTION public.criar_pedido(
+  p_itens JSONB,
+  p_data_entrega DATE,
+  p_pagamento TEXT,
+  p_endereco_entrega TEXT,
+  p_telefone_cliente TEXT,
+  p_nome_cliente TEXT
+)
+RETURNS JSON AS $$
+DECLARE
+  v_cliente_id UUID := auth.uid();
+  v_user_profile RECORD;
+  v_item JSONB;
+  v_prod_id BIGINT;
+  v_qtd INTEGER;
+  v_prod RECORD;
+  v_total DECIMAL(10,2) := 0;
+  v_nomes_itens TEXT[] := ARRAY[]::TEXT[];
+  v_pedido_id BIGINT;
+BEGIN
+  IF v_cliente_id IS NULL THEN
+    RETURN json_build_object('success', false, 'error', 'Você precisa estar logado para realizar um pedido.');
+  END IF;
+
+  SELECT * INTO v_user_profile FROM public.profiles WHERE id = v_cliente_id AND ativo = true;
+  IF NOT FOUND THEN
+    RETURN json_build_object('success', false, 'error', 'Sua conta de usuário está inativa ou não foi encontrada.');
+  END IF;
+
+  IF p_itens IS NULL OR jsonb_typeof(p_itens) <> 'array' OR jsonb_array_length(p_itens) = 0 THEN
+    RETURN json_build_object('success', false, 'error', 'O carrinho de compras está vazio.');
+  END IF;
+
+  IF p_data_entrega IS NULL THEN
+    RETURN json_build_object('success', false, 'error', 'Data de entrega/retirada é obrigatória.');
+  END IF;
+
+  IF p_pagamento NOT IN ('pix', 'cartao') THEN
+    RETURN json_build_object('success', false, 'error', 'Forma de pagamento inválida.');
+  END IF;
+
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_itens)
+  LOOP
+    v_prod_id := (v_item->>'id')::BIGINT;
+    v_qtd := GREATEST(1, COALESCE((v_item->>'quantidade')::INTEGER, 1));
+
+    IF v_prod_id IS NULL THEN
+      RETURN json_build_object('success', false, 'error', 'Item do carrinho inválido.');
     END IF;
 
-    RETURN NEW;
+    SELECT id, nome, preco, ativo, estoque_qtd, controlar_estoque
+    INTO v_prod FROM public.produtos WHERE id = v_prod_id;
+
+    IF NOT FOUND OR v_prod.ativo = false THEN
+      RETURN json_build_object('success', false, 'error', 'Produto indisponível ou desativado: ' || COALESCE(v_item->>'nome', 'Desconhecido'));
+    END IF;
+
+    IF v_prod.controlar_estoque = true AND v_prod.estoque_qtd < v_qtd THEN
+      RETURN json_build_object('success', false, 'error', 'Estoque insuficiente para: ' || v_prod.nome);
+    END IF;
+
+    v_total := v_total + (v_prod.preco * v_qtd);
+    v_nomes_itens := array_append(v_nomes_itens, v_qtd || 'x ' || v_prod.nome);
+  END LOOP;
+
+  INSERT INTO public.pedidos (
+    cliente_id, nome_cliente, email_cliente, telefone_cliente,
+    data_pedido, data_entrega, total, pagamento, status,
+    itens, itens_json, endereco_entrega
+  ) VALUES (
+    v_cliente_id,
+    COALESCE(NULLIF(trim(p_nome_cliente), ''), v_user_profile.nome),
+    v_user_profile.email,
+    COALESCE(NULLIF(trim(p_telefone_cliente), ''), v_user_profile.telefone),
+    CURRENT_DATE, p_data_entrega, v_total, p_pagamento, 'Pendente',
+    array_to_string(v_nomes_itens, ' + '), p_itens, p_endereco_entrega
+  ) RETURNING id INTO v_pedido_id;
+
+  RETURN json_build_object('success', true, 'pedido_id', v_pedido_id, 'total', v_total);
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-DROP TRIGGER IF EXISTS tr_check_profile_update ON public.profiles;
-CREATE TRIGGER tr_check_profile_update
-    BEFORE UPDATE ON public.profiles
-    FOR EACH ROW
-    EXECUTE FUNCTION public.check_profile_update();
+GRANT EXECUTE ON FUNCTION public.criar_pedido TO authenticated;
 
--- =======================================================
--- ATUALIZAÇÃO: Integração Mercado Pago (PIX e Cartão)
--- =======================================================
-ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS mercado_pago_id TEXT;
-ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS mercado_pago_status TEXT;
-ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS mercado_pago_preference_id TEXT;
-ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS mercado_pago_link TEXT;
+-- 9. RPC Atômica de Confirmação & Baixa de Estoque
+CREATE OR REPLACE FUNCTION public.confirmar_pagamento_pedido(
+  p_pedido_id BIGINT,
+  p_mercado_pago_payment_id TEXT,
+  p_origem TEXT DEFAULT 'webhook'
+)
+RETURNS JSON AS $$
+DECLARE
+  v_pedido RECORD;
+  v_item JSONB;
+  v_prod_id BIGINT;
+  v_qtd INTEGER;
+  v_prod RECORD;
+  v_novo_saldo INTEGER;
+BEGIN
+  SELECT * INTO v_pedido FROM public.pedidos WHERE id = p_pedido_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN json_build_object('success', false, 'error', 'Pedido não encontrado');
+  END IF;
 
--- =======================================================
--- ATUALIZAÇÃO: Integração InfinitePay (PIX taxa zero e Cartão até 12x)
--- =======================================================
-ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS infinitepay_transaction_nsu TEXT;
-ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS infinitepay_invoice_slug TEXT;
-ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS infinitepay_status TEXT;
-ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS infinitepay_link TEXT;
-ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS infinitepay_capture_method TEXT;
-ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS infinitepay_receipt_url TEXT;
+  IF v_pedido.status IN ('Confirmado', 'Em Preparo', 'Pronto', 'Entregue') THEN
+    RETURN json_build_object('success', true, 'message', 'Pedido já confirmado', 'pedido_id', p_pedido_id);
+  END IF;
+
+  UPDATE public.pedidos
+  SET status = 'Confirmado',
+      mercado_pago_status = 'approved',
+      mercado_pago_id = COALESCE(p_mercado_pago_payment_id, mercado_pago_id),
+      updated_at = NOW()
+  WHERE id = p_pedido_id;
+
+  IF v_pedido.itens_json IS NOT NULL AND jsonb_typeof(v_pedido.itens_json) = 'array' THEN
+    FOR v_item IN SELECT * FROM jsonb_array_elements(v_pedido.itens_json)
+    LOOP
+      v_prod_id := (v_item->>'id')::BIGINT;
+      v_qtd := GREATEST(1, COALESCE((v_item->>'quantidade')::INTEGER, 1));
+
+      IF v_prod_id IS NOT NULL THEN
+        SELECT id, nome, estoque_qtd, controlar_estoque
+        INTO v_prod FROM public.produtos WHERE id = v_prod_id FOR UPDATE;
+
+        IF FOUND AND (v_prod.controlar_estoque IS NOT FALSE) THEN
+          v_novo_saldo := GREATEST(0, COALESCE(v_prod.estoque_qtd, 0) - v_qtd);
+
+          UPDATE public.produtos
+          SET estoque_qtd = v_novo_saldo, updated_at = NOW()
+          WHERE id = v_prod_id;
+
+          INSERT INTO public.estoque_movimentacoes (
+            produto_id, produto_nome, tipo, quantidade, saldo_resultante, motivo, pedido_id, usuario_nome
+          ) VALUES (
+            v_prod.id, v_prod.nome, 'venda', v_qtd, v_novo_saldo,
+            'Venda confirmada no Pedido #' || p_pedido_id, p_pedido_id,
+            COALESCE(p_origem, 'Sistema / Mercado Pago')
+          );
+        END IF;
+      END IF;
+    END LOOP;
+  END IF;
+
+  INSERT INTO public.financeiro_lancamentos (
+    tipo, categoria, descricao, valor, data_lancamento, forma_pagamento, pedido_id, observacoes
+  ) VALUES (
+    'receita', 'Vendas', 'Venda do Pedido #' || p_pedido_id || ' (' || v_pedido.nome_cliente || ')',
+    v_pedido.total, CURRENT_DATE, v_pedido.pagamento, p_pedido_id,
+    'Confirmação automática via ' || COALESCE(p_origem, 'Mercado Pago')
+  );
+
+  RETURN json_build_object('success', true, 'pedido_id', p_pedido_id, 'status', 'Confirmado');
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE EXECUTE ON FUNCTION public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT) TO service_role;
+
+-- 10. Políticas RLS
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.produtos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pedidos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.estoque_movimentacoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.financeiro_lancamentos ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Perfis visíveis por titular ativo ou admin" ON public.profiles FOR SELECT USING ((auth.uid() = id AND ativo = true) OR public.is_admin());
+CREATE POLICY "Perfis editáveis por titular ativo ou admin" ON public.profiles FOR UPDATE USING ((auth.uid() = id AND ativo = true) OR public.is_admin());
+CREATE POLICY "Produtos visíveis publicamente se ativos" ON public.produtos FOR SELECT USING (ativo = true OR public.is_admin_or_operator());
+CREATE POLICY "Equipe gerencia produtos" ON public.produtos FOR ALL USING (public.is_admin_or_operator());
+CREATE POLICY "Pedidos visíveis por clientes ativos ou equipe" ON public.pedidos FOR SELECT USING ((auth.uid() = cliente_id AND public.is_user_active()) OR public.is_admin_or_operator());
+CREATE POLICY "Clientes ativos criam pedidos" ON public.pedidos FOR INSERT WITH CHECK (auth.uid() = cliente_id AND public.is_user_active());
+CREATE POLICY "Equipe atualiza pedidos" ON public.pedidos FOR UPDATE USING (public.is_admin_or_operator());
+CREATE POLICY "Equipe visualiza estoque" ON public.estoque_movimentacoes FOR SELECT USING (public.is_admin_or_operator());
+CREATE POLICY "Admins gerenciam financeiro" ON public.financeiro_lancamentos FOR ALL USING (public.is_admin());
