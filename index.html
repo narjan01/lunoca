@@ -399,23 +399,156 @@
         <div id="lista-produtos-admin"></div>
       </div>
       <div id="admin-tab-usuarios" class="admin-tab">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-          <h3 style="margin:0;"><i class="fa-solid fa-user-shield"></i> Contas</h3>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h3 style="margin:0; color:var(--text-dark);"><i class="fa-solid fa-users-gear" style="color:var(--primary);"></i> Gestão de Usuários & Acessos</h3>
+            <p style="margin:2px 0 0; font-size:12px; color:var(--text-muted);">Gerencie clientes, operadores e administradores da doceria</p>
+          </div>
+          <button onclick="carregarUsuariosAdmin()" class="btn-outline" style="padding:6px 12px; font-size:12px;" title="Atualizar lista">
+            <i class="fa-solid fa-rotate-right"></i> Atualizar
+          </button>
         </div>
-        <div id="form-user-admin" class="panel-card" style="display:none; flex-direction: column; align-items: stretch; border: 2px solid var(--primary);">
-           <h3 id="user-form-title" style="margin-top:0;">Editar Usuário</h3>
-           <input type="hidden" id="admin-user-id">
-           <div class="form-group"><label>Nome Completo</label><input type="text" id="admin-user-nome"></div>
-           <div class="form-group">
-             <label>Nível de Acesso</label>
-             <select id="admin-user-nivel"><option value="cliente">Cliente</option><option value="admin">Administrador</option></select>
-           </div>
-           <div style="display: flex; gap: 10px;">
-             <button onclick="fecharFormUsuario()" class="btn-outline" style="flex: 1;">Cancelar</button>
-             <button onclick="salvarFormUsuario()" style="flex: 2;"><i class="fa-solid fa-check"></i> Salvar</button>
-           </div>
+
+        <!-- Métricas Rápidas de Usuários -->
+        <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
+          <div class="user-metric-card">
+            <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">Total Contas</div>
+            <div id="metric-users-total" style="font-size: 18px; font-weight: 800; color: var(--text-dark);">0</div>
+          </div>
+          <div class="user-metric-card">
+            <div style="font-size: 11px; color: #0284c7; font-weight: 600;">Operadores</div>
+            <div id="metric-users-operadores" style="font-size: 18px; font-weight: 800; color: #0284c7;">0</div>
+          </div>
+          <div class="user-metric-card">
+            <div style="font-size: 11px; color: #b45309; font-weight: 600;">Admins</div>
+            <div id="metric-users-admins" style="font-size: 18px; font-weight: 800; color: #b45309;">0</div>
+          </div>
+          <div class="user-metric-card">
+            <div style="font-size: 11px; color: #7e22ce; font-weight: 600;">Clientes</div>
+            <div id="metric-users-clientes" style="font-size: 18px; font-weight: 800; color: #7e22ce;">0</div>
+          </div>
         </div>
-        <button onclick="carregarUsuariosAdmin()" style="width: 100%; margin-bottom: 15px;" class="btn-outline"><i class="fa-solid fa-rotate-right"></i> Atualizar Lista</button>
+
+        <!-- Controles de Busca e Filtro de Usuários -->
+        <div class="store-controls-wrapper" style="margin-bottom: 16px;">
+          <div class="store-search-box" style="margin-bottom: 10px;">
+            <i class="fa-solid fa-magnifying-glass store-search-icon"></i>
+            <input type="text" id="admin-user-search-input" placeholder="Buscar por nome, email, CPF ou WhatsApp..." oninput="filtrarUsuariosAdminNaTela()">
+            <button id="admin-user-search-clear" class="store-search-clear" onclick="limparBuscaUsuariosAdmin()" aria-label="Limpar">
+              <i class="fa-solid fa-circle-xmark"></i>
+            </button>
+          </div>
+
+          <div class="category-chips-scroll" id="admin-user-filter-chips">
+            <button type="button" class="category-chip active" data-filtro="todos" onclick="selecionarFiltroUsuariosAdmin('todos', this)">
+              <i class="fa-solid fa-users"></i> Todos
+            </button>
+            <button type="button" class="category-chip" data-filtro="cliente" onclick="selecionarFiltroUsuariosAdmin('cliente', this)">
+              <i class="fa-solid fa-user"></i> Clientes
+            </button>
+            <button type="button" class="category-chip" data-filtro="operador" onclick="selecionarFiltroUsuariosAdmin('operador', this)">
+              <i class="fa-solid fa-user-gear"></i> Operadores (Produtos)
+            </button>
+            <button type="button" class="category-chip" data-filtro="admin" onclick="selecionarFiltroUsuariosAdmin('admin', this)">
+              <i class="fa-solid fa-crown" style="color: gold;"></i> Administradores
+            </button>
+            <button type="button" class="category-chip" data-filtro="inativo" onclick="selecionarFiltroUsuariosAdmin('inativo', this)">
+              <i class="fa-solid fa-ban"></i> Desativados
+            </button>
+          </div>
+        </div>
+
+        <!-- Formulário de Edição de Usuário & Nível de Acesso -->
+        <div id="form-user-admin" class="panel-card" style="display:none; flex-direction: column; align-items: stretch; border: 2px solid var(--primary); background: #ffffff; border-radius: 20px; box-shadow: var(--shadow-lg); margin-bottom: 20px; padding: 22px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid #f1e9f7; padding-bottom: 10px;">
+            <h3 id="user-form-title" style="margin:0; font-size: 17px; color: var(--text-dark);"><i class="fa-solid fa-user-pen" style="color:var(--primary);"></i> Editar Informações do Usuário</h3>
+            <button type="button" onclick="fecharFormUsuario()" style="background: none; border: none; color: #999; font-size: 18px; cursor: pointer; box-shadow: none; padding: 0;">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+
+          <input type="hidden" id="admin-user-id">
+
+          <div class="row-2">
+            <div class="form-group">
+              <label>Nome Completo</label>
+              <input type="text" id="admin-user-nome" placeholder="Nome do usuário">
+            </div>
+            <div class="form-group">
+              <label>E-mail (Identificação)</label>
+              <input type="text" id="admin-user-email" readonly style="background:#f1f5f9; color:#64748b; cursor:not-allowed;">
+            </div>
+          </div>
+
+          <!-- Nível de Acesso em Destaque -->
+          <div class="form-group" style="background: #faf5ff; border: 1.5px solid #ebdcf7; padding: 14px; border-radius: 14px; margin-bottom: 16px;">
+            <label style="color: var(--primary-dark); font-weight: 700; font-size: 13.5px; margin-bottom: 4px; display: block;">
+              <i class="fa-solid fa-shield-halved"></i> Tipo de Nível de Acesso
+            </label>
+            <p style="margin: 0 0 10px; font-size: 12px; color: var(--text-muted);">
+              Define exatamente os privilégios e telas que este usuário pode acessar.
+            </p>
+            <select id="admin-user-nivel" style="font-weight: 600; font-size: 13.5px; border-color: var(--primary);">
+              <option value="cliente">👤 Cliente — Acesso comum à loja, cardápio, checkout e pedidos pessoais</option>
+              <option value="operador">🛠️ Operador — Acesso restrito ao Painel (Apenas Cadastro e Gestão de Produtos)</option>
+              <option value="admin">👑 Administrador — Acesso irrestrito a todos os módulos, financeiro e configurações</option>
+            </select>
+          </div>
+
+          <div class="row-2">
+            <div class="form-group">
+              <label><i class="fa-brands fa-whatsapp" style="color:#25D366;"></i> WhatsApp / Telefone</label>
+              <input type="text" id="admin-user-telefone" placeholder="(11) 98765-4321" oninput="if(typeof mascaraTelefone==='function')mascaraTelefone(this)">
+            </div>
+            <div class="form-group">
+              <label><i class="fa-solid fa-id-card"></i> CPF</label>
+              <input type="text" id="admin-user-cpf" placeholder="000.000.000-00" maxlength="14" oninput="if(typeof mascaraCPF==='function')mascaraCPF(this)">
+            </div>
+          </div>
+
+          <!-- Endereço do Usuário -->
+          <div style="background: #faf7fc; padding: 12px 14px; border-radius: 14px; border: 1px solid #ebdcf7; margin-bottom: 15px;">
+            <div style="font-weight: 700; font-size: 12.5px; color: var(--text-dark); margin-bottom: 8px;">
+              <i class="fa-solid fa-location-dot" style="color:var(--primary);"></i> Endereço
+            </div>
+            <div class="row-2">
+              <div class="form-group" style="flex:1;">
+                <label>CEP</label>
+                <input type="text" id="admin-user-cep" placeholder="00000-000" maxlength="9" onblur="buscarCepAdminUsuario()">
+              </div>
+              <div class="form-group" style="flex:2;">
+                <label>Rua / Logradouro</label>
+                <input type="text" id="admin-user-endereco" placeholder="Rua / Avenida">
+              </div>
+            </div>
+            <div class="row-2">
+              <div class="form-group" style="flex:1;">
+                <label>Número</label>
+                <input type="text" id="admin-user-numero" placeholder="Ex: 123">
+              </div>
+              <div class="form-group" style="flex:2;">
+                <label>Complemento</label>
+                <input type="text" id="admin-user-complemento" placeholder="Apto, Casa, Bairro">
+              </div>
+            </div>
+          </div>
+
+          <!-- Status Ativo/Inativo -->
+          <div class="form-group" style="margin-bottom: 18px;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:600;">
+              <input type="checkbox" id="admin-user-ativo" checked style="width:18px; height:18px; accent-color:var(--primary);">
+              Conta Ativa (usuário pode fazer login e compras)
+            </label>
+          </div>
+
+          <div style="display: flex; gap: 10px;">
+            <button type="button" onclick="fecharFormUsuario()" class="btn-outline" style="flex: 1;">Cancelar</button>
+            <button type="button" onclick="salvarFormUsuario()" id="btn-salvar-user-admin" style="flex: 2;">
+              <i class="fa-solid fa-check"></i> Salvar Alterações
+            </button>
+          </div>
+        </div>
+
         <div id="lista-usuarios-admin"></div>
       </div>
 

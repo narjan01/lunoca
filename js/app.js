@@ -224,7 +224,12 @@ function mostrarTela(telaId) {
   }
 
   if (telaId === 'admin-section') {
-    if (typeof carregarPedidosAdmin === 'function') carregarPedidosAdmin();
+    if (typeof configurarAcessoAdminPorNivel === 'function') {
+      configurarAcessoAdminPorNivel();
+    }
+    if (usuarioAtual && usuarioAtual.nivel === 'admin') {
+      if (typeof carregarPedidosAdmin === 'function') carregarPedidosAdmin();
+    }
     if (typeof renderizarProdutosAdmin === 'function') renderizarProdutosAdmin();
   }
 

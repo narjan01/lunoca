@@ -1,15 +1,84 @@
 // C:\Users\narjan.andrade\.gemini\antigravity\scratch\lunoca\js\admin.js
 
 var clickExcluir = null;
+var listaUsuariosAdminCache = [];
+var filtroUsuariosAdminAtual = 'todos';
+var termoBuscaUsuariosAdmin = '';
+
+// ==========================================================================
+// Controle de Permissões e Abas por Nível de Acesso (Admin vs Operador)
+// ==========================================================================
+function configurarAcessoAdminPorNivel() {
+    const isOperador = usuarioAtual && usuarioAtual.nivel === 'operador';
+    const isAdm = usuarioAtual && usuarioAtual.nivel === 'admin';
+
+    // Abas restritas a administradores
+    const abasRestritas = [
+        'tab-btn-pedidos',
+        'tab-btn-calendario',
+        'tab-btn-financeiro',
+        'tab-btn-usuarios',
+        'tab-btn-pagamentos',
+        'tab-btn-whatsapp'
+    ];
+
+    const tituloAdmin = document.querySelector('#admin-section h2');
+
+    if (isOperador) {
+        // Oculta abas confidenciais
+        abasRestritas.forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) btn.style.display = 'none';
+        });
+
+        // Garante exibição de Produtos e Estoque
+        const btnProd = document.getElementById('tab-btn-produtos');
+        const btnEstoque = document.getElementById('tab-btn-estoque');
+        if (btnProd) btnProd.style.display = 'inline-flex';
+        if (btnEstoque) btnEstoque.style.display = 'inline-flex';
+
+        if (tituloAdmin) {
+            tituloAdmin.innerHTML = '<i class="fa-solid fa-boxes-packing" style="color:var(--primary)"></i> Painel do Operador <span style="font-size:12px; background:#e0f2fe; color:#0369a1; padding:3px 10px; border-radius:12px; font-weight:700; margin-left:6px;">Produtos</span>';
+        }
+
+        // Abre direto a aba de produtos
+        mudarTabAdmin('produtos');
+    } else {
+        // Administrador tem acesso a todas as abas
+        abasRestritas.forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) btn.style.display = 'inline-flex';
+        });
+
+        const btnProd = document.getElementById('tab-btn-produtos');
+        const btnEstoque = document.getElementById('tab-btn-estoque');
+        if (btnProd) btnProd.style.display = 'inline-flex';
+        if (btnEstoque) btnEstoque.style.display = 'inline-flex';
+
+        if (tituloAdmin) {
+            tituloAdmin.innerHTML = '<i class="fa-solid fa-screwdriver-wrench" style="color:var(--primary)"></i> Painel de Controle <span style="font-size:12px; background:#fef3c7; color:#b45309; padding:3px 10px; border-radius:12px; font-weight:700; margin-left:6px;">Admin</span>';
+        }
+    }
+}
 
 function mudarTabAdmin(tab) {
+    // Bloqueio de segurança no frontend para Operadores
+    if (usuarioAtual && usuarioAtual.nivel === 'operador' && tab !== 'produtos' && tab !== 'estoque') {
+        mostrarToast('Acesso restrito ao Administrador.', 'aviso', 3000);
+        return;
+    }
+
     document.querySelectorAll('.admin-nav button').forEach(function(b) { b.classList.remove('active'); });
     document.querySelectorAll('.admin-tab').forEach(function(t) { t.classList.remove('active'); });
     
-    document.getElementById('tab-btn-' + tab).classList.add('active');
-    document.getElementById('admin-tab-' + tab).classList.add('active');
+    const targetBtn = document.getElementById('tab-btn-' + tab);
+    const targetTab = document.getElementById('admin-tab-' + tab);
+    if (targetBtn) targetBtn.classList.add('active');
+    if (targetTab) targetTab.classList.add('active');
     
+    if(tab === 'pedidos') carregarPedidosAdmin();
     if(tab === 'calendario') renderizarCalendario();
+    if(tab === 'produtos' && typeof renderizarProdutosAdmin === 'function') renderizarProdutosAdmin();
     if(tab === 'usuarios') carregarUsuariosAdmin();
     if(tab === 'pagamentos') carregarConfigMercadoPagoAdmin();
     if(tab === 'whatsapp') carregarConfigWhatsAppAdmin();
@@ -17,82 +86,364 @@ function mudarTabAdmin(tab) {
     if(tab === 'financeiro' && typeof carregarFinanceiroAdmin === 'function') carregarFinanceiroAdmin();
 }
 
+// ==========================================================================
+// Gestão de Usuários & Níveis de Acesso (Cliente, Operador, Admin)
+// ==========================================================================
 async function carregarUsuariosAdmin() {
-    document.getElementById('lista-usuarios-admin').innerHTML = "<p style='text-align:center;'><i class='fa-solid fa-spinner fa-spin'></i> Carregando...</p>";
+    const listaEl = document.getElementById('lista-usuarios-admin');
+    if (!listaEl) return;
+
+    listaEl.innerHTML = `
+      <div style="text-align:center; padding:30px; color:#888;">
+        <i class="fa-solid fa-spinner fa-spin fa-2x" style="color:var(--primary); margin-bottom:10px; display:block;"></i>
+        Carregando lista de contas...
+      </div>
+    `;
     
     try {
-        const { data: users, error } = await supabaseClient.from('profiles').select('*').order('created_at');
+        const { data: users, error } = await supabaseClient
+            .from('profiles')
+            .select('*')
+            .order('created_at', { ascending: false });
+
         if (error) throw error;
         
-        let html = '';
-        for(let i = 0; i < users.length; i++){
-            let u = users[i];
-            let nomeLimpo = escapeHTML(u.nome || 'Sem Nome'); let emailLimpo = escapeHTML(u.email || ''); let statusInativo = u.ativo === false ? ' <span style="color:#e74c3c; font-size:11px;">(Desativado)</span>' : ''; html += '<div class="user-list-item"><div><strong style="color:var(--text-dark);">' + nomeLimpo + '</strong> ' + (u.nivel === 'admin' ? '<i class="fa-solid fa-crown" style="color:gold;" title="Admin"></i>' : '') + statusInativo + '<br><span style="font-size:13px; color:#666;">' + emailLimpo + '</span></div>';
-            
-            if (u.id === usuarioAtual.id) {
-                html += '<span style="font-size:12px; font-weight:bold; color:var(--primary); background:#f0e6ff; padding:4px 8px; border-radius:12px;">VOCÊ</span>';
-            } else {
-                html += '<div style="display:flex; gap:5px;"><button class="btn-outline" onclick="prepararEdicaoUsuario(\'' + u.id + '\', \'' + (u.nome || '') + '\', \'' + u.nivel + '\')" style="padding:6px 10px; font-size:12px;"><i class="fa-solid fa-pen"></i></button>';
-                html += '<button class="btn-danger" onclick="excluirUser(\'' + u.id + '\')" style="padding:6px 10px; font-size:12px;"><i class="fa-solid fa-trash"></i></button></div>';
-            }
-            html += '</div>';
-        }
-        document.getElementById('lista-usuarios-admin').innerHTML = html || "Nenhum usuário encontrado.";
+        listaUsuariosAdminCache = users || [];
+        atualizarMetricasUsuarios(listaUsuariosAdminCache);
+        renderizarUsuariosAdminNaTela();
         
     } catch (err) {
-        console.error(err);
-        document.getElementById('lista-usuarios-admin').innerHTML = "Erro ao carregar usuários.";
+        console.error('Erro ao carregar usuários:', err);
+        listaEl.innerHTML = `
+          <div style="text-align:center; padding:30px; color:#e11d48;">
+            <i class="fa-solid fa-triangle-exclamation fa-2x" style="margin-bottom:8px; display:block;"></i>
+            Erro ao carregar lista de usuários. Verifique sua conexão ou privilégios de Admin.
+          </div>
+        `;
     }
 }
 
-function prepararEdicaoUsuario(id, nome, nivel) {
-    document.getElementById('form-user-admin').style.display = 'flex';
-    document.getElementById('admin-user-id').value = id;
-    document.getElementById('admin-user-nome').value = nome;
-    document.getElementById('admin-user-nivel').value = nivel || 'cliente';
-    document.getElementById('form-user-admin').scrollIntoView({ behavior: 'smooth' });
+function atualizarMetricasUsuarios(users) {
+    const totalEl = document.getElementById('metric-users-total');
+    const opEl = document.getElementById('metric-users-operadores');
+    const admEl = document.getElementById('metric-users-admins');
+    const cliEl = document.getElementById('metric-users-clientes');
+
+    const total = users.length;
+    const operadores = users.filter(u => u.nivel === 'operador').length;
+    const admins = users.filter(u => u.nivel === 'admin').length;
+    const clientes = users.filter(u => u.nivel === 'cliente' || !u.nivel).length;
+
+    if (totalEl) totalEl.innerText = total;
+    if (opEl) opEl.innerText = operadores;
+    if (admEl) admEl.innerText = admins;
+    if (cliEl) cliEl.innerText = clientes;
+}
+
+function selecionarFiltroUsuariosAdmin(filtro, btn) {
+    filtroUsuariosAdminAtual = filtro;
+    document.querySelectorAll('#admin-user-filter-chips .category-chip').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    renderizarUsuariosAdminNaTela();
+}
+
+function filtrarUsuariosAdminNaTela() {
+    const input = document.getElementById('admin-user-search-input');
+    const btnClear = document.getElementById('admin-user-search-clear');
+    termoBuscaUsuariosAdmin = (input?.value || '').trim().toLowerCase();
+
+    if (btnClear) {
+        btnClear.style.display = termoBuscaUsuariosAdmin.length > 0 ? 'block' : 'none';
+    }
+
+    renderizarUsuariosAdminNaTela();
+}
+
+function limparBuscaUsuariosAdmin() {
+    const input = document.getElementById('admin-user-search-input');
+    const btnClear = document.getElementById('admin-user-search-clear');
+    if (input) input.value = '';
+    if (btnClear) btnClear.style.display = 'none';
+    termoBuscaUsuariosAdmin = '';
+    renderizarUsuariosAdminNaTela();
+}
+
+function renderizarUsuariosAdminNaTela() {
+    const listaEl = document.getElementById('lista-usuarios-admin');
+    if (!listaEl) return;
+
+    const filtrados = listaUsuariosAdminCache.filter(u => {
+        // Filtro por Nível ou Status
+        if (filtroUsuariosAdminAtual === 'inativo') {
+            if (u.ativo !== false) return false;
+        } else if (filtroUsuariosAdminAtual !== 'todos') {
+            const nivelU = u.nivel || 'cliente';
+            if (nivelU !== filtroUsuariosAdminAtual) return false;
+        }
+
+        // Filtro por Busca de Texto
+        if (termoBuscaUsuariosAdmin) {
+            const termo = termoBuscaUsuariosAdmin;
+            const nome = (u.nome || '').toLowerCase();
+            const email = (u.email || '').toLowerCase();
+            const cpf = (u.cpf || '').replace(/\D/g, '');
+            const tel = (u.telefone || '').replace(/\D/g, '');
+
+            if (!nome.includes(termo) && !email.includes(termo) && !cpf.includes(termo) && !tel.includes(termo)) {
+                return false;
+            }
+        }
+
+        return true;
+    });
+
+    if (filtrados.length === 0) {
+        listaEl.innerHTML = `
+          <div style="text-align:center; padding:35px 15px; color:#887a77; background:#ffffff; border-radius:18px; border:1px dashed #ebdcf7;">
+            <i class="fa-solid fa-user-xmark" style="font-size:32px; color:var(--primary); margin-bottom:10px; display:block; opacity:0.6;"></i>
+            <h4 style="margin:0 0 4px; color:var(--text-dark);">Nenhum usuário encontrado</h4>
+            <p style="margin:0; font-size:12.5px;">Tente ajustar os filtros ou o termo de pesquisa.</p>
+          </div>
+        `;
+        return;
+    }
+
+    let html = '';
+    for (let i = 0; i < filtrados.length; i++) {
+        const u = filtrados[i];
+        const nomeLimpo = escapeHTML(u.nome || 'Sem Nome');
+        const emailLimpo = escapeHTML(u.email || 'Sem e-mail');
+        const nivel = u.nivel || 'cliente';
+        const isSelf = usuarioAtual && u.id === usuarioAtual.id;
+        const isAtivo = u.ativo !== false;
+
+        // Iniciais para o avatar
+        const iniciais = (u.nome ? u.nome.split(' ').map(n => n[0]).slice(0, 2).join('') : 'U').toUpperCase();
+
+        // Configurações do Badge por Nível
+        let badgeHtml = '';
+        let avatarClass = 'cliente';
+        if (nivel === 'admin') {
+            badgeHtml = '<span class="badge-nivel admin"><i class="fa-solid fa-crown" style="color:#d97706;"></i> Administrador</span>';
+            avatarClass = 'admin';
+        } else if (nivel === 'operador') {
+            badgeHtml = '<span class="badge-nivel operador"><i class="fa-solid fa-user-gear"></i> Operador (Produtos)</span>';
+            avatarClass = 'operador';
+        } else {
+            badgeHtml = '<span class="badge-nivel cliente"><i class="fa-solid fa-user"></i> Cliente</span>';
+            avatarClass = 'cliente';
+        }
+
+        // WhatsApp Link
+        const telLimpo = (u.telefone || '').replace(/\D/g, '');
+        const telFmt = u.telefone ? escapeHTML(u.telefone) : 'Não informado';
+        const whatsLink = telLimpo.length >= 10 
+            ? `<a href="https://wa.me/55${telLimpo}" target="_blank" style="color:#16a34a; font-weight:600; text-decoration:none;"><i class="fa-brands fa-whatsapp"></i> ${telFmt}</a>`
+            : `<span><i class="fa-solid fa-phone"></i> ${telFmt}</span>`;
+
+        // CPF
+        const cpfFmt = u.cpf ? escapeHTML(u.cpf) : 'Não informado';
+
+        // Endereço
+        let endCompleto = 'Não cadastrado';
+        if (u.endereco) {
+            endCompleto = `${escapeHTML(u.endereco)}${u.numero ? ', ' + escapeHTML(u.numero) : ''}${u.complemento ? ' (' + escapeHTML(u.complemento) + ')' : ''}${u.cep ? ' - CEP: ' + escapeHTML(u.cep) : ''}`;
+        }
+
+        // Data de cadastro
+        const dataCadastro = u.created_at ? new Date(u.created_at).toLocaleDateString('pt-BR') : '--';
+
+        html += `
+          <div class="user-card-admin" style="${!isAtivo ? 'opacity: 0.7; background: #fafafa;' : ''}">
+            <div class="user-card-header">
+              <div class="user-card-avatar-wrap">
+                <div class="user-card-avatar ${avatarClass}">${iniciais}</div>
+                <div>
+                  <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <strong style="font-size:15px; color:var(--text-dark);">${nomeLimpo}</strong>
+                    ${isSelf ? '<span style="font-size:10.5px; font-weight:800; color:var(--primary-dark); background:#f7effe; padding:2px 8px; border-radius:10px;">VOCÊ</span>' : ''}
+                    ${!isAtivo ? '<span style="font-size:10.5px; font-weight:800; color:#b91c1c; background:#fee2e2; padding:2px 8px; border-radius:10px;">DESATIVADO</span>' : ''}
+                  </div>
+                  <div style="font-size:12.5px; color:#64748b; margin-top:2px;">
+                    <i class="fa-regular fa-envelope" style="font-size:11px;"></i> ${emailLimpo}
+                  </div>
+                </div>
+              </div>
+              <div>${badgeHtml}</div>
+            </div>
+
+            <div class="user-card-info-grid">
+              <div class="user-card-info-item" title="WhatsApp">${whatsLink}</div>
+              <div class="user-card-info-item" title="CPF"><i class="fa-solid fa-id-card"></i> CPF: ${cpfFmt}</div>
+              <div class="user-card-info-item" title="Endereço" style="grid-column: 1 / -1;"><i class="fa-solid fa-location-dot"></i> ${endCompleto}</div>
+              <div class="user-card-info-item" title="Cadastrado em"><i class="fa-regular fa-calendar"></i> Cadastrado em: ${dataCadastro}</div>
+            </div>
+
+            <div class="user-card-actions">
+              <button type="button" class="btn-outline" onclick="prepararEdicaoUsuarioById('${u.id}')" style="padding:6px 12px; font-size:12px; border-radius:8px;">
+                <i class="fa-solid fa-user-pen"></i> Editar Informações & Nível
+              </button>
+              ${!isSelf ? `
+                <button type="button" class="${isAtivo ? 'btn-danger' : 'btn-outline'}" onclick="alternarStatusUsuario('${u.id}', ${isAtivo})" style="padding:6px 12px; font-size:12px; border-radius:8px;">
+                  <i class="fa-solid ${isAtivo ? 'fa-user-slash' : 'fa-user-check'}"></i> ${isAtivo ? 'Desativar' : 'Reativar'}
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        `;
+    }
+
+    listaEl.innerHTML = html;
+}
+
+function prepararEdicaoUsuarioById(id) {
+    const user = listaUsuariosAdminCache.find(u => u.id === id);
+    if (!user) return;
+
+    const form = document.getElementById('form-user-admin');
+    if (!form) return;
+
+    form.style.display = 'flex';
+    document.getElementById('admin-user-id').value = user.id;
+    document.getElementById('admin-user-nome').value = user.nome || '';
+    document.getElementById('admin-user-email').value = user.email || '';
+    document.getElementById('admin-user-nivel').value = user.nivel || 'cliente';
+    document.getElementById('admin-user-telefone').value = user.telefone || '';
+    document.getElementById('admin-user-cpf').value = user.cpf || '';
+    document.getElementById('admin-user-cep').value = user.cep || '';
+    document.getElementById('admin-user-endereco').value = user.endereco || '';
+    document.getElementById('admin-user-numero').value = user.numero || '';
+    document.getElementById('admin-user-complemento').value = user.complemento || '';
+    document.getElementById('admin-user-ativo').checked = user.ativo !== false;
+
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function fecharFormUsuario() {
-    document.getElementById('form-user-admin').style.display = 'none';
+    const form = document.getElementById('form-user-admin');
+    if (form) form.style.display = 'none';
 }
 
-async function salvarFormUsuario() {
-    let id = document.getElementById('admin-user-id').value;
-    let nome = document.getElementById('admin-user-nome').value;
-    let nivel = document.getElementById('admin-user-nivel').value;
-    
-    try {
-        const { error } = await supabaseClient.from('profiles').update({ nome, nivel }).eq('id', id);
-        if (error) throw error;
-        
-        alert("Usuário atualizado com sucesso!");
-        fecharFormUsuario();
-        carregarUsuariosAdmin();
-    } catch (err) {
-        console.error(err);
-        alert("Erro ao atualizar usuário.");
+function buscarCepAdminUsuario() {
+    const cepInput = document.getElementById('admin-user-cep');
+    if (!cepInput) return;
+    const cep = cepInput.value.replace(/\D/g, '');
+    if (cep.length === 8) {
+        const ruaInput = document.getElementById('admin-user-endereco');
+        if (ruaInput) ruaInput.placeholder = "Buscando logradouro...";
+        fetch(`https://viacep.com.br/ws/${cep}/json/`)
+            .then(res => res.json())
+            .then(data => {
+                if (!data.erro) {
+                    if (ruaInput) ruaInput.value = `${data.logradouro}, ${data.bairro} - ${data.localidade}/${data.uf}`;
+                    const numInput = document.getElementById('admin-user-numero');
+                    if (numInput) numInput.focus();
+                } else {
+                    mostrarToast('CEP não encontrado.', 'aviso');
+                }
+            })
+            .catch(() => {});
     }
 }
 
-async function excluirUser(id) {
-    if (clickExcluir === id) {
-        try {
-            // Desativa o usuário em vez de excluir fisicamente para não quebrar integridade
-            const { error } = await supabaseClient.from('profiles').update({ ativo: false }).eq('id', id);
-            if (error) throw error;
-            
-            alert("Usuário desativado com sucesso!");
-            clickExcluir = null;
-            carregarUsuariosAdmin();
-        } catch (err) {
-            console.error(err);
-            alert("Erro ao desativar usuário.");
+async function salvarFormUsuario() {
+    const btn = document.getElementById('btn-salvar-user-admin');
+    const txtOriginal = btn ? btn.innerHTML : '';
+
+    const id = document.getElementById('admin-user-id').value;
+    const nome = (document.getElementById('admin-user-nome')?.value || '').trim();
+    const nivel = document.getElementById('admin-user-nivel')?.value || 'cliente';
+    const telefone = (document.getElementById('admin-user-telefone')?.value || '').trim();
+    const cpf = (document.getElementById('admin-user-cpf')?.value || '').trim();
+    const cep = (document.getElementById('admin-user-cep')?.value || '').trim();
+    const endereco = (document.getElementById('admin-user-endereco')?.value || '').trim();
+    const numero = (document.getElementById('admin-user-numero')?.value || '').trim();
+    const complemento = (document.getElementById('admin-user-complemento')?.value || '').trim();
+    const ativo = document.getElementById('admin-user-ativo')?.checked !== false;
+
+    if (!nome) {
+        return mostrarToast('Informe o nome completo do usuário.', 'aviso');
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Salvando dados...';
+    }
+
+    try {
+        const payload = {
+            nome: nome,
+            nivel: nivel,
+            telefone: telefone,
+            cpf: cpf,
+            cep: cep,
+            endereco: endereco,
+            numero: numero,
+            complemento: complemento,
+            ativo: ativo
+        };
+
+        const { error } = await supabaseClient
+            .from('profiles')
+            .update(payload)
+            .eq('id', id);
+
+        if (error) throw error;
+
+        // Atualiza cache local
+        const idx = listaUsuariosAdminCache.findIndex(u => u.id === id);
+        if (idx !== -1) {
+            Object.assign(listaUsuariosAdminCache[idx], payload);
         }
-    } else {
-        clickExcluir = id;
-        alert("Clique novamente na lixeira para confirmar a desativação deste usuário.");
-        setTimeout(() => { clickExcluir = null; }, 3000);
+
+        // Se o admin editou o próprio perfil, atualiza usuarioAtual
+        if (usuarioAtual && usuarioAtual.id === id) {
+            Object.assign(usuarioAtual, payload);
+            if (typeof atualizarInterfaceUsuario === 'function') atualizarInterfaceUsuario();
+        }
+
+        mostrarToast(`✅ Usuário "${nome}" atualizado com sucesso! Nível: ${nivel.toUpperCase()}`, 'sucesso');
+        fecharFormUsuario();
+        atualizarMetricasUsuarios(listaUsuariosAdminCache);
+        renderizarUsuariosAdminNaTela();
+
+    } catch (err) {
+        console.error('Erro ao atualizar usuário:', err);
+        mostrarToast('Erro ao atualizar perfil do usuário: ' + (err.message || 'Verifique sua conexão.'), 'erro');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = txtOriginal;
+        }
+    }
+}
+
+async function alternarStatusUsuario(id, statusAtual) {
+    const user = listaUsuariosAdminCache.find(u => u.id === id);
+    const nome = user ? user.nome : 'o usuário';
+    const novoStatus = !statusAtual;
+    const acao = novoStatus ? 'reativar' : 'desativar';
+
+    if (!confirm(`Deseja realmente ${acao} o acesso de ${nome}?`)) {
+        return;
+    }
+
+    try {
+        const { error } = await supabaseClient
+            .from('profiles')
+            .update({ ativo: novoStatus })
+            .eq('id', id);
+
+        if (error) throw error;
+
+        if (user) user.ativo = novoStatus;
+        mostrarToast(`Conta de "${nome}" foi ${novoStatus ? 'reativada' : 'desativada'} com sucesso!`, 'sucesso');
+        atualizarMetricasUsuarios(listaUsuariosAdminCache);
+        renderizarUsuariosAdminNaTela();
+
+    } catch (err) {
+        console.error('Erro ao alternar status do usuário:', err);
+        mostrarToast('Erro ao alterar status: ' + err.message, 'erro');
     }
 }
 // ==========================================================================
