@@ -973,7 +973,22 @@ async function testarConexaoWhatsApp() {
         if (res.ok && data.success) {
             statusDiv.innerHTML = '<div style="padding:12px; background:#ecfdf5; color:#065f46; border-radius:8px; font-size:12px; border:1px solid #a7f3d0;"><i class="fa-solid fa-circle-check"></i> <strong>Mensagem enviada com sucesso!</strong> Verifique seu WhatsApp (' + foneLoja + ').</div>';
         } else {
-            statusDiv.innerHTML = '<div style="padding:12px; background:#fff1f2; color:#be123c; border-radius:8px; font-size:12px; border:1px solid #fecdd3;"><i class="fa-solid fa-circle-xmark"></i> <strong>Falha no envio:</strong> ' + escapeHTML(data.error || 'Erro no gateway WhatsApp.') + '</div>';
+            const rawError = String(data.error || 'Erro no gateway WhatsApp.');
+            let dicaAdicional = '';
+            const mgrUrl = (cfg.instanciaUrl || 'https://lunoca-whatsapp.onrender.com').replace(/\/+$/, '') + '/manager/';
+
+            if (rawError.toLowerCase().includes('not found') || data.status === 404) {
+                dicaAdicional = `<div style="margin-top:8px; padding-top:8px; border-top:1px dashed #fca5a5; font-size:11.5px; color:#991b1b; line-height:1.5;">
+                    💡 <strong>Instância "${escapeHTML(cfg.instanciaNome || 'lunoca-whatsapp')}" ainda não foi criada no WhatsApp:</strong><br>
+                    Para conectar, acesse o painel do seu servidor: <a href="${mgrUrl}" target="_blank" style="color:#0284c7; font-weight:700; text-decoration:underline;">Abrir Evolution Manager <i class="fa-solid fa-arrow-up-right-from-square"></i></a>, faça login com sua API Key, clique em <strong>"Criar Instância"</strong> com o nome <code>${escapeHTML(cfg.instanciaNome || 'lunoca-whatsapp')}</code> e <strong>escaneie o QR Code</strong> no WhatsApp do seu celular.
+                </div>`;
+            } else if (rawError.toLowerCase().includes('unauthorized') || data.status === 401) {
+                dicaAdicional = `<div style="margin-top:8px; padding-top:8px; border-top:1px dashed #fca5a5; font-size:11.5px; color:#991b1b; line-height:1.5;">
+                    🔑 <strong>Chave API Incorreta:</strong> A chave informada em <em>API Key / Token Global</em> não coincide com a <code>AUTHENTICATION_API_KEY</code> definida no seu Render.
+                </div>`;
+            }
+
+            statusDiv.innerHTML = '<div style="padding:12px; background:#fff1f2; color:#be123c; border-radius:8px; font-size:12px; border:1px solid #fecdd3;"><i class="fa-solid fa-circle-xmark"></i> <strong>Falha no envio:</strong> ' + escapeHTML(rawError) + dicaAdicional + '</div>';
         }
     } catch (err) {
         statusDiv.innerHTML = '<div style="padding:10px; background:#fff1f2; color:#be123c; border-radius:8px; font-size:12px;"><i class="fa-solid fa-triangle-exclamation"></i> Erro de rede ao testar: ' + escapeHTML(err.message) + '</div>';
