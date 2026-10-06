@@ -127,7 +127,7 @@ export async function onRequestPost(context) {
       const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
 
       if (supabaseUrl && supabaseKey) {
-        await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${orderId}`, {
+        const patchRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${orderId}`, {
           method: 'PATCH',
           headers: {
             apikey: supabaseKey,
@@ -141,6 +141,21 @@ export async function onRequestPost(context) {
             mercado_pago_status: payment.status,
           }),
         });
+
+        if (!patchRes.ok) {
+          await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${orderId}`, {
+            method: 'PATCH',
+            headers: {
+              apikey: supabaseKey,
+              Authorization: `Bearer ${supabaseKey}`,
+              'Content-Type': 'application/json',
+              Prefer: 'return=minimal',
+            },
+            body: JSON.stringify({
+              status: 'Confirmado',
+            }),
+          }).catch(() => {});
+        }
       }
     }
 

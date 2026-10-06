@@ -259,7 +259,7 @@ export async function onRequestPost(context) {
         const supabaseUrl = env.SUPABASE_URL;
         const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
         if (supabaseUrl && supabaseKey) {
-          await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}`, {
+          const patchRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}`, {
             method: 'PATCH',
             headers: {
               'apikey': supabaseKey,
@@ -272,7 +272,22 @@ export async function onRequestPost(context) {
               mercado_pago_id: String(mpData.id),
               mercado_pago_status: mpData.status
             })
-          }).catch(() => {});
+          }).catch(() => null);
+
+          if (!patchRes || !patchRes.ok) {
+            await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}`, {
+              method: 'PATCH',
+              headers: {
+                'apikey': supabaseKey,
+                'Authorization': `Bearer ${supabaseKey}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=minimal'
+              },
+              body: JSON.stringify({
+                status: 'Confirmado'
+              })
+            }).catch(() => {});
+          }
         }
       }
 

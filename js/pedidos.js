@@ -529,7 +529,7 @@ async function carregarPedidosCliente() {
     try {
         const { data: pedidos, error } = await supabaseClient
             .from('pedidos')
-            .select('id,data_entrega,total,pagamento,status,mercado_pago_status,itens,created_at')
+            .select('id,data_entrega,total,pagamento,status,itens,created_at')
             .eq('cliente_id', usuarioAtual.id)
             .order('created_at', { ascending: false })
             .limit(20);
@@ -545,9 +545,8 @@ async function carregarPedidosCliente() {
         for (let i = 0; i < pedidos.length; i++) {
             const p = pedidos[i];
             const dataEntrega = p.data_entrega ? p.data_entrega.split('-').reverse().join('/') : 'A definir';
-            const statusPagamento = p.mercado_pago_status || 'pendente';
-            const corStatus = (p.status === 'Confirmado' || statusPagamento === 'approved') ? '#065f46' : '#92400e';
-            const bgStatus = (p.status === 'Confirmado' || statusPagamento === 'approved') ? '#ecfdf5' : '#fffbeb';
+            const corStatus = p.status === 'Confirmado' ? '#065f46' : '#92400e';
+            const bgStatus = p.status === 'Confirmado' ? '#ecfdf5' : '#fffbeb';
 
             html += '<div style="border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff;">';
             html += '<div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">';

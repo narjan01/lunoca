@@ -201,18 +201,6 @@
         }
 
         if (res.ok && data.success && data.qrCode) {
-          // Atualizar o Supabase com o ID do pagamento gerado
-          try {
-            if (typeof window.supabaseClient !== 'undefined') {
-              await window.supabaseClient.from('pedidos').update({
-                mercado_pago_id: String(data.paymentId),
-                mercado_pago_status: data.status || 'pending'
-              }).eq('id', orderData.pedidoId);
-            }
-          } catch (dbErr) {
-            console.warn('[MercadoPagoPlugin] Aviso ao salvar pedido:', dbErr);
-          }
-
           this.renderTelaPixCompleta(conteudo, {
             pedidoId: orderData.pedidoId,
             total: orderData.total,
@@ -609,9 +597,7 @@
             try {
               if (typeof window.supabaseClient !== 'undefined') {
                 await window.supabaseClient.from('pedidos').update({
-                  status: 'Confirmado',
-                  mercado_pago_id: String(data.paymentId),
-                  mercado_pago_status: 'approved'
+                  status: 'Confirmado'
                 }).eq('id', this.currentOrder.pedidoId);
               }
             } catch (dbErr) {
@@ -693,8 +679,7 @@
             if (data.status === 'approved') {
               if (typeof window.supabaseClient !== 'undefined') {
                 await window.supabaseClient.from('pedidos').update({
-                  status: 'Confirmado',
-                  mercado_pago_status: 'approved'
+                  status: 'Confirmado'
                 }).eq('id', pedidoId).catch(() => {});
               }
 
@@ -712,11 +697,11 @@
           if (typeof window.supabaseClient !== 'undefined') {
             const { data: pedido } = await window.supabaseClient
               .from('pedidos')
-              .select('status, mercado_pago_status')
+              .select('status')
               .eq('id', pedidoId)
               .single();
 
-            if (pedido && (pedido.status === 'Confirmado' || pedido.mercado_pago_status === 'approved')) {
+            if (pedido && pedido.status === 'Confirmado') {
               this.renderSucessoAprovado({
                 pedidoId: pedidoId,
                 total: this.currentOrder?.total,
