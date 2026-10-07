@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS public.pedidos (
   mercado_pago_id TEXT,
   whatsapp_notificado BOOLEAN DEFAULT false,
   ultimo_status_whatsapp TEXT,
+  taxa_entrega DECIMAL(10,2) DEFAULT 0,
+  modalidade_entrega TEXT DEFAULT 'entrega',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -270,7 +272,10 @@ CREATE OR REPLACE FUNCTION public.criar_pedido(
   p_pagamento TEXT,
   p_endereco_entrega TEXT,
   p_telefone_cliente TEXT,
-  p_nome_cliente TEXT
+  p_nome_cliente TEXT,
+  p_taxa_entrega NUMERIC DEFAULT 0,
+  p_email_cliente TEXT DEFAULT NULL,
+  p_modalidade TEXT DEFAULT 'entrega'
 )
 RETURNS JSON AS $$
 DECLARE
@@ -282,26 +287,56 @@ DECLARE
   v_prod RECORD;
   v_disponivel INTEGER;
   v_total DECIMAL(10,2) := 0;
+  v_taxa DECIMAL(10,2) := 0;
   v_nomes_itens TEXT[] := ARRAY[]::TEXT[];
   v_pedido_id BIGINT;
   v_expires_at TIMESTAMPTZ;
+  v_nome_final TEXT;
+  v_email_final TEXT;
+  v_telefone_final TEXT;
+  v_fone_limpo TEXT;
 BEGIN
-  -- 1. Valida autenticação do cliente
-  IF v_cliente_id IS NULL THEN
-    RETURN json_build_object('success', false, 'error', 'Você precisa estar logado para realizar um pedido.');
-  END IF;
+  -- 1. Identificação do Cliente (Usuário Autenticado ou Visitante Convidado)
+  IF v_cliente_id IS NOT NULL THEN
+    -- Cliente logado: busca perfil oficial
+    SELECT * INTO v_user_profile
+    FROM public.profiles
+    WHERE id = v_cliente_id AND ativo = true;
 
-  SELECT * INTO v_user_profile
-  FROM public.profiles
-  WHERE id = v_cliente_id AND ativo = true;
+    IF NOT FOUND THEN
+      RETURN json_build_object('success', false, 'error', 'Sua conta de usuário está inativa ou não foi encontrada.');
+    END IF;
 
-  IF NOT FOUND THEN
-    RETURN json_build_object('success', false, 'error', 'Sua conta de usuário está inativa ou não foi encontrada.');
+    v_nome_final := COALESCE(NULLIF(trim(p_nome_cliente), ''), v_user_profile.nome);
+    v_email_final := COALESCE(v_user_profile.email, NULLIF(trim(p_email_cliente), ''), 'cliente@lunocadoceria.com.br');
+    v_telefone_final := COALESCE(NULLIF(trim(p_telefone_cliente), ''), v_user_profile.telefone);
+  ELSE
+    -- Guest Checkout (compra como visitante sem necessidade de senha prévia)
+    v_nome_final := trim(COALESCE(p_nome_cliente, ''));
+    v_telefone_final := trim(COALESCE(p_telefone_cliente, ''));
+    v_email_final := COALESCE(NULLIF(trim(p_email_cliente), ''), 'visitante@lunocadoceria.com.br');
+
+    IF length(v_nome_final) < 2 THEN
+      RETURN json_build_object('success', false, 'error', 'Por favor, informe seu nome completo para a encomenda.');
+    END IF;
+
+    v_fone_limpo := regexp_replace(v_telefone_final, '\D', '', 'g');
+    IF length(v_fone_limpo) < 10 THEN
+      RETURN json_build_object('success', false, 'error', 'Por favor, informe um WhatsApp válido com DDD para acompanhar o pedido.');
+    END IF;
   END IF;
 
   -- 2. Validações de entrada
   IF p_itens IS NULL OR jsonb_typeof(p_itens) <> 'array' OR jsonb_array_length(p_itens) = 0 THEN
     RETURN json_build_object('success', false, 'error', 'Sua sacola está vazia.');
+  END IF;
+
+  IF p_data_entrega IS NULL THEN
+    RETURN json_build_object('success', false, 'error', 'Data de entrega/retirada é obrigatória.');
+  END IF;
+
+  IF p_pagamento NOT IN ('pix', 'cartao') THEN
+    RETURN json_build_object('success', false, 'error', 'Forma de pagamento inválida.');
   END IF;
 
   -- 3. Tolerância de pagamento: 30 minutos para PIX/Checkout
@@ -370,7 +405,16 @@ BEGIN
     v_nomes_itens := array_append(v_nomes_itens, v_qtd || 'x ' || v_prod.nome);
   END LOOP;
 
-  -- 5. Grava o pedido com status de pagamento e expiração
+  -- 5. Adiciona taxa de entrega validada (caso seja entrega em domicílio)
+  IF COALESCE(p_modalidade, 'entrega') = 'entrega' THEN
+    v_taxa := GREATEST(0, COALESCE(p_taxa_entrega, 0));
+  ELSE
+    v_taxa := 0;
+  END IF;
+
+  v_total := v_total + v_taxa;
+
+  -- 6. Grava o pedido com status de pagamento e expiração
   INSERT INTO public.pedidos (
     cliente_id,
     nome_cliente,
@@ -379,6 +423,8 @@ BEGIN
     data_pedido,
     data_entrega,
     total,
+    taxa_entrega,
+    modalidade_entrega,
     pagamento,
     status,
     status_pagamento,
@@ -389,12 +435,14 @@ BEGIN
     endereco_entrega
   ) VALUES (
     v_cliente_id,
-    COALESCE(NULLIF(trim(p_nome_cliente), ''), v_user_profile.nome),
-    v_user_profile.email,
-    COALESCE(NULLIF(trim(p_telefone_cliente), ''), v_user_profile.telefone),
+    v_nome_final,
+    v_email_final,
+    v_telefone_final,
     CURRENT_DATE,
     p_data_entrega,
     v_total,
+    v_taxa,
+    COALESCE(p_modalidade, 'entrega'),
     p_pagamento,
     'Pendente',
     'aguardando_pagamento',
@@ -414,12 +462,13 @@ BEGIN
     'success', true,
     'pedido_id', v_pedido_id,
     'total', v_total,
+    'taxa_entrega', v_taxa,
     'expires_at', v_expires_at
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
-GRANT EXECUTE ON FUNCTION public.criar_pedido(JSONB, DATE, TEXT, TEXT, TEXT, TEXT) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.criar_pedido(JSONB, DATE, TEXT, TEXT, TEXT, TEXT, NUMERIC, TEXT, TEXT) TO anon, authenticated, service_role;
 
 -- 9. Tabela de Idempotência & RPC Atômica de Confirmação & Baixa de Estoque
 CREATE TABLE IF NOT EXISTS public.pagamentos_processados (

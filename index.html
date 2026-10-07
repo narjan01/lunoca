@@ -220,7 +220,11 @@
           <button onclick="mostrarTela('menu-section')" class="btn-outline" style="font-size: 11px; padding: 4px 10px;"><i class="fa-solid fa-plus"></i> Adicionar mais doces</button>
         </h3>
         <div id="itens-carrinho"></div>
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; padding-top: 12px; border-top: 2px solid #f1f5f9;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; padding-top: 10px; border-top: 1px dashed #e2e8f0; font-size: 13px; color: #64748b;">
+          <span>Taxa de Entrega:</span>
+          <strong id="taxa-entrega-display" style="color: var(--text-dark);">R$ 10,00</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 10px; border-top: 2px solid #f1f5f9;">
           <span style="font-size: 14px; color: #64748b; font-weight: 600;">Total a Pagar:</span>
           <span style="color: var(--primary-dark); font-size: 22px; font-weight: 800;">R$ <span id="total-carrinho">0.00</span></span>
         </div>

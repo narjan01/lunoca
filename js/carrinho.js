@@ -147,12 +147,6 @@ function removerItemCarrinho(index) {
 }
 
 function irParaCheckout() {
-  if (usuarioAtual && usuarioAtual.nivel === 'visitante') {
-    alert("Por favor, faça login ou cadastre-se para finalizar seu pedido!");
-    mostrarTela('login-section');
-    return;
-  }
-
   if (!carrinho || carrinho.length === 0) {
     alert("Seu carrinho está vazio! Adicione deliciosos doces antes de continuar.");
     mostrarTela('menu-section');
@@ -162,20 +156,58 @@ function irParaCheckout() {
   mostrarTela('checkout-section');
   renderizarItensCheckout();
 
-  // Pré-preenche o CPF no checkout se o usuário já tiver cadastrado
-  const cpfInput = document.getElementById('checkout-cpf');
-  if (cpfInput && usuarioAtual && usuarioAtual.cpf) {
-    cpfInput.value = usuarioAtual.cpf;
+  // Pré-preenche dados do usuário logado
+  if (usuarioAtual && usuarioAtual.nivel !== 'visitante') {
+    const nomeInput = document.getElementById('checkout-nome');
+    if (nomeInput && usuarioAtual.nome && !nomeInput.value) nomeInput.value = usuarioAtual.nome;
+
+    const zapInput = document.getElementById('checkout-whatsapp');
+    if (zapInput && usuarioAtual.telefone && !zapInput.value) zapInput.value = usuarioAtual.telefone;
+
+    const cpfInput = document.getElementById('checkout-cpf');
+    if (cpfInput && usuarioAtual.cpf && !cpfInput.value) cpfInput.value = usuarioAtual.cpf;
+
+    const cepInput = document.getElementById('checkout-cep');
+    if (cepInput && usuarioAtual.cep && !cepInput.value) cepInput.value = usuarioAtual.cep;
+
+    const ruaInput = document.getElementById('checkout-rua');
+    if (ruaInput && usuarioAtual.endereco && !ruaInput.value) ruaInput.value = usuarioAtual.endereco;
+
+    const numInput = document.getElementById('checkout-numero');
+    if (numInput && usuarioAtual.numero && !numInput.value) numInput.value = usuarioAtual.numero;
+
+    const compInput = document.getElementById('checkout-complemento');
+    if (compInput && usuarioAtual.complemento && !compInput.value) compInput.value = usuarioAtual.complemento;
+
+    const endInput = document.getElementById('endereco-checkout');
+    if (endInput && usuarioAtual.endereco && !endInput.value) {
+      let enderecoCompleto = usuarioAtual.endereco;
+      if (usuarioAtual.numero) enderecoCompleto += ', ' + usuarioAtual.numero;
+      if (usuarioAtual.complemento) enderecoCompleto += ' (' + usuarioAtual.complemento + ')';
+      if (usuarioAtual.cep) enderecoCompleto += ' - CEP: ' + usuarioAtual.cep;
+      endInput.value = enderecoCompleto;
+    }
+  } else {
+    // Pré-preenche dados de compras anteriores como visitante (Guest Checkout)
+    try {
+      const guestSalvo = localStorage.getItem('lunoca_guest_data');
+      if (guestSalvo) {
+        const g = JSON.parse(guestSalvo);
+        if (g.nome && document.getElementById('checkout-nome') && !document.getElementById('checkout-nome').value) {
+          document.getElementById('checkout-nome').value = g.nome;
+        }
+        if (g.whatsapp && document.getElementById('checkout-whatsapp') && !document.getElementById('checkout-whatsapp').value) {
+          document.getElementById('checkout-whatsapp').value = g.whatsapp;
+        }
+        if (g.cpf && document.getElementById('checkout-cpf') && !document.getElementById('checkout-cpf').value) {
+          document.getElementById('checkout-cpf').value = g.cpf;
+        }
+      }
+    } catch (_) {}
   }
 
-  // Pré-preenche endereço se já configurado
-  const endInput = document.getElementById('endereco-checkout');
-  if (endInput && usuarioAtual && usuarioAtual.endereco && !endInput.value) {
-    let enderecoCompleto = usuarioAtual.endereco;
-    if (usuarioAtual.numero) enderecoCompleto += ', ' + usuarioAtual.numero;
-    if (usuarioAtual.complemento) enderecoCompleto += ' (' + usuarioAtual.complemento + ')';
-    if (usuarioAtual.cep) enderecoCompleto += ' - CEP: ' + usuarioAtual.cep;
-    endInput.value = enderecoCompleto;
+  if (typeof recalcularTotalCheckout === 'function') {
+    recalcularTotalCheckout();
   }
 }
 

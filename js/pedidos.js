@@ -3,6 +3,32 @@
 // ==========================================================================
 
 let modalidadePedidoAtual = 'entrega';
+let taxaEntregaValor = 10.00; // Taxa padrão para entrega em domicílio (R$ 10,00) ou R$ 0,00 na retirada
+
+function obterTaxaEntrega() {
+    return modalidadePedidoAtual === 'retirada' ? 0.00 : taxaEntregaValor;
+}
+
+function recalcularTotalCheckout() {
+    if (!Array.isArray(carrinho)) return;
+    let subtotal = 0;
+    for (let i = 0; i < carrinho.length; i++) {
+        const item = carrinho[i];
+        const qtd = Math.max(1, parseInt(item.quantidade || 1, 10));
+        subtotal += (parseFloat(item.preco) || 0) * qtd;
+    }
+
+    const taxa = obterTaxaEntrega();
+    const totalGeral = subtotal + taxa;
+
+    const elTotal = document.getElementById('total-carrinho');
+    if (elTotal) elTotal.innerText = totalGeral.toFixed(2);
+
+    const elTaxa = document.getElementById('taxa-entrega-display');
+    if (elTaxa) {
+        elTaxa.innerText = modalidadePedidoAtual === 'retirada' ? 'Grátis (Retirada no Balcão)' : `R$ ${taxa.toFixed(2).replace('.', ',')}`;
+    }
+}
 
 function selecionarModalidade(tipo) {
     modalidadePedidoAtual = tipo === 'retirada' ? 'retirada' : 'entrega';
@@ -26,6 +52,8 @@ function selecionarModalidade(tipo) {
         if (avisoRetirada) avisoRetirada.style.display = 'none';
         if (labelData) labelData.innerHTML = '<i class="fa-regular fa-calendar"></i> Data de Entrega (Mínimo 2 dias úteis)';
     }
+
+    recalcularTotalCheckout();
 }
 
 function mascaraCPF(input) {
@@ -42,11 +70,7 @@ function mascaraCPF(input) {
 }
 
 async function enviarPedido() {
-    if (!usuarioAtual || usuarioAtual.nivel === 'visitante') {
-        alert("Por favor, faça login ou cadastre-se para finalizar seu pedido!");
-        mostrarTela('login-section');
-        return;
-    }
+    const isVisitante = !usuarioAtual || usuarioAtual.nivel === 'visitante';
 
     const btnConfirmar = document.getElementById('btn-confirmar-checkout');
     const textoOriginalBtn = btnConfirmar ? btnConfirmar.innerHTML : '';
@@ -57,13 +81,13 @@ async function enviarPedido() {
     }
 
     // Coleta dos dados do formulário
-    let nomeInput = (document.getElementById('checkout-nome')?.value || usuarioAtual.nome || '').trim();
-    let whatsappInput = (document.getElementById('checkout-whatsapp')?.value || usuarioAtual.telefone || '').trim();
-    let cpfInput = (document.getElementById('checkout-cpf')?.value || usuarioAtual.cpf || '').replace(/\D/g, '');
-    let cepInput = (document.getElementById('checkout-cep')?.value || usuarioAtual.cep || '').trim();
-    let ruaInput = (document.getElementById('checkout-rua')?.value || usuarioAtual.endereco || '').trim();
-    let numeroInput = (document.getElementById('checkout-numero')?.value || usuarioAtual.numero || '').trim();
-    let complementoInput = (document.getElementById('checkout-complemento')?.value || usuarioAtual.complemento || '').trim();
+    let nomeInput = (document.getElementById('checkout-nome')?.value || (usuarioAtual?.nome || '')).trim();
+    let whatsappInput = (document.getElementById('checkout-whatsapp')?.value || (usuarioAtual?.telefone || '')).trim();
+    let cpfInput = (document.getElementById('checkout-cpf')?.value || (usuarioAtual?.cpf || '')).replace(/\D/g, '');
+    let cepInput = (document.getElementById('checkout-cep')?.value || (usuarioAtual?.cep || '')).trim();
+    let ruaInput = (document.getElementById('checkout-rua')?.value || (usuarioAtual?.endereco || '')).trim();
+    let numeroInput = (document.getElementById('checkout-numero')?.value || (usuarioAtual?.numero || '')).trim();
+    let complementoInput = (document.getElementById('checkout-complemento')?.value || (usuarioAtual?.complemento || '')).trim();
 
     let data = document.getElementById('data-pedido').value;
     let formaPagamento = document.getElementById('pagamento').value;
@@ -185,13 +209,19 @@ async function enviarPedido() {
         let totalFinal = 0;
 
         try {
+            const taxaAplicada = typeof obterTaxaEntrega === 'function' ? obterTaxaEntrega() : 0;
+            const emailClienteFinal = (!isVisitante && usuarioAtual?.email) ? usuarioAtual.email : null;
+
             const { data: rpcRes, error: rpcErr } = await supabaseClient.rpc('criar_pedido', {
                 p_itens: itensParaMP,
                 p_data_entrega: data,
                 p_pagamento: formaPagamento,
                 p_endereco_entrega: end,
                 p_telefone_cliente: whatsappInput,
-                p_nome_cliente: nomeInput
+                p_nome_cliente: nomeInput,
+                p_taxa_entrega: taxaAplicada,
+                p_email_cliente: emailClienteFinal,
+                p_modalidade: modalidade
             });
 
             if (rpcErr) throw rpcErr;
@@ -207,15 +237,17 @@ async function enviarPedido() {
         } catch (rpcError) {
             console.warn('[Lunoca] RPC criar_pedido falhou ou pendente de migração, aplicando fallback com trigger:', rpcError);
             
-            // Fallback seguro: O banco possui a trigger trigger_validar_recalcular_total_pedido que recalcula o total
+            const taxaAplicada = typeof obterTaxaEntrega === 'function' ? obterTaxaEntrega() : 0;
             const payloadFallback = {
-                cliente_id: usuarioAtual.id,
+                cliente_id: (!isVisitante && usuarioAtual?.id) ? usuarioAtual.id : null,
                 nome_cliente: nomeInput,
-                email_cliente: usuarioAtual.email,
+                email_cliente: (!isVisitante && usuarioAtual?.email) ? usuarioAtual.email : 'visitante@lunocadoceria.com.br',
                 telefone_cliente: whatsappInput,
                 data_pedido: new Date().toISOString().split('T')[0],
                 data_entrega: data,
-                total: total, // A trigger sobrescreverá se divergente
+                total: total,
+                taxa_entrega: taxaAplicada,
+                modalidade_entrega: modalidade,
                 pagamento: formaPagamento,
                 status: 'Pendente',
                 itens: nomesItens.join(' + '),
@@ -225,7 +257,6 @@ async function enviarPedido() {
 
             const resInsert = await supabaseClient.from('pedidos').insert(payloadFallback).select();
             if (resInsert.error) {
-                // Fallback simplificado sem colunas estendidas caso schema antigo
                 delete payloadFallback.itens_json;
                 delete payloadFallback.telefone_cliente;
                 payloadFallback.endereco_entrega = `${end} [WhatsApp: ${whatsappInput}]`;
@@ -241,6 +272,13 @@ async function enviarPedido() {
 
         try {
             localStorage.setItem('lunoca_ultimo_pedido_id', String(pedidoId));
+            if (isVisitante) {
+                localStorage.setItem('lunoca_guest_data', JSON.stringify({
+                    nome: nomeInput,
+                    whatsapp: whatsappInput,
+                    cpf: cpfInput
+                }));
+            }
         } catch (e) {}
 
         // ATENÇÃO: A baixa de estoque NÃO ocorre mais aqui de forma prematura.
@@ -249,7 +287,7 @@ async function enviarPedido() {
         // Dados do pagador com WhatsApp e CPF
         const clienteDados = {
             nome: nomeInput || 'Cliente Lunoca',
-            email: usuarioAtual.email || 'cliente@lunocadoceria.com.br',
+            email: (!isVisitante && usuarioAtual?.email) ? usuarioAtual.email : 'cliente@lunocadoceria.com.br',
             cpf: cpfInput,
             telefone: whatsappInput
         };

@@ -358,6 +358,69 @@ assert.ok(
 );
 console.log('  ✅ Diretório sql/ unificado com fonte da verdade oficial e histórico arquivado em sql/legacy.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! Fases 1, 2, 3 e 4 rigorosamente validadas.');
+// --------------------------------------------------------------------------
+// Teste 7: Verificação Fase 5 - Guest Checkout e Experiência do Cliente
+// --------------------------------------------------------------------------
+console.log('\n📄 Verificando Fase 5: Guest Checkout e Taxa de Entrega Dinâmica...');
+
+const fase5SqlFiles = [
+  'supabase/migrations/004_guest_checkout_and_delivery.sql',
+  'sql/install.sql',
+  'sql/schema.sql'
+];
+
+for (const file of fase5SqlFiles) {
+  const content = fs.readFileSync(file, 'utf-8');
+  console.log(`\n  🔎 Auditando suporte a Guest Checkout em: ${file}`);
+
+  // 7.1 Colunas de entrega
+  assert.ok(
+    content.includes('taxa_entrega') && content.includes('modalidade_entrega'),
+    `[FALHA] ${file} não contém colunas taxa_entrega e modalidade_entrega!`
+  );
+  console.log('    ✅ Colunas taxa_entrega e modalidade_entrega presentes.');
+
+  // 7.2 Permissão de execução para anon (Guest Checkout)
+  assert.ok(
+    content.includes('GRANT EXECUTE ON FUNCTION public.criar_pedido(JSONB, DATE, TEXT, TEXT, TEXT, TEXT, NUMERIC, TEXT, TEXT) TO anon, authenticated, service_role;'),
+    `[FALHA] ${file} não concede permissão de criar_pedido para anon (Guest Checkout)!`
+  );
+  console.log('    ✅ criar_pedido concedida para anon, authenticated e service_role.');
+
+  // 7.3 Suporte explícito a cliente_id nulo para visitantes
+  assert.ok(
+    content.includes('Guest Checkout') && content.includes('v_cliente_id IS NOT NULL'),
+    `[FALHA] ${file} não implementa ramificação de visitante/guest em criar_pedido!`
+  );
+  console.log('    ✅ Ramificação para Guest Checkout verificada em criar_pedido.');
+}
+
+// 7.4 Verificação no Frontend: ausência de bloqueios forçados de login
+console.log('\n  🔎 Verificando eliminação de bloqueios de login no Frontend...');
+const prodJsFase5 = fs.readFileSync('js/produtos.js', 'utf-8');
+assert.ok(
+  !prodJsFase5.includes("if (usuarioAtual.nivel === 'visitante') {\n    alert(\"Acesse ou crie uma conta para fazer o seu pedido!\");"),
+  '[FALHA] js/produtos.js ainda bloqueia modal de produtos para visitantes!'
+);
+console.log('    ✅ Visitantes podem abrir modal de produtos sem bloqueio de login.');
+
+const carrinhoJsFase5 = fs.readFileSync('js/carrinho.js', 'utf-8');
+assert.ok(
+  !carrinhoJsFase5.includes("if (usuarioAtual && usuarioAtual.nivel === 'visitante') {\n    alert(\"Por favor, faça login ou cadastre-se"),
+  '[FALHA] js/carrinho.js ainda bloqueia irParaCheckout para visitantes!'
+);
+console.log('    ✅ Visitantes podem ir para o checkout sem bloqueio forçado.');
+
+const pedidosJsFase5 = fs.readFileSync('js/pedidos.js', 'utf-8');
+assert.ok(
+  pedidosJsFase5.includes('const isVisitante = !usuarioAtual || usuarioAtual.nivel === \'visitante\';') &&
+  pedidosJsFase5.includes('p_taxa_entrega: taxaAplicada') &&
+  pedidosJsFase5.includes('p_modalidade: modalidade'),
+  '[FALHA] js/pedidos.js não envia taxa, modalidade ou dados de visitante!'
+);
+console.log('    ✅ js/pedidos.js suporta Guest Checkout e envio dinâmico de taxa e modalidade.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! Fases 1, 2, 3, 4 e 5 rigorosamente validadas.');
+
 
 

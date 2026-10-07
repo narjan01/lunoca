@@ -205,11 +205,6 @@ function limparBuscaProdutos(resetarCategoria = false) {
 }
 
 function abrirModalProduto(id) {
-  if (usuarioAtual.nivel === 'visitante') {
-    alert("Acesse ou crie uma conta para fazer o seu pedido!");
-    return mostrarTela('login-section');
-  }
-  
   const p = produtos.find(prod => String(prod.id) === String(id));
   if (!p) return;
 
