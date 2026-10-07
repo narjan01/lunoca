@@ -4,6 +4,7 @@
 // ==========================================================================
 
 import { getCorsHeaders } from '../_cors.js';
+import { verifyAuth } from '../_auth.js';
 
 export async function onRequestOptions(context) {
   const { request, env } = context;
@@ -18,49 +19,14 @@ export async function onRequestPost(context) {
   try {
     const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
     const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
-    const anonKey = env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhkbmxrdmJmYWFjcnJoaHVheGFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDEyMzg2NjYsImV4cCI6MjA1NjgxNDY2Nn0.74hOQoM9v93e_04h15tQn7H3d91n8m1K2j4L5p6Q7R8';
 
-    // 1. Validação do Token de Autorização do Administrador
-    const authHeader = request.headers.get('Authorization') || '';
-    if (!authHeader.startsWith('Bearer ')) {
-      return new Response(JSON.stringify({ error: 'Token de autorização não fornecido.' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders }
-      });
-    }
-
-    const adminToken = authHeader.replace('Bearer ', '').trim();
-
-    // Valida o token do usuário no Supabase Auth
-    const userRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
-      headers: {
-        'Authorization': `Bearer ${adminToken}`,
-        'apikey': anonKey
-      }
-    });
-
-    if (!userRes.ok) {
-      return new Response(JSON.stringify({ error: 'Sessão inválida ou expirada. Faça login novamente.' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders }
-      });
-    }
-
-    const authUserData = await userRes.json();
-    const adminId = authUserData?.id;
-
-    // Checa se quem chamou é realmente administrador na tabela profiles
-    const profileRes = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${adminId}&select=nivel`, {
-      headers: {
-        'Authorization': `Bearer ${adminToken}`,
-        'apikey': anonKey
-      }
-    });
-
-    const profiles = await profileRes.json();
-    if (!profiles || profiles.length === 0 || profiles[0].nivel !== 'admin') {
-      return new Response(JSON.stringify({ error: 'Acesso negado: apenas Administradores podem gerenciar usuários e senhas.' }), {
-        status: 403,
+    // 1. Validação estrita de autorização via helper centralizado (Fail-Closed)
+    const authResult = await verifyAuth(request, env, ['admin']);
+    if (!authResult.authorized) {
+      return new Response(JSON.stringify({
+        error: authResult.error || 'Acesso negado: apenas Administradores podem gerenciar usuários e senhas.'
+      }), {
+        status: authResult.status || 403,
         headers: { 'Content-Type': 'application/json', ...corsHeaders }
       });
     }

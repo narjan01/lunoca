@@ -116,6 +116,8 @@ ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS mercado_pago_id TEXT;
 ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS status_pagamento TEXT DEFAULT 'aguardando_pagamento';
 ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS status_producao TEXT DEFAULT 'recebido';
 ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS whatsapp_notificado BOOLEAN DEFAULT false;
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS ultimo_status_whatsapp TEXT;
 ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
 -- 2.4 Movimentações de Estoque

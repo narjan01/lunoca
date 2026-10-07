@@ -18,8 +18,6 @@ export async function onRequestPost(context) {
       });
     }
 
-    const imgbbKey = env.IMGBB_API_KEY || '97dfa8989e6adbbc6faebb4b505686fe';
-
     const incomingFormData = await request.formData();
     const imageFile = incomingFormData.get('image');
 
@@ -33,34 +31,73 @@ export async function onRequestPost(context) {
       });
     }
 
-    // Encaminha para o ImgBB de forma segura no backend
-    const outFormData = new FormData();
-    outFormData.append('image', imageFile);
+    const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
+    const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
 
-    const imgbbRes = await fetch(`https://api.imgbb.com/1/upload?key=${encodeURIComponent(imgbbKey)}`, {
-      method: 'POST',
-      body: outFormData
-    });
+    // 1. Provedor Primário: Supabase Storage (Privado & Seguro via Service Role)
+    if (supabaseUrl && serviceKey) {
+      try {
+        const fileExt = (imageFile.name || 'image.jpg').split('.').pop() || 'jpg';
+        const fileName = `upload_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const storageRes = await fetch(`${supabaseUrl}/storage/v1/object/produtos/itens/${fileName}`, {
+          method: 'POST',
+          headers: {
+            apikey: serviceKey,
+            Authorization: `Bearer ${serviceKey}`,
+            'Content-Type': imageFile.type || 'image/jpeg'
+          },
+          body: imageFile
+        });
 
-    const imgbbData = await imgbbRes.json();
+        if (storageRes.ok) {
+          const publicUrl = `${supabaseUrl}/storage/v1/object/public/produtos/itens/${fileName}`;
+          return new Response(JSON.stringify({
+            success: true,
+            url: publicUrl,
+            display_url: publicUrl,
+            provider: 'supabase'
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
+      } catch (storageErr) {
+        console.warn('[Upload Image] Tentativa via Supabase Storage falhou:', storageErr.message);
+      }
+    }
 
-    if (!imgbbRes.ok || !imgbbData.success) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: imgbbData?.error?.message || 'Falha no processamento da imagem pelo provedor de hospedagem.'
-      }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    // 2. Provedor Secundário: ImgBB (Apenas se a chave IMGBB_API_KEY estiver explicitamente configurada)
+    const imgbbKey = env.IMGBB_API_KEY;
+    if (imgbbKey) {
+      const outFormData = new FormData();
+      outFormData.append('image', imageFile);
+
+      const imgbbRes = await fetch(`https://api.imgbb.com/1/upload?key=${encodeURIComponent(imgbbKey)}`, {
+        method: 'POST',
+        body: outFormData
       });
+
+      const imgbbData = await imgbbRes.json();
+
+      if (imgbbRes.ok && imgbbData.success) {
+        return new Response(JSON.stringify({
+          success: true,
+          url: imgbbData.data.url,
+          display_url: imgbbData.data.display_url,
+          thumb: imgbbData.data.thumb?.url || null,
+          provider: 'imgbb'
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
+        });
+      }
     }
 
     return new Response(JSON.stringify({
-      success: true,
-      url: imgbbData.data.url,
-      display_url: imgbbData.data.display_url,
-      thumb: imgbbData.data.thumb?.url || null
+      success: false,
+      error: 'Nenhum provedor de armazenamento (Supabase Storage ou ImgBB) está configurado ou disponível no servidor.'
     }), {
-      status: 200,
+      status: 502,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
 

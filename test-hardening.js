@@ -316,5 +316,48 @@ assert.ok(
 );
 console.log('    ✅ js/carrinho.js valida estoque ao incrementar quantidade.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! Fases 1, 2 e 3 rigorosamente validadas.');
+// --------------------------------------------------------------------------
+// Teste 6: Verificação Fase 4 - Consolidação de Backend, SQL e Secrets
+// --------------------------------------------------------------------------
+console.log('\n📄 Verificando Fase 4: Consolidação de Backend, SQL e Secrets Fail-Closed...');
+
+// 6.1 admin/users.js sem anonKey hardcoded e usando verifyAuth
+const adminUsersContent = fs.readFileSync('functions/api/admin/users.js', 'utf-8');
+assert.ok(
+  !adminUsersContent.includes('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'),
+  '[FALHA] functions/api/admin/users.js ainda contém anonKey hardcoded!'
+);
+assert.ok(
+  adminUsersContent.includes("verifyAuth(request, env, ['admin'])"),
+  '[FALHA] functions/api/admin/users.js não utiliza verifyAuth para autorização de admin!'
+);
+console.log('  ✅ functions/api/admin/users.js usa verifyAuth centralizado e sem chaves hardcoded.');
+
+// 6.2 upload-image.js sem imgbbKey hardcoded e priorizando Supabase Storage
+const uploadContent = fs.readFileSync('functions/api/upload-image.js', 'utf-8');
+assert.ok(
+  !uploadContent.includes('97dfa8989e6adbbc6faebb4b505686fe'),
+  '[FALHA] functions/api/upload-image.js ainda contém chave de ImgBB hardcoded!'
+);
+assert.ok(
+  uploadContent.includes('storage/v1/object/produtos/itens/'),
+  '[FALHA] functions/api/upload-image.js não possui suporte a Supabase Storage!'
+);
+console.log('  ✅ functions/api/upload-image.js suporta Supabase Storage nativo e sem segredos hardcoded.');
+
+// 6.3 Estrutura de SQL limpa e unificada
+const rootSqlFiles = fs.readdirSync('sql').filter(f => f.endsWith('.sql'));
+assert.deepStrictEqual(
+  rootSqlFiles.sort(),
+  ['install.sql', 'schema.sql', 'seed_produtos.sql'].sort(),
+  '[FALHA] Diretório sql/ contém arquivos legados desnecessários na raiz!'
+);
+assert.ok(
+  fs.existsSync('sql/legacy/estoque_financeiro.sql'),
+  '[FALHA] Diretório sql/legacy não contém os scripts arquivados!'
+);
+console.log('  ✅ Diretório sql/ unificado com fonte da verdade oficial e histórico arquivado em sql/legacy.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! Fases 1, 2, 3 e 4 rigorosamente validadas.');
+
 

@@ -84,6 +84,8 @@ CREATE TABLE IF NOT EXISTS public.pedidos (
   endereco_entrega TEXT NOT NULL,
   mercado_pago_status TEXT,
   mercado_pago_id TEXT,
+  whatsapp_notificado BOOLEAN DEFAULT false,
+  ultimo_status_whatsapp TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
