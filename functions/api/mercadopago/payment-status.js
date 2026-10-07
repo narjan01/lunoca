@@ -105,6 +105,23 @@ export async function onRequestGet(context) {
           console.error('[PaymentStatus] Falha ao invocar confirmação atômica:', syncErr.message);
         }
       }
+    } else if ((data.status === 'cancelled' || data.status === 'expired') && orderId) {
+      // Se cancelado ou expirado no gateway, libera as reservas do pedido
+      const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
+      const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
+      if (supabaseUrl && serviceKey) {
+        try {
+          await fetch(`${supabaseUrl}/rest/v1/rpc/liberar_pedidos_expirados`, {
+            method: 'POST',
+            headers: {
+              apikey: serviceKey,
+              Authorization: `Bearer ${serviceKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})
+          });
+        } catch (_) {}
+      }
     }
 
     return new Response(JSON.stringify({

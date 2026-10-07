@@ -57,9 +57,33 @@ CREATE TABLE IF NOT EXISTS public.produtos (
 );
 
 ALTER TABLE public.produtos ADD COLUMN IF NOT EXISTS estoque_qtd INTEGER DEFAULT 0;
+ALTER TABLE public.produtos ADD COLUMN IF NOT EXISTS estoque_fisico INTEGER DEFAULT 0;
+ALTER TABLE public.produtos ADD COLUMN IF NOT EXISTS estoque_reservado INTEGER DEFAULT 0;
 ALTER TABLE public.produtos ADD COLUMN IF NOT EXISTS estoque_minimo INTEGER DEFAULT 5;
 ALTER TABLE public.produtos ADD COLUMN IF NOT EXISTS controlar_estoque BOOLEAN DEFAULT true;
 ALTER TABLE public.produtos ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Trigger para manter estoque_qtd sempre sincronizado como (estoque_fisico - estoque_reservado)
+CREATE OR REPLACE FUNCTION public.sincronizar_estoque_produto()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND NEW.estoque_qtd IS DISTINCT FROM OLD.estoque_qtd AND NEW.estoque_fisico = OLD.estoque_fisico THEN
+    NEW.estoque_fisico := GREATEST(0, NEW.estoque_qtd + COALESCE(NEW.estoque_reservado, 0));
+  END IF;
+
+  NEW.estoque_reservado := GREATEST(0, COALESCE(NEW.estoque_reservado, 0));
+  NEW.estoque_fisico := GREATEST(0, COALESCE(NEW.estoque_fisico, 0));
+  NEW.estoque_qtd := GREATEST(0, NEW.estoque_fisico - NEW.estoque_reservado);
+  NEW.updated_at := NOW();
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+
+DROP TRIGGER IF EXISTS trigger_sincronizar_estoque_produto ON public.produtos;
+CREATE TRIGGER trigger_sincronizar_estoque_produto
+BEFORE INSERT OR UPDATE ON public.produtos
+FOR EACH ROW EXECUTE FUNCTION public.sincronizar_estoque_produto();
 
 -- 2.3 Pedidos
 CREATE TABLE IF NOT EXISTS public.pedidos (
@@ -73,6 +97,9 @@ CREATE TABLE IF NOT EXISTS public.pedidos (
   total DECIMAL(10,2) NOT NULL,
   pagamento TEXT CHECK (pagamento IN ('pix', 'cartao')) NOT NULL,
   status TEXT CHECK (status IN ('Pendente', 'Confirmado', 'Em Preparo', 'Pronto', 'Entregue', 'Cancelado')) DEFAULT 'Pendente',
+  status_pagamento TEXT DEFAULT 'aguardando_pagamento',
+  status_producao TEXT DEFAULT 'recebido',
+  expires_at TIMESTAMPTZ,
   itens TEXT NOT NULL,
   itens_json JSONB,
   endereco_entrega TEXT NOT NULL,
@@ -86,6 +113,9 @@ ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS telefone_cliente TEXT;
 ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS itens_json JSONB;
 ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS mercado_pago_status TEXT;
 ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS mercado_pago_id TEXT;
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS status_pagamento TEXT DEFAULT 'aguardando_pagamento';
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS status_producao TEXT DEFAULT 'recebido';
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
 ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
 -- 2.4 Movimentações de Estoque
@@ -93,7 +123,7 @@ CREATE TABLE IF NOT EXISTS public.estoque_movimentacoes (
   id BIGSERIAL PRIMARY KEY,
   produto_id BIGINT REFERENCES public.produtos(id) ON DELETE CASCADE,
   produto_nome TEXT NOT NULL,
-  tipo TEXT CHECK (tipo IN ('entrada', 'saida', 'venda', 'ajuste', 'perda')) NOT NULL,
+  tipo TEXT CHECK (tipo IN ('entrada', 'saida', 'venda', 'ajuste', 'perda', 'reserva')) NOT NULL,
   quantidade INTEGER NOT NULL,
   saldo_resultante INTEGER NOT NULL,
   motivo TEXT,
@@ -297,7 +327,7 @@ BEGIN
     SELECT p.oid::regprocedure AS func_signature
     FROM pg_proc p
     JOIN pg_namespace n ON p.pronamespace = n.oid
-    WHERE n.nspname = 'public' AND p.proname IN ('criar_pedido', 'confirmar_pagamento_pedido')
+    WHERE n.nspname = 'public' AND p.proname IN ('criar_pedido', 'confirmar_pagamento_pedido', 'liberar_pedidos_expirados')
   ) LOOP
     EXECUTE 'DROP FUNCTION IF EXISTS ' || r.func_signature || ' CASCADE;';
   END LOOP;
@@ -319,9 +349,11 @@ DECLARE
   v_prod_id BIGINT;
   v_qtd INTEGER;
   v_prod RECORD;
+  v_disponivel INTEGER;
   v_total DECIMAL(10,2) := 0;
   v_nomes_itens TEXT[] := ARRAY[]::TEXT[];
   v_pedido_id BIGINT;
+  v_expires_at TIMESTAMPTZ;
 BEGIN
   -- 1. Valida autenticação do cliente
   IF v_cliente_id IS NULL THEN
@@ -338,46 +370,76 @@ BEGIN
 
   -- 2. Validações de entrada
   IF p_itens IS NULL OR jsonb_typeof(p_itens) <> 'array' OR jsonb_array_length(p_itens) = 0 THEN
-    RETURN json_build_object('success', false, 'error', 'O carrinho de compras está vazio.');
+    RETURN json_build_object('success', false, 'error', 'Sua sacola está vazia.');
   END IF;
 
-  IF p_data_entrega IS NULL THEN
-    RETURN json_build_object('success', false, 'error', 'Data de entrega/retirada é obrigatória.');
-  END IF;
+  -- 3. Tolerância de pagamento: 30 minutos para PIX/Checkout
+  v_expires_at := NOW() + INTERVAL '30 minutes';
 
-  IF p_pagamento NOT IN ('pix', 'cartao') THEN
-    RETURN json_build_object('success', false, 'error', 'Forma de pagamento inválida.');
-  END IF;
-
-  -- 3. Itera sobre os itens, buscando preços oficiais e validando estoque disponível
+  -- 4. Loop com bloqueio pessimista (FOR UPDATE) e reserva de estoque
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_itens)
   LOOP
     v_prod_id := (v_item->>'id')::BIGINT;
     v_qtd := GREATEST(1, COALESCE((v_item->>'quantidade')::INTEGER, 1));
 
     IF v_prod_id IS NULL THEN
-      RETURN json_build_object('success', false, 'error', 'Item do carrinho inválido.');
+      RETURN json_build_object('success', false, 'error', 'Item inválido na sacola.');
     END IF;
 
-    SELECT id, nome, preco, ativo, estoque_qtd, controlar_estoque
+    -- Bloqueio pessimista por linha do produto
+    SELECT id, nome, preco, ativo, estoque_fisico, estoque_reservado, controlar_estoque 
     INTO v_prod
     FROM public.produtos
-    WHERE id = v_prod_id;
+    WHERE id = v_prod_id
+    FOR UPDATE;
 
     IF NOT FOUND OR v_prod.ativo = false THEN
-      RETURN json_build_object('success', false, 'error', 'Produto indisponível ou desativado: ' || COALESCE(v_item->>'nome', 'Desconhecido'));
+      RETURN json_build_object('success', false, 'error', 'O produto "' || COALESCE(v_item->>'nome', 'item') || '" não está mais disponível.');
     END IF;
 
-    -- Checa disponibilidade de estoque no momento da intenção de compra
-    IF v_prod.controlar_estoque = true AND v_prod.estoque_qtd < v_qtd THEN
-      RETURN json_build_object('success', false, 'error', 'Estoque insuficiente para o doce: ' || v_prod.nome || '. Restam apenas ' || v_prod.estoque_qtd || ' unidades.');
+    -- Verifica disponibilidade real (Físico - Reservado)
+    IF v_prod.controlar_estoque IS NOT FALSE THEN
+      v_disponivel := GREATEST(0, COALESCE(v_prod.estoque_fisico, 0) - COALESCE(v_prod.estoque_reservado, 0));
+
+      IF v_disponivel < v_qtd THEN
+        RETURN json_build_object(
+          'success', false,
+          'error', 'Estoque esgotado ou insuficiente para "' || v_prod.nome || '". Disponível no momento: apenas ' || v_disponivel || ' unidade(s).'
+        );
+      END IF;
+
+      -- Reserva o estoque atômica e temporariamente
+      UPDATE public.produtos
+      SET 
+        estoque_reservado = estoque_reservado + v_qtd,
+        updated_at = NOW()
+      WHERE id = v_prod_id;
+
+      -- Registra movimentação de reserva
+      INSERT INTO public.estoque_movimentacoes (
+        produto_id,
+        produto_nome,
+        tipo,
+        quantidade,
+        saldo_resultante,
+        motivo,
+        usuario_nome
+      ) VALUES (
+        v_prod.id,
+        v_prod.nome,
+        'reserva',
+        v_qtd,
+        v_disponivel - v_qtd,
+        'Reserva temporária para novo pedido (tolerância 30 min)',
+        'Sistema / Reserva'
+      );
     END IF;
 
     v_total := v_total + (v_prod.preco * v_qtd);
     v_nomes_itens := array_append(v_nomes_itens, v_qtd || 'x ' || v_prod.nome);
   END LOOP;
 
-  -- 4. Grava o pedido com status 'Pendente' e o total REAL calculado pelo servidor
+  -- 5. Grava o pedido com status de pagamento e expiração
   INSERT INTO public.pedidos (
     cliente_id,
     nome_cliente,
@@ -388,6 +450,9 @@ BEGIN
     total,
     pagamento,
     status,
+    status_pagamento,
+    status_producao,
+    expires_at,
     itens,
     itens_json,
     endereco_entrega
@@ -401,15 +466,24 @@ BEGIN
     v_total,
     p_pagamento,
     'Pendente',
+    'aguardando_pagamento',
+    'recebido',
+    v_expires_at,
     array_to_string(v_nomes_itens, ' + '),
     p_itens,
     p_endereco_entrega
   ) RETURNING id INTO v_pedido_id;
 
+  -- Vincula o ID do pedido nas movimentações de reserva geradas nesta transação
+  UPDATE public.estoque_movimentacoes
+  SET pedido_id = v_pedido_id
+  WHERE pedido_id IS NULL AND tipo = 'reserva' AND created_at >= NOW() - INTERVAL '5 seconds';
+
   RETURN json_build_object(
     'success', true,
     'pedido_id', v_pedido_id,
-    'total', v_total
+    'total', v_total,
+    'expires_at', v_expires_at
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
@@ -450,7 +524,6 @@ DECLARE
   v_prod_id BIGINT;
   v_qtd INTEGER;
   v_prod RECORD;
-  v_novo_saldo INTEGER;
 BEGIN
   IF p_pedido_id IS NULL THEN
     RETURN json_build_object('success', false, 'error', 'ID do pedido não informado.');
@@ -481,8 +554,8 @@ BEGIN
     RETURN json_build_object('success', false, 'error', 'Pedido não encontrado no banco de dados.');
   END IF;
 
-  -- 7.3. Se já estiver confirmado ou em estágios posteriores, não duplica a baixa
-  IF v_pedido.status IN ('Confirmado', 'Em Preparo', 'Pronto', 'Entregue') THEN
+  -- 7.3. Se já confirmado anteriormente, impede duplo processamento
+  IF v_pedido.status IN ('Confirmado', 'Em Preparo', 'Pronto', 'Entregue') OR v_pedido.status_pagamento = 'pago' THEN
     IF p_mercado_pago_payment_id IS NOT NULL AND p_mercado_pago_payment_id <> '' AND p_mercado_pago_payment_id <> 'admin_manual' THEN
       INSERT INTO public.pagamentos_processados (provider_id, pedido_id, forma, valor)
       VALUES (p_mercado_pago_payment_id, p_pedido_id, COALESCE(p_forma_pagamento, v_pedido.pagamento), COALESCE(p_valor, v_pedido.total))
@@ -497,16 +570,18 @@ BEGIN
     );
   END IF;
 
-  -- 7.4. Atualiza status do pedido para Confirmado
+  -- 7.4. Atualiza status do pedido para Confirmado / Pago
   UPDATE public.pedidos
   SET 
     status = 'Confirmado',
+    status_pagamento = 'pago',
+    status_producao = CASE WHEN status_producao IS NULL OR status_producao = 'cancelado' THEN 'recebido' ELSE status_producao END,
     mercado_pago_status = COALESCE(p_status, 'approved'),
     mercado_pago_id = COALESCE(p_mercado_pago_payment_id, mercado_pago_id),
     updated_at = NOW()
   WHERE id = p_pedido_id;
 
-  -- 7.5. Executa a baixa de estoque dos itens com FOR UPDATE por produto
+  -- 7.5. Baixa física e liberação da reserva no estoque (SELECT FOR UPDATE)
   IF v_pedido.itens_json IS NOT NULL AND jsonb_typeof(v_pedido.itens_json) = 'array' THEN
     FOR v_item IN SELECT * FROM jsonb_array_elements(v_pedido.itens_json)
     LOOP
@@ -514,17 +589,19 @@ BEGIN
       v_qtd := GREATEST(1, COALESCE((v_item->>'quantidade')::INTEGER, 1));
 
       IF v_prod_id IS NOT NULL THEN
-        SELECT id, nome, estoque_qtd, controlar_estoque
+        SELECT id, nome, estoque_fisico, estoque_reservado, controlar_estoque
         INTO v_prod
         FROM public.produtos
         WHERE id = v_prod_id
         FOR UPDATE;
 
         IF FOUND AND (v_prod.controlar_estoque IS NOT FALSE) THEN
-          v_novo_saldo := GREATEST(0, COALESCE(v_prod.estoque_qtd, 0) - v_qtd);
-
+          -- Converte a reserva em baixa física real
           UPDATE public.produtos
-          SET estoque_qtd = v_novo_saldo, updated_at = NOW()
+          SET 
+            estoque_reservado = GREATEST(0, estoque_reservado - v_qtd),
+            estoque_fisico = GREATEST(0, estoque_fisico - v_qtd),
+            updated_at = NOW()
           WHERE id = v_prod_id;
 
           INSERT INTO public.estoque_movimentacoes (
@@ -541,7 +618,7 @@ BEGIN
             v_prod.nome,
             'venda',
             v_qtd,
-            v_novo_saldo,
+            GREATEST(0, v_prod.estoque_fisico - v_qtd - GREATEST(0, v_prod.estoque_reservado - v_qtd)),
             'Venda confirmada no Pedido #' || p_pedido_id,
             p_pedido_id,
             COALESCE(p_origem, 'Sistema / Mercado Pago')
@@ -606,12 +683,88 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
--- ==========================================================================
--- 8. FECHAMENTO DE RPCs DE ESTOQUE VULNERÁVEIS
--- Revoga acesso público e autenticado: apenas service_role pode executar
--- ==========================================================================
 REVOKE ALL ON FUNCTION public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT, TEXT, NUMERIC, TEXT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT, TEXT, NUMERIC, TEXT) TO service_role;
+
+-- ==========================================================================
+-- 8. RPC: LIBERAÇÃO DE ESTOQUE DE PEDIDOS EXPIRADOS (CLEANUP AUTOMÁTICO)
+-- ==========================================================================
+CREATE OR REPLACE FUNCTION public.liberar_pedidos_expirados()
+RETURNS JSON AS $$
+DECLARE
+  v_ped RECORD;
+  v_item JSONB;
+  v_prod_id BIGINT;
+  v_qtd INTEGER;
+  v_total_cancelados INTEGER := 0;
+BEGIN
+  FOR v_ped IN (
+    SELECT * FROM public.pedidos
+    WHERE status = 'Pendente'
+      AND status_pagamento = 'aguardando_pagamento'
+      AND (
+        expires_at < NOW()
+        OR (expires_at IS NULL AND created_at < NOW() - INTERVAL '30 minutes')
+      )
+    FOR UPDATE SKIP LOCKED
+  ) LOOP
+    UPDATE public.pedidos
+    SET 
+      status = 'Cancelado',
+      status_pagamento = 'expirado',
+      status_producao = 'cancelado',
+      updated_at = NOW()
+    WHERE id = v_ped.id;
+
+    IF v_ped.itens_json IS NOT NULL AND jsonb_typeof(v_ped.itens_json) = 'array' THEN
+      FOR v_item IN SELECT * FROM jsonb_array_elements(v_ped.itens_json)
+      LOOP
+        v_prod_id := (v_item->>'id')::BIGINT;
+        v_qtd := GREATEST(1, COALESCE((v_item->>'quantidade')::INTEGER, 1));
+
+        IF v_prod_id IS NOT NULL THEN
+          UPDATE public.produtos
+          SET 
+            estoque_reservado = GREATEST(0, estoque_reservado - v_qtd),
+            updated_at = NOW()
+          WHERE id = v_prod_id;
+
+          INSERT INTO public.estoque_movimentacoes (
+            produto_id,
+            produto_nome,
+            tipo,
+            quantidade,
+            saldo_resultante,
+            motivo,
+            pedido_id,
+            usuario_nome
+          ) VALUES (
+            v_prod_id,
+            COALESCE(v_item->>'nome', 'Produto'),
+            'ajuste',
+            v_qtd,
+            0,
+            'Devolução de reserva por expiração de PIX do Pedido #' || v_ped.id,
+            v_ped.id,
+            'Sistema / Expiração Automática'
+          );
+        END IF;
+      END LOOP;
+    END IF;
+
+    v_total_cancelados := v_total_cancelados + 1;
+  END LOOP;
+
+  RETURN json_build_object(
+    'success', true,
+    'pedidos_cancelados', v_total_cancelados,
+    'executado_em', NOW()
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+
+REVOKE ALL ON FUNCTION public.liberar_pedidos_expirados() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.liberar_pedidos_expirados() TO service_role;
 
 -- Reforço nas funções legadas para impedir uso indevido
 CREATE OR REPLACE FUNCTION public.baixar_estoque_pedido_batch(

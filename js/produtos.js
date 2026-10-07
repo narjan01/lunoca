@@ -29,6 +29,8 @@ async function carregarProdutosServidor() {
       opcoes: p.opcoes,
       img: p.img_url,
       estoque_qtd: p.estoque_qtd,
+      estoque_fisico: p.estoque_fisico,
+      estoque_reservado: p.estoque_reservado,
       controlar_estoque: p.controlar_estoque
     }));
     
@@ -210,6 +212,12 @@ function abrirModalProduto(id) {
   
   const p = produtos.find(prod => String(prod.id) === String(id));
   if (!p) return;
+
+  // Se o doce tiver controle de estoque e estiver zerado/esgotado
+  if (p.controlar_estoque !== false && p.estoque_qtd != null && p.estoque_qtd <= 0) {
+    alert(`O doce "${p.nome}" está temporariamente esgotado.`);
+    return;
+  }
   
   produtoSendoVisto = p;
   modalQtdAtual = 1;
@@ -259,7 +267,18 @@ function abrirModalProduto(id) {
 }
 
 function alterarQtdModalProduto(delta) {
-  modalQtdAtual = Math.max(1, modalQtdAtual + delta);
+  if (!produtoSendoVisto) return;
+  const maxDisponivel = (produtoSendoVisto.controlar_estoque !== false && produtoSendoVisto.estoque_qtd != null)
+    ? produtoSendoVisto.estoque_qtd
+    : 999;
+
+  const novaQtd = modalQtdAtual + delta;
+  if (delta > 0 && novaQtd > maxDisponivel) {
+    alert(`Apenas ${maxDisponivel} unidade(s) disponível(is) no momento para este doce.`);
+    return;
+  }
+
+  modalQtdAtual = Math.max(1, novaQtd);
   const elQtd = document.getElementById('modal-qtd-display');
   if (elQtd) elQtd.innerText = modalQtdAtual;
   atualizarSubtotalModal();
@@ -308,6 +327,19 @@ function confirmarAdicaoCarrinho() {
   if (!Array.isArray(carrinho)) carrinho = [];
 
   const qtdAdicionar = Math.max(1, parseInt(modalQtdAtual || 1, 10));
+
+  // Validação preventiva de estoque considerando itens já na sacola
+  if (itemCarrinho.controlar_estoque !== false && itemCarrinho.estoque_qtd != null) {
+    const qtdJaNoCarrinho = carrinho
+      .filter(it => String(it.id) === String(itemCarrinho.id))
+      .reduce((s, it) => s + (parseInt(it.quantidade, 10) || 1), 0);
+
+    if (qtdJaNoCarrinho + qtdAdicionar > itemCarrinho.estoque_qtd) {
+      const restante = Math.max(0, itemCarrinho.estoque_qtd - qtdJaNoCarrinho);
+      alert(`Estoque insuficiente para "${itemCarrinho.nome}". Você já tem ${qtdJaNoCarrinho} na sacola e restam apenas ${restante} disponível(is).`);
+      return;
+    }
+  }
 
   // Agrupa se já existir produto idêntico (mesmo ID e sabor)
   const itemExistente = carrinho.find(it => 

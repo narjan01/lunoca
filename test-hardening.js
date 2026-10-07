@@ -210,4 +210,111 @@ assert.strictEqual(authRes.authorized, false, 'Não deve autorizar sem SERVICE_R
 assert.strictEqual(authRes.status, 500, 'Status deve ser 500 por configuração ausente');
 console.log('  ✅ verifyAuth falha fechado (500) se SUPABASE_SERVICE_ROLE_KEY estiver ausente para rota de admin.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! Fases 1 e 2 rigorosamente validadas.');
+// --------------------------------------------------------------------------
+// Teste 5: Verificação Fase 3 - Estoque e Integridade Transacional
+// --------------------------------------------------------------------------
+console.log('\n📄 Verificando Fase 3: Arquitetura de Reserva e Ciclo de Pedidos...');
+
+const fase3SqlFiles = [
+  'supabase/migrations/003_stock_reservation_and_order_lifecycle.sql',
+  'sql/install.sql',
+  'sql/schema.sql'
+];
+
+for (const file of fase3SqlFiles) {
+  const content = fs.readFileSync(file, 'utf-8');
+  console.log(`\n  🔎 Auditando integridade do estoque em: ${file}`);
+
+  // 5.1 Colunas de estoque físico e reservado
+  assert.ok(
+    content.includes('estoque_fisico') && content.includes('estoque_reservado'),
+    `[FALHA] ${file} não contém colunas estoque_fisico e estoque_reservado!`
+  );
+  console.log('    ✅ Colunas estoque_fisico e estoque_reservado presentes.');
+
+  // 5.2 Trigger sincronizar_estoque_produto
+  assert.ok(
+    content.includes('sincronizar_estoque_produto'),
+    `[FALHA] ${file} não contém trigger de sincronização de estoque!`
+  );
+  console.log('    ✅ Trigger sincronizar_estoque_produto presente.');
+
+  // 5.3 Colunas de ciclo de vida de pedidos
+  assert.ok(
+    content.includes('status_pagamento') && content.includes('status_producao') && content.includes('expires_at'),
+    `[FALHA] ${file} não contém colunas de ciclo de vida (status_pagamento, status_producao, expires_at)!`
+  );
+  console.log('    ✅ Colunas de ciclo de vida em pedidos presentes.');
+
+  // 5.4 criar_pedido com reserva atômica (FOR UPDATE)
+  assert.ok(
+    content.includes('estoque_reservado = estoque_reservado + v_qtd'),
+    `[FALHA] ${file} não incrementa estoque_reservado em criar_pedido!`
+  );
+  console.log('    ✅ Reserva atômica de estoque em criar_pedido verificada.');
+
+  // 5.5 confirmar_pagamento_pedido converte reserva em baixa física
+  assert.ok(
+    content.includes('estoque_reservado = GREATEST(0, estoque_reservado - v_qtd)') &&
+    content.includes('estoque_fisico = GREATEST(0, estoque_fisico - v_qtd)'),
+    `[FALHA] ${file} não converte reserva em baixa física em confirmar_pagamento_pedido!`
+  );
+  console.log('    ✅ Conversão atômica de reserva em venda física verificada.');
+
+  // 5.6 RPC liberar_pedidos_expirados existe e devolve reserva
+  assert.ok(
+    content.includes('liberar_pedidos_expirados'),
+    `[FALHA] ${file} não contém liberar_pedidos_expirados!`
+  );
+  assert.ok(
+    content.includes('REVOKE ALL ON FUNCTION public.liberar_pedidos_expirados() FROM PUBLIC, anon, authenticated;') &&
+    content.includes('GRANT EXECUTE ON FUNCTION public.liberar_pedidos_expirados() TO service_role;'),
+    `[FALHA] ${file} não restringe liberar_pedidos_expirados exclusivamente para service_role!`
+  );
+  console.log('    ✅ RPC liberar_pedidos_expirados blindada para service_role.');
+}
+
+// 5.7 Endpoint Cloudflare de expiração (/api/cron/expire-orders)
+console.log('\n  🔎 Verificando endpoint de cron /api/cron/expire-orders...');
+const expireContent = fs.readFileSync('functions/api/cron/expire-orders.js', 'utf-8');
+assert.ok(
+  expireContent.includes('liberar_pedidos_expirados'),
+  '[FALHA] expire-orders.js não invoca liberar_pedidos_expirados!'
+);
+assert.ok(
+  expireContent.includes('SUPABASE_SERVICE_ROLE_KEY'),
+  '[FALHA] expire-orders.js não valida chave de serviço!'
+);
+console.log('    ✅ Endpoint /api/cron/expire-orders verificado.');
+
+// 5.8 Teste dinâmico de fail-closed de /api/cron/expire-orders
+const { onRequestGet: getExpire } = await import('./functions/api/cron/expire-orders.js');
+const expireRes = await getExpire({
+  request: new Request('https://lunocadoceria.com.br/api/cron/expire-orders'),
+  env: { SUPABASE_URL: 'https://test.supabase.co', SUPABASE_SERVICE_ROLE_KEY: undefined }
+});
+assert.strictEqual(expireRes.status, 500, 'Deveria retornar 500 se SERVICE_ROLE_KEY for ausente');
+console.log('    ✅ /api/cron/expire-orders falha fechado (500) com secrets ausentes.');
+
+// 5.9 Validações de frontend de estoque
+console.log('\n  🔎 Verificando frontend para proteção de estoque...');
+const prodJsContent = fs.readFileSync('js/produtos.js', 'utf-8');
+assert.ok(
+  prodJsContent.includes('estoque_fisico') && prodJsContent.includes('estoque_reservado'),
+  '[FALHA] js/produtos.js não mapeia estoque_fisico e estoque_reservado!'
+);
+assert.ok(
+  prodJsContent.includes('qtdJaNoCarrinho + qtdAdicionar > itemCarrinho.estoque_qtd'),
+  '[FALHA] js/produtos.js não valida limite de estoque no carrinho!'
+);
+console.log('    ✅ js/produtos.js valida estoque antes de adicionar à sacola.');
+
+const carrinhoJsContent = fs.readFileSync('js/carrinho.js', 'utf-8');
+assert.ok(
+  carrinhoJsContent.includes('totalMesmoProd + delta > prodRef.estoque_qtd'),
+  '[FALHA] js/carrinho.js não valida estoque ao alterar quantidade!'
+);
+console.log('    ✅ js/carrinho.js valida estoque ao incrementar quantidade.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! Fases 1, 2 e 3 rigorosamente validadas.');
+

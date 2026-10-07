@@ -160,24 +160,28 @@ function renderizarTabelaEstoque(prods) {
             <div style="font-size: 12px; color: #666; margin-top: 2px;">
               R$ ${preco.toFixed(2).replace('.', ',')} &bull; Mínimo alerta: ${min} un
             </div>
-            <div style="margin-top: 4px;">${badgeStatus}</div>
+            <div style="margin-top: 4px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+              ${badgeStatus}
+              ${(p.estoque_reservado > 0) ? `<span style="background: #e0f2fe; color: #0369a1; padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: bold;" title="Unidades reservadas em pedidos pendentes (tolerância PIX)"><i class="fa-solid fa-clock"></i> ${p.estoque_reservado} reservada(s)</span>` : ''}
+              ${(p.estoque_fisico !== undefined && p.estoque_fisico !== null && p.estoque_reservado > 0) ? `<small style="color: #64748b; font-size: 11px;">(Físico: ${p.estoque_fisico})</small>` : ''}
+            </div>
           </div>
         </div>
 
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-          <div style="display: flex; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-            <button onclick="ajustarEstoqueRapido(${p.id}, -1)" class="btn-outline" style="padding: 6px 10px; border: none; border-right: 1px solid #e2e8f0; font-size: 12px; background: transparent; cursor: pointer;" title="Reduzir 1 unidade">
+          <div style="display: flex; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;" title="Estoque disponível para venda">
+            <button onclick="ajustarEstoqueRapido(${p.id}, -1)" class="btn-outline" style="padding: 6px 10px; border: none; border-right: 1px solid #e2e8f0; font-size: 12px; background: transparent; cursor: pointer;" title="Reduzir 1 unidade disponível">
               <i class="fa-solid fa-minus"></i>
             </button>
             <span id="qtd-estoque-display-${p.id}" style="padding: 0 12px; font-weight: bold; font-size: 14px; color: var(--text-dark); min-width: 32px; text-align: center;">
               ${qtd}
             </span>
-            <button onclick="ajustarEstoqueRapido(${p.id}, 1)" class="btn-outline" style="padding: 6px 10px; border: none; border-left: 1px solid #e2e8f0; font-size: 12px; background: transparent; cursor: pointer;" title="Adicionar 1 unidade">
+            <button onclick="ajustarEstoqueRapido(${p.id}, 1)" class="btn-outline" style="padding: 6px 10px; border: none; border-left: 1px solid #e2e8f0; font-size: 12px; background: transparent; cursor: pointer;" title="Adicionar 1 unidade disponível">
               <i class="fa-solid fa-plus"></i>
             </button>
           </div>
 
-          <button onclick="abrirModalAjusteEstoque(${p.id})" class="btn-outline" style="padding: 6px 12px; font-size: 12px; border-radius: 8px; display: flex; align-items: center; gap: 5px; cursor: pointer;" title="Ajuste com motivo">
+          <button onclick="abrirModalAjusteEstoque(${p.id})" class="btn-outline" style="padding: 6px 12px; font-size: 12px; border-radius: 8px; display: flex; align-items: center; gap: 5px; cursor: pointer;" title="Ajuste detalhado de estoque">
             <i class="fa-solid fa-sliders"></i> Ajustar
           </button>
         </div>
@@ -249,10 +253,14 @@ function abrirModalAjusteEstoque(produtoId) {
   if (!modal) return;
 
   const qtdAtual = parseInt(p.estoque_qtd !== undefined && p.estoque_qtd !== null ? p.estoque_qtd : 10, 10);
+  const resAtual = parseInt(p.estoque_reservado || 0, 10);
+  const fisAtual = parseInt(p.estoque_fisico !== undefined && p.estoque_fisico !== null ? p.estoque_fisico : (qtdAtual + resAtual), 10);
   const minAtual = parseInt(p.estoque_minimo !== undefined && p.estoque_minimo !== null ? p.estoque_minimo : 3, 10);
 
   document.getElementById('ajuste-prod-nome').innerText = p.nome;
-  document.getElementById('ajuste-prod-atual').innerText = qtdAtual;
+  document.getElementById('ajuste-prod-atual').innerText = resAtual > 0 
+    ? `${qtdAtual} disponível(is) (${resAtual} reservada(s) | total físico: ${fisAtual})`
+    : `${qtdAtual}`;
   document.getElementById('ajuste-prod-nova-qtd').value = qtdAtual;
   document.getElementById('ajuste-prod-minimo').value = minAtual;
   document.getElementById('ajuste-prod-controlar').checked = p.controlar_estoque !== false;

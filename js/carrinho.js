@@ -113,6 +113,19 @@ function renderizarItensCheckout() {
 function alterarQuantidade(index, delta) {
   if (!carrinho[index]) return;
 
+  const item = carrinho[index];
+  const prodRef = Array.isArray(produtos) ? produtos.find(p => String(p.id) === String(item.id)) : null;
+
+  if (delta > 0 && prodRef && prodRef.controlar_estoque !== false && prodRef.estoque_qtd != null) {
+    const totalMesmoProd = carrinho
+      .filter(it => String(it.id) === String(item.id))
+      .reduce((s, it) => s + (parseInt(it.quantidade, 10) || 1), 0);
+    if (totalMesmoProd + delta > prodRef.estoque_qtd) {
+      alert(`Quantidade máxima disponível para "${prodRef.nome}" é ${prodRef.estoque_qtd} unidade(s).`);
+      return;
+    }
+  }
+
   const novaQtd = (parseInt(carrinho[index].quantidade || 1, 10)) + delta;
   if (novaQtd <= 0) {
     removerItemCarrinho(index);
