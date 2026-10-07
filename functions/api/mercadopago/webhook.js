@@ -1,3 +1,9 @@
+// ==========================================================================
+// LUNOCA DOCERIA - Cloudflare Pages Function: Webhook Mercado Pago
+// Notificação assíncrona de status de pagamento (PIX e Cartão).
+// Validação HMAC x-signature estrita, RPC atômica via service_role e sem fallback.
+// ==========================================================================
+
 function parseSignatureHeader(signatureHeader) {
   const parts = String(signatureHeader || '')
     .split(',')
@@ -75,12 +81,13 @@ export async function onRequestPost(context) {
     const topic = url.searchParams.get('type') || body?.type || body?.topic;
 
     if (!paymentId || !/^\d+$/.test(paymentId)) {
-      return new Response(JSON.stringify({ error: 'paymentId inválido.' }), {
+      return new Response(JSON.stringify({ error: 'paymentId ausente ou inválido.' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
+    // Ignora eventos que não sejam de pagamento (ex: merchant_order)
     if (topic && topic !== 'payment') {
       return new Response(JSON.stringify({ received: true, ignored: true }), {
         status: 200,
@@ -88,25 +95,34 @@ export async function onRequestPost(context) {
       });
     }
 
+    // 1. Validação Criptográfica HMAC da Assinatura (Fail-Closed)
     const webhookSecret = env.MERCADO_PAGO_WEBHOOK_SECRET;
-    if (webhookSecret) {
-      const isValidSignature = await isWebhookSignatureValid({
-        request,
-        bodyRaw,
-        paymentId,
-        secret: webhookSecret,
+    if (!webhookSecret) {
+      console.error('[Webhook] Falha de Configuração: MERCADO_PAGO_WEBHOOK_SECRET ausente.');
+      return new Response(JSON.stringify({
+        error: 'Configuração do webhook ausente no servidor (MERCADO_PAGO_WEBHOOK_SECRET).'
+      }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
       });
-
-      if (!isValidSignature) {
-        return new Response(JSON.stringify({ error: 'Assinatura inválida.' }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-    } else {
-      console.warn('[Webhook] MERCADO_PAGO_WEBHOOK_SECRET não configurado. Validação HMAC em modo de transição.');
     }
 
+    const isValidSignature = await isWebhookSignatureValid({
+      request,
+      bodyRaw,
+      paymentId,
+      secret: webhookSecret,
+    });
+
+    if (!isValidSignature) {
+      console.warn('[Webhook] Assinatura HMAC rejeitada para paymentId:', paymentId);
+      return new Response(JSON.stringify({ error: 'Assinatura inválida.' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // 2. Consulta detalhes oficiais do pagamento na API do Mercado Pago
     const token = env.MERCADO_PAGO_ACCESS_TOKEN;
     if (!token) {
       return new Response(JSON.stringify({ error: 'MERCADO_PAGO_ACCESS_TOKEN ausente.' }), {
@@ -118,61 +134,75 @@ export async function onRequestPost(context) {
     const payRes = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+
+    if (!payRes.ok) {
+      console.error(`[Webhook] Erro ao consultar pagamento #${paymentId} no Mercado Pago: HTTP ${payRes.status}`);
+      return new Response(JSON.stringify({ error: 'Erro ao consultar pagamento na API do provedor.' }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     const payment = await payRes.json();
 
+    // 3. Se aprovado, executa confirmação atômica no Supabase
     if (payment.status === 'approved' && payment.external_reference) {
       const orderId = payment.external_reference;
+      const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
+      const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
 
-      const supabaseUrl = env.SUPABASE_URL;
-      const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
-
-      if (supabaseUrl && supabaseKey) {
-        try {
-          // Invoca a RPC atômica que confirma pedido, baixa estoque de todos os itens e credita no financeiro
-          const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/confirmar_pagamento_pedido`, {
-            method: 'POST',
-            headers: {
-              apikey: supabaseKey,
-              Authorization: `Bearer ${supabaseKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              p_pedido_id: Number(orderId),
-              p_mercado_pago_payment_id: String(paymentId),
-              p_status: payment.status,
-              p_forma_pagamento: payment.payment_method_id || 'pix',
-              p_valor: Number(payment.transaction_amount || 0)
-            }),
-          });
-
-          if (!rpcRes.ok) {
-            // Fallback para patch direto em caso de indisponibilidade da RPC
-            await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${orderId}`, {
-              method: 'PATCH',
-              headers: {
-                apikey: supabaseKey,
-                Authorization: `Bearer ${supabaseKey}`,
-                'Content-Type': 'application/json',
-                Prefer: 'return=minimal',
-              },
-              body: JSON.stringify({
-                status: 'Confirmado',
-                mercado_pago_id: String(paymentId),
-                mercado_pago_status: payment.status,
-              }),
-            });
-          }
-        } catch (rpcErr) {
-          console.error('[Webhook] Erro ao invocar confirmar_pagamento_pedido:', rpcErr.message);
-        }
+      if (!serviceKey) {
+        console.error('[Webhook] Falha Crítica: SUPABASE_SERVICE_ROLE_KEY ausente.');
+        return new Response(JSON.stringify({
+          error: 'Configuração do banco de dados ausente (SUPABASE_SERVICE_ROLE_KEY).'
+        }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
       }
+
+      // Invoca a RPC atômica que confirma pedido, baixa estoque de todos os itens e credita no financeiro
+      const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/confirmar_pagamento_pedido`, {
+        method: 'POST',
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          p_pedido_id: Number(orderId),
+          p_mercado_pago_payment_id: String(paymentId),
+          p_status: payment.status,
+          p_forma_pagamento: payment.payment_method_id || 'pix',
+          p_valor: Number(payment.transaction_amount || 0),
+          p_origem: 'Mercado Pago Webhook'
+        }),
+      });
+
+      if (!rpcRes.ok) {
+        const errDetails = await rpcRes.text();
+        console.error(`[Webhook] Falha na RPC confirmar_pagamento_pedido para Pedido #${orderId}:`, errDetails);
+        // Retorna HTTP 500 para que o Mercado Pago faça retry com backoff exponencial
+        return new Response(JSON.stringify({
+          error: 'Erro no processamento da transação atômica.',
+          details: errDetails
+        }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      const rpcResult = await rpcRes.json();
+      console.log(`[Webhook] Pedido #${orderId} confirmado atomicamente:`, rpcResult);
     }
 
     return new Response(JSON.stringify({ received: true }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
+
   } catch (err) {
+    console.error('[Webhook Error]:', err);
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },

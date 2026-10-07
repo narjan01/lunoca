@@ -362,8 +362,30 @@ async function carregarPedidosAdmin() {
 
 async function atualizarStatusPedido(pedidoId, novoStatus) {
     try {
-        const { error } = await supabaseClient.from('pedidos').update({ status: novoStatus }).eq('id', pedidoId);
-        if (error) throw error;
+        if (novoStatus === 'Confirmado') {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            const token = session?.access_token;
+            if (!token) {
+                throw new Error('Sessão expirada. Faça login novamente como administrador.');
+            }
+
+            const adminPayRes = await fetch('/api/admin/orders/payment', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ pedidoId: pedidoId, status: 'approved' })
+            });
+
+            const adminPayData = await adminPayRes.json();
+            if (!adminPayRes.ok || !adminPayData.success) {
+                throw new Error(adminPayData.error || 'Erro ao confirmar pagamento administrativamente.');
+            }
+        } else {
+            const { error } = await supabaseClient.from('pedidos').update({ status: novoStatus }).eq('id', pedidoId);
+            if (error) throw error;
+        }
         
         let ped = pedidosGlobal.find(p => String(p.id) === String(pedidoId));
         if (ped) ped.status = novoStatus;
@@ -373,8 +395,8 @@ async function atualizarStatusPedido(pedidoId, novoStatus) {
         await notificarStatusPedidoWhatsApp(pedidoId, novoStatus);
 
     } catch (err) {
-        console.error(err);
-        alert("Erro ao atualizar status do pedido.");
+        console.error('[Atualizar Status Pedido]:', err);
+        alert("Erro ao atualizar status do pedido: " + (err.message || err));
     }
 }
 

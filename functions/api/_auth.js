@@ -1,6 +1,7 @@
 // ==========================================================================
 // LUNOCA DOCERIA - Autenticação & Autorização Server-Side para Functions
 // Valida o token JWT do Supabase e garante verificação de papéis e status ativo.
+// Implementa modelo Fail-Closed rigoroso sem fallbacks inseguros.
 // ==========================================================================
 
 export async function verifyAuth(request, env, requiredRoles = []) {
@@ -16,10 +17,20 @@ export async function verifyAuth(request, env, requiredRoles = []) {
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
   const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
   const anonKey = env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhkbmxrdmJmYWFjcnJoaHVheGFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3NDM0MjcsImV4cCI6MjEwNTMxOTQyN30.gq0g8APuVEvVA5_mLAYVLtDabot-x_PsSbdU3u6s13g';
-  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || anonKey;
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
+
+  // Fail-Closed: Operações com verificação de papéis exigem obrigatoriamente a service role key
+  if (requiredRoles.length > 0 && !serviceKey) {
+    console.error('[Auth Helper] Falha Crítica: SUPABASE_SERVICE_ROLE_KEY ausente para rota protegida por papéis.');
+    return {
+      authorized: false,
+      status: 500,
+      error: 'Configuração de segurança incompleta no servidor (SUPABASE_SERVICE_ROLE_KEY ausente).'
+    };
+  }
 
   try {
-    // 1. Valida o token com o Supabase Auth
+    // 1. Valida o token JWT com o endpoint oficial do Supabase Auth
     const userRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
       headers: {
         'apikey': anonKey,
@@ -44,11 +55,14 @@ export async function verifyAuth(request, env, requiredRoles = []) {
       };
     }
 
-    // 2. Consulta perfil no banco usando service role para validar ativo e nivel
+    // 2. Consulta perfil no banco usando service role para validar ativo e nivel com precisão
+    const queryKey = serviceKey || anonKey;
+    const authQueryHeader = serviceKey ? `Bearer ${serviceKey}` : `Bearer ${token}`;
+
     const profileRes = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${authUser.id}&select=id,nome,email,nivel,ativo`, {
       headers: {
-        'apikey': serviceKey,
-        'Authorization': `Bearer ${serviceKey}`
+        'apikey': queryKey,
+        'Authorization': authQueryHeader
       }
     });
 
@@ -72,7 +86,7 @@ export async function verifyAuth(request, env, requiredRoles = []) {
       };
     }
 
-    // 4. Verificação de papéis (ex: ['admin'] ou ['admin', 'operador'])
+    // 4. Verificação estrita de papéis (ex: ['admin'] ou ['admin', 'operador'])
     if (requiredRoles.length > 0 && !requiredRoles.includes(profile.nivel)) {
       return {
         authorized: false,

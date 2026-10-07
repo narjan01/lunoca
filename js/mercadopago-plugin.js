@@ -546,7 +546,7 @@
       try {
         let cardToken = null;
 
-        // Tokenização Segura no Navegador (Conformidade PCI-DSS)
+        // Tokenização Segura no Navegador via SDK Oficial do Mercado Pago (Conformidade PCI-DSS)
         if (this.mpInstance && typeof this.mpInstance.createCardToken === 'function') {
           try {
             const cleanExpYear = exp[1].length === 2 ? `20${exp[1]}` : exp[1];
@@ -563,25 +563,25 @@
               cardToken = tokenRes.id;
             }
           } catch (sdkTokenErr) {
-            console.warn('[MercadoPagoPlugin] Aviso na tokenização via SDK:', sdkTokenErr);
+            console.error('[MercadoPagoPlugin] Falha na tokenização via SDK:', sdkTokenErr);
           }
+        }
+
+        if (!cardToken) {
+          this.showCardError('Não foi possível validar o cartão com segurança no Mercado Pago. Verifique os dados informados ou pague via PIX.');
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-lock"></i> Pagar com Cartão com Segurança';
+            btn.style.opacity = '1';
+          }
+          return;
         }
 
         const payload = {
           pedidoId: this.currentOrder.pedidoId,
-          total: this.currentOrder.total,
           forma: 'cartao',
           parcelas: parseInt(installments, 10),
-          cardToken: cardToken || undefined,
-          // Apenas envia cardData se o SDK não estiver acessível (bloqueador de script, etc.)
-          cardData: cardToken ? undefined : {
-            numero: num,
-            nomeTitular: holder,
-            mesExpiracao: exp[0],
-            anoExpiracao: exp[1],
-            cvv: cvv,
-            cpfTitular: cpf
-          },
+          cardToken: cardToken,
           cliente: {
             nome: holder,
             email: window.usuarioAtual?.email || 'cliente@lunocadoceria.com.br',
@@ -600,17 +600,7 @@
 
         if (res.ok && data.success) {
           if (data.status === 'approved') {
-            // Atualizar status no Supabase para Confirmado
-            try {
-              if (typeof window.supabaseClient !== 'undefined') {
-                await window.supabaseClient.from('pedidos').update({
-                  status: 'Confirmado'
-                }).eq('id', this.currentOrder.pedidoId);
-              }
-            } catch (dbErr) {
-              console.warn('[MercadoPagoPlugin] Erro ao atualizar status do pedido:', dbErr);
-            }
-
+            // A confirmação, baixa de estoque e financeiro já foram realizados atomicamente no backend
             this.renderSucessoAprovado({
               pedidoId: this.currentOrder.pedidoId,
               total: this.currentOrder.total,

@@ -99,7 +99,7 @@ BEGIN
     WHERE id = auth.uid() AND nivel = 'admin' AND ativo = true
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
 CREATE OR REPLACE FUNCTION public.is_admin_or_operator()
 RETURNS BOOLEAN AS $$
@@ -109,7 +109,7 @@ BEGIN
     WHERE id = auth.uid() AND nivel IN ('admin', 'operador') AND ativo = true
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
 CREATE OR REPLACE FUNCTION public.is_user_active()
 RETURNS BOOLEAN AS $$
@@ -119,23 +119,61 @@ BEGIN
     WHERE id = auth.uid() AND ativo = true
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+
+-- Criação automática e segura de perfil para novos usuários (impossibilita autoelevação a admin)
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (
+    id,
+    nome,
+    email,
+    nivel,
+    ativo,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    NEW.id,
+    COALESCE(
+      NEW.raw_user_meta_data->>'nome',
+      NEW.raw_user_meta_data->>'full_name',
+      NEW.raw_user_meta_data->>'name',
+      split_part(NEW.email, '@', 1)
+    ),
+    NEW.email,
+    'cliente',  -- Forçado estritamente no banco como cliente
+    true,       -- Ativo por padrão
+    NOW(),
+    NOW()
+  )
+  ON CONFLICT (id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+AFTER INSERT ON auth.users
+FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 CREATE OR REPLACE FUNCTION public.check_profile_update()
 RETURNS TRIGGER AS $$
 BEGIN
   IF NOT public.is_admin() THEN
     IF NEW.nivel IS DISTINCT FROM OLD.nivel THEN
-      RAISE EXCEPTION 'Apenas administradores ativos podem alterar o nível de acesso.';
+      RAISE EXCEPTION 'Acesso negado: apenas administradores ativos podem alterar o nível de acesso.';
     END IF;
     IF NEW.ativo IS DISTINCT FROM OLD.ativo THEN
-      RAISE EXCEPTION 'Apenas administradores ativos podem ativar ou desativar contas.';
+      RAISE EXCEPTION 'Acesso negado: apenas administradores ativos podem ativar ou desativar contas.';
     END IF;
   END IF;
   NEW.updated_at = NOW();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
 DROP TRIGGER IF EXISTS trigger_check_profile_update ON public.profiles;
 CREATE TRIGGER trigger_check_profile_update
@@ -175,7 +213,7 @@ BEGIN
   NEW.updated_at := NOW();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
 DROP TRIGGER IF EXISTS trigger_validar_recalcular_total_pedido ON public.pedidos;
 CREATE TRIGGER trigger_validar_recalcular_total_pedido
@@ -277,11 +315,26 @@ BEGIN
 
   RETURN json_build_object('success', true, 'pedido_id', v_pedido_id, 'total', v_total);
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
 GRANT EXECUTE ON FUNCTION public.criar_pedido(JSONB, DATE, TEXT, TEXT, TEXT, TEXT) TO authenticated, service_role;
 
--- 9. RPC Atômica de Confirmação & Baixa de Estoque
+-- 9. Tabela de Idempotência & RPC Atômica de Confirmação & Baixa de Estoque
+CREATE TABLE IF NOT EXISTS public.pagamentos_processados (
+  provider_id TEXT PRIMARY KEY,
+  pedido_id BIGINT REFERENCES public.pedidos(id) ON DELETE SET NULL,
+  provider TEXT DEFAULT 'mercadopago',
+  forma TEXT,
+  valor DECIMAL(10,2),
+  processado_em TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pagamentos_proc_pedido ON public.pagamentos_processados(pedido_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pedidos_mercado_pago_id_unique 
+  ON public.pedidos(mercado_pago_id) 
+  WHERE mercado_pago_id IS NOT NULL;
+
 CREATE OR REPLACE FUNCTION public.confirmar_pagamento_pedido(
   p_pedido_id BIGINT,
   p_mercado_pago_payment_id TEXT DEFAULT NULL,
@@ -299,22 +352,51 @@ DECLARE
   v_prod RECORD;
   v_novo_saldo INTEGER;
 BEGIN
+  IF p_pedido_id IS NULL THEN
+    RETURN json_build_object('success', false, 'error', 'ID do pedido não informado.');
+  END IF;
+
+  -- 9.1. Idempotência por Provider ID
+  IF p_mercado_pago_payment_id IS NOT NULL AND p_mercado_pago_payment_id <> '' AND p_mercado_pago_payment_id <> 'admin_manual' THEN
+    IF EXISTS (
+      SELECT 1 FROM public.pagamentos_processados
+      WHERE provider_id = p_mercado_pago_payment_id
+    ) THEN
+      RETURN json_build_object(
+        'success', true,
+        'message', 'Pagamento já processado anteriormente (idempotência confirmada).',
+        'pedido_id', p_pedido_id,
+        'payment_id', p_mercado_pago_payment_id
+      );
+    END IF;
+  END IF;
+
+  -- 9.2. Bloqueio pessimista por linha (SELECT FOR UPDATE)
   SELECT * INTO v_pedido FROM public.pedidos WHERE id = p_pedido_id FOR UPDATE;
   IF NOT FOUND THEN
-    RETURN json_build_object('success', false, 'error', 'Pedido não encontrado');
+    RETURN json_build_object('success', false, 'error', 'Pedido não encontrado no banco de dados.');
   END IF;
 
+  -- 9.3. Se já confirmado anteriormente, impede duplo efeito colateral
   IF v_pedido.status IN ('Confirmado', 'Em Preparo', 'Pronto', 'Entregue') THEN
-    RETURN json_build_object('success', true, 'message', 'Pedido já confirmado', 'pedido_id', p_pedido_id);
+    IF p_mercado_pago_payment_id IS NOT NULL AND p_mercado_pago_payment_id <> '' AND p_mercado_pago_payment_id <> 'admin_manual' THEN
+      INSERT INTO public.pagamentos_processados (provider_id, pedido_id, forma, valor)
+      VALUES (p_mercado_pago_payment_id, p_pedido_id, COALESCE(p_forma_pagamento, v_pedido.pagamento), COALESCE(p_valor, v_pedido.total))
+      ON CONFLICT (provider_id) DO NOTHING;
+    END IF;
+
+    RETURN json_build_object('success', true, 'message', 'Pedido já confirmado', 'pedido_id', p_pedido_id, 'status', v_pedido.status);
   END IF;
 
+  -- 9.4. Atualiza status do pedido
   UPDATE public.pedidos
   SET status = 'Confirmado',
-      mercado_pago_status = 'approved',
+      mercado_pago_status = COALESCE(p_status, 'approved'),
       mercado_pago_id = COALESCE(p_mercado_pago_payment_id, mercado_pago_id),
       updated_at = NOW()
   WHERE id = p_pedido_id;
 
+  -- 9.5. Baixa de estoque dos itens com FOR UPDATE por produto
   IF v_pedido.itens_json IS NOT NULL AND jsonb_typeof(v_pedido.itens_json) = 'array' THEN
     FOR v_item IN SELECT * FROM jsonb_array_elements(v_pedido.itens_json)
     LOOP
@@ -344,20 +426,48 @@ BEGIN
     END LOOP;
   END IF;
 
-  INSERT INTO public.financeiro_lancamentos (
-    tipo, categoria, descricao, valor, data_lancamento, forma_pagamento, pedido_id, observacoes
-  ) VALUES (
-    'receita', 'Vendas', 'Venda do Pedido #' || p_pedido_id || ' (' || v_pedido.nome_cliente || ')',
-    v_pedido.total, CURRENT_DATE, v_pedido.pagamento, p_pedido_id,
-    'Confirmação automática via ' || COALESCE(p_origem, 'Mercado Pago')
-  );
+  -- 9.6. Registro financeiro sem duplicidade
+  IF NOT EXISTS (
+    SELECT 1 FROM public.financeiro_lancamentos 
+    WHERE pedido_id = p_pedido_id AND tipo = 'receita'
+  ) THEN
+    INSERT INTO public.financeiro_lancamentos (
+      tipo, categoria, descricao, valor, data_lancamento, forma_pagamento, pedido_id, observacoes
+    ) VALUES (
+      'receita', 'Vendas', 'Venda do Pedido #' || p_pedido_id || ' (' || v_pedido.nome_cliente || ')',
+      v_pedido.total, CURRENT_DATE, COALESCE(p_forma_pagamento, v_pedido.pagamento, 'pix'), p_pedido_id,
+      'Confirmação via ' || COALESCE(p_origem, 'Mercado Pago') ||
+        CASE 
+          WHEN p_mercado_pago_payment_id IS NOT NULL AND p_mercado_pago_payment_id <> '' 
+          THEN ' [ID: ' || p_mercado_pago_payment_id || ']' 
+          ELSE '' 
+        END
+    );
+  END IF;
+
+  -- 9.7. Registro de pagamento processado (idempotência)
+  IF p_mercado_pago_payment_id IS NOT NULL AND p_mercado_pago_payment_id <> '' AND p_mercado_pago_payment_id <> 'admin_manual' THEN
+    INSERT INTO public.pagamentos_processados (
+      provider_id,
+      pedido_id,
+      forma,
+      valor
+    ) VALUES (
+      p_mercado_pago_payment_id,
+      p_pedido_id,
+      COALESCE(p_forma_pagamento, v_pedido.pagamento),
+      COALESCE(p_valor, v_pedido.total)
+    )
+    ON CONFLICT (provider_id) DO NOTHING;
+  END IF;
 
   RETURN json_build_object('success', true, 'pedido_id', p_pedido_id, 'status', 'Confirmado');
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
-REVOKE EXECUTE ON FUNCTION public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT, TEXT, NUMERIC, TEXT) FROM public, anon;
-GRANT EXECUTE ON FUNCTION public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT, TEXT, NUMERIC, TEXT) TO service_role, authenticated;
+-- Revoga acesso público e autenticado: apenas service_role pode executar
+REVOKE ALL ON FUNCTION public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT, TEXT, NUMERIC, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT, TEXT, NUMERIC, TEXT) TO service_role;
 
 -- 10. Políticas RLS
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -368,6 +478,11 @@ ALTER TABLE public.financeiro_lancamentos ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Perfis visíveis por titular ativo ou admin" ON public.profiles FOR SELECT USING ((auth.uid() = id AND ativo = true) OR public.is_admin());
 CREATE POLICY "Perfis editáveis por titular ativo ou admin" ON public.profiles FOR UPDATE USING ((auth.uid() = id AND ativo = true) OR public.is_admin());
+
+-- Apenas administradores inserem perfis manualmente (o cadastro comum ocorre via trigger handle_new_user)
+DROP POLICY IF EXISTS "Apenas admins inserem perfis manualmente" ON public.profiles;
+CREATE POLICY "Apenas admins inserem perfis manualmente" ON public.profiles FOR INSERT WITH CHECK (public.is_admin());
+
 CREATE POLICY "Produtos visíveis publicamente se ativos" ON public.produtos FOR SELECT USING (ativo = true OR public.is_admin_or_operator());
 CREATE POLICY "Equipe gerencia produtos" ON public.produtos FOR ALL USING (public.is_admin_or_operator());
 CREATE POLICY "Pedidos visíveis por clientes ativos ou equipe" ON public.pedidos FOR SELECT USING ((auth.uid() = cliente_id AND public.is_user_active()) OR public.is_admin_or_operator());

@@ -2,6 +2,7 @@
 // LUNOCA DOCERIA - Cloudflare Pages Function: Checkout Transparente
 // Processamento direto de PIX (com QR Code Base64) e Cartão de Crédito
 // 100% no próprio site, sem redirecionamentos externos.
+// Conformidade PCI-DSS estrita: sem dados brutos de cartão; total obtido do banco.
 // ==========================================================================
 
 import { getCorsHeaders, handleCorsOptions } from '../_cors.js';
@@ -21,62 +22,104 @@ function getSafeBaseUrl(origin, env) {
 }
 
 /**
- * Busca o pedido no Supabase, valida status, titularidade e calcula o total correto.
- * Retorna { validatedTotal, orderData } ou lança erro se houver divergência.
+ * Busca o pedido no Supabase, valida status, titularidade e extrai o total oficial do banco.
+ * Lança exceção caso o pedido não exista ou haja divergência de segurança.
+ * NUNCA recorre a fallbacks inseguros de valores do cliente.
  */
-async function fetchAndValidateOrder(pedidoId, clientTotal, env, authUser) {
-  const supabaseUrl = env.SUPABASE_URL;
-  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
+async function fetchAndValidateOrder(pedidoId, env, authUser) {
+  const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!supabaseUrl || !supabaseKey) {
-    return { validatedTotal: clientTotal, orderData: null };
+  if (!serviceKey) {
+    throw new Error('Configuração crítica ausente no servidor: SUPABASE_SERVICE_ROLE_KEY.');
   }
 
   const pedidoRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}&select=id,total,itens,cliente_id,status`, {
     headers: {
-      'apikey': supabaseKey,
-      'Authorization': `Bearer ${supabaseKey}`
+      'apikey': serviceKey,
+      'Authorization': `Bearer ${serviceKey}`
     }
   });
 
+  if (!pedidoRes.ok) {
+    throw new Error('Falha na comunicação com o banco de dados ao verificar o pedido.');
+  }
+
   const pedidos = await pedidoRes.json();
   if (!pedidos || pedidos.length === 0) {
-    return { validatedTotal: clientTotal, orderData: null };
+    throw new Error(`Pedido #${pedidoId} não encontrado no banco de dados.`);
   }
 
   const order = pedidos[0];
 
-  // Se o usuário estiver autenticado, garante que ele é o dono do pedido ou admin
+  // Se o usuário estiver autenticado, garante que ele é o dono do pedido ou membro da equipe
   if (authUser && authUser.id && order.cliente_id && authUser.id !== order.cliente_id && authUser.nivel !== 'admin' && authUser.nivel !== 'operador') {
     throw new Error('Acesso negado: este pedido pertence a outro usuário.');
   }
 
-  // Não permitir pagamento de pedido já confirmado ou cancelado
-  if (order.status === 'Confirmado' || order.status === 'Entregue') {
-    throw new Error(`Este pedido já se encontra com status "${order.status}".`);
+  // Não permitir pagamento de pedido já confirmado ou entregue
+  if (order.status === 'Confirmado' || order.status === 'Em Preparo' || order.status === 'Pronto' || order.status === 'Entregue') {
+    throw new Error(`Este pedido já se encontra confirmado ou em andamento (Status: "${order.status}").`);
+  }
+
+  if (order.status === 'Cancelado') {
+    throw new Error('Este pedido foi cancelado e não pode receber pagamentos.');
   }
 
   const totalNoBanco = parseFloat(order.total);
+  if (isNaN(totalNoBanco) || totalNoBanco <= 0) {
+    throw new Error('Valor total do pedido no banco de dados é inválido.');
+  }
+
   return { validatedTotal: totalNoBanco, orderData: order };
 }
 
 export async function onRequestPost(context) {
-  try {
-    const { request, env } = context;
-    const corsHeaders = getCorsHeaders(request, env);
-    const body = await request.json();
+  const { request, env } = context;
+  const corsHeaders = getCorsHeaders(request, env);
 
+  try {
     const token = env.MERCADO_PAGO_ACCESS_TOKEN;
     if (!token) {
       return new Response(JSON.stringify({
-        error: 'MERCADO_PAGO_ACCESS_TOKEN não configurado no Cloudflare Pages ou nas configurações da Lunoca.'
+        error: 'MERCADO_PAGO_ACCESS_TOKEN não configurado no servidor.'
+      }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const body = await request.json();
+
+    // Rejeição preventiva de conformidade PCI-DSS: dados brutos de cartão não são permitidos
+    if (body.cardData || body.numero || body.cvv || body.cardNumber || body.securityCode) {
+      console.warn('[SEGURANÇA PCI-DSS] Tentativa de envio de dados brutos de cartão rejeitada.');
+      return new Response(JSON.stringify({
+        error: 'Transmissão direta de dados de cartão não é permitida por conformidade PCI-DSS. Utilize a tokenização segura via SDK.'
       }), {
         status: 400,
         headers: { 'Content-Type': 'application/json', ...corsHeaders }
       });
     }
 
-    // Validação opcional de usuário logado (se fornecido token Bearer)
+    const {
+      pedidoId,
+      forma, // 'pix' ou 'cartao'
+      cliente,
+      cardToken, // token seguro do cartão gerado no frontend pelo SDK oficial
+      parcelas,
+      paymentMethodId,
+      origin
+    } = body;
+
+    if (!pedidoId) {
+      return new Response(JSON.stringify({ error: 'ID do pedido é obrigatório.' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    // Validação opcional de autenticação se fornecido header Bearer
     let authUser = null;
     const authHeader = request.headers.get('Authorization') || '';
     if (authHeader.startsWith('Bearer ')) {
@@ -86,52 +129,31 @@ export async function onRequestPost(context) {
       }
     }
 
-    const {
-      pedidoId,
-      total,
-      forma, // 'pix' ou 'cartao'
-      cliente,
-      cardData, // dados do cartão para checkout transparente
-      cardToken, // token do cartão já criado
-      parcelas,
-      paymentMethodId,
-      origin
-    } = body;
-
     const baseUrl = getSafeBaseUrl(origin, env);
 
-    // Validação server-side do total e titularidade do pedido
-    let amount = parseFloat(total);
+    // Validação server-side estrita do total diretamente do banco de dados (Fail-Closed)
+    let amount;
     try {
-      const { validatedTotal } = await fetchAndValidateOrder(pedidoId, amount, env, authUser);
-      if (typeof validatedTotal === 'number' && !isNaN(validatedTotal)) {
-        if (Math.abs(validatedTotal - amount) > 0.01) {
-          console.warn(`[SEGURANÇA] Divergência de total detectada! Pedido #${pedidoId}: cliente enviou R$${amount}, banco tem R$${validatedTotal}`);
-        }
-        amount = validatedTotal; // Sempre prioriza o valor seguro do banco
-      }
+      const { validatedTotal } = await fetchAndValidateOrder(pedidoId, env, authUser);
+      amount = validatedTotal;
     } catch (valErr) {
-      console.error('Erro na validação do pedido:', valErr.message);
+      console.error('[Validação do Pedido Falhou]:', valErr.message);
       return new Response(JSON.stringify({ error: valErr.message }), {
         status: 400,
         headers: { 'Content-Type': 'application/json', ...corsHeaders }
       });
     }
 
-    if (isNaN(amount) || amount <= 0) {
-      return new Response(JSON.stringify({ error: 'Valor total inválido para pagamento.' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders }
-      });
-    }
-
+    // ========================================================================
     // 1. FLUXO PIX TRANSPARENTE
+    // ========================================================================
     if (forma === 'pix') {
-      const email = cliente?.email || (authUser?.email) || 'cliente@lunocadoceria.com.br';
+      const email = cliente?.email || authUser?.email || 'cliente@lunocadoceria.com.br';
       const nomeCompleto = (cliente?.nome || authUser?.nome || 'Cliente Lunoca').trim().split(' ');
       const firstName = nomeCompleto[0] || 'Cliente';
       const lastName = nomeCompleto.slice(1).join(' ') || 'Doceria';
-      const cpf = (cliente?.cpf || '00000000000').replace(/\D/g, '');
+      const rawCpf = String(cliente?.cpf || '').replace(/\D/g, '');
+      const cpf = rawCpf.length === 11 ? rawCpf : '19119119100';
 
       const pixPayload = {
         transaction_amount: amount,
@@ -143,7 +165,7 @@ export async function onRequestPost(context) {
           last_name: lastName,
           identification: {
             type: 'CPF',
-            number: cpf.length === 11 ? cpf : '19119119100'
+            number: cpf
           }
         },
         external_reference: String(pedidoId),
@@ -182,7 +204,7 @@ export async function onRequestPost(context) {
         status: mpData.status,
         statusDetail: mpData.status_detail,
         qrCode: txData.qr_code, // Código Pix Copia e Cola
-        qrCodeBase64: txData.qr_code_base64, // Imagem do QR Code em Base64
+        qrCodeBase64: txData.qr_code_base64, // Imagem QR Code Base64
         ticketUrl: txData.ticket_url,
         expirationDate: mpData.date_of_expiration
       }), {
@@ -191,68 +213,26 @@ export async function onRequestPost(context) {
       });
     }
 
+    // ========================================================================
     // 2. FLUXO CARTÃO DE CRÉDITO TRANSPARENTE
+    // ========================================================================
     if (forma === 'cartao') {
-      let finalCardToken = cardToken;
-
-      // Se enviou dados brutos do cartão em vez de token pré-gerado, gerar o token com segurança na API
-      if (!finalCardToken && cardData) {
-        const cleanCardNumber = String(cardData.numero || '').replace(/\D/g, '');
-        const cleanExpMonth = parseInt(cardData.mesExpiracao, 10);
-        const cleanExpYear = parseInt(cardData.anoExpiracao.length === 2 ? `20${cardData.anoExpiracao}` : cardData.anoExpiracao, 10);
-        const cleanCvv = String(cardData.cvv || '').trim();
-        const cleanCpf = String(cardData.cpfTitular || cliente?.cpf || '19119119100').replace(/\D/g, '');
-
-        const tokenPayload = {
-          card_number: cleanCardNumber,
-          expiration_month: cleanExpMonth,
-          expiration_year: cleanExpYear,
-          security_code: cleanCvv,
-          cardholder: {
-            name: cardData.nomeTitular || cliente?.nome || 'TITULAR DO CARTAO',
-            identification: {
-              type: 'CPF',
-              number: cleanCpf.length === 11 ? cleanCpf : '19119119100'
-            }
-          }
-        };
-
-        const tokenRes = await fetch('https://api.mercadopago.com/v1/card_tokens', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(tokenPayload)
-        });
-
-        const tokenData = await tokenRes.json();
-        if (!tokenRes.ok || !tokenData.id) {
-          return new Response(JSON.stringify({
-            error: tokenData.message || 'Dados do cartão de crédito inválidos ou recusados na validação.',
-            details: tokenData
-          }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-        }
-
-        finalCardToken = tokenData.id;
-      }
-
-      if (!finalCardToken) {
-        return new Response(JSON.stringify({ error: 'Token do cartão não fornecido.' }), {
+      if (!cardToken || typeof cardToken !== 'string') {
+        return new Response(JSON.stringify({
+          error: 'Token do cartão de crédito obrigatório (PCI-DSS compliance). Gere o token via SDK oficial.'
+        }), {
           status: 400,
           headers: { 'Content-Type': 'application/json', ...corsHeaders }
         });
       }
 
-      const email = cliente?.email || 'cliente@lunocadoceria.com.br';
-      const cleanCpf = String(cardData?.cpfTitular || cliente?.cpf || '19119119100').replace(/\D/g, '');
+      const email = cliente?.email || authUser?.email || 'cliente@lunocadoceria.com.br';
+      const rawCpf = String(cliente?.cpf || '').replace(/\D/g, '');
+      const cleanCpf = rawCpf.length === 11 ? rawCpf : '19119119100';
 
       const cardPaymentPayload = {
         transaction_amount: amount,
-        token: finalCardToken,
+        token: cardToken,
         description: `Pedido #${pedidoId} - Lunoca Doceria`,
         installments: parseInt(parcelas || 1, 10),
         payment_method_id: paymentMethodId || 'credit_card',
@@ -260,7 +240,7 @@ export async function onRequestPost(context) {
           email: email,
           identification: {
             type: 'CPF',
-            number: cleanCpf.length === 11 ? cleanCpf : '19119119100'
+            number: cleanCpf
           }
         },
         external_reference: String(pedidoId),
@@ -290,17 +270,18 @@ export async function onRequestPost(context) {
         });
       }
 
-      // Se aprovado, invocar RPC atômica confirmar_pagamento_pedido (atualiza pedido, baixa estoque e lança financeiro)
+      // Se aprovado, invocar RPC atômica confirmar_pagamento_pedido usando service_role
       if (mpData.status === 'approved') {
-        const supabaseUrl = env.SUPABASE_URL;
-        const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
-        if (supabaseUrl && supabaseKey) {
+        const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
+        const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
+
+        if (supabaseUrl && serviceKey) {
           try {
             const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/confirmar_pagamento_pedido`, {
               method: 'POST',
               headers: {
-                'apikey': supabaseKey,
-                'Authorization': `Bearer ${supabaseKey}`,
+                'apikey': serviceKey,
+                'Authorization': `Bearer ${serviceKey}`,
                 'Content-Type': 'application/json'
               },
               body: JSON.stringify({
@@ -308,29 +289,17 @@ export async function onRequestPost(context) {
                 p_mercado_pago_payment_id: String(mpData.id),
                 p_status: mpData.status,
                 p_forma_pagamento: 'cartao',
-                p_valor: amount
+                p_valor: amount,
+                p_origem: 'Mercado Pago Transparente'
               })
             });
 
             if (!rpcRes.ok) {
-              // Fallback para patch direto em caso de falha na RPC
-              await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}`, {
-                method: 'PATCH',
-                headers: {
-                  'apikey': supabaseKey,
-                  'Authorization': `Bearer ${supabaseKey}`,
-                  'Content-Type': 'application/json',
-                  'Prefer': 'return=minimal'
-                },
-                body: JSON.stringify({
-                  status: 'Confirmado',
-                  mercado_pago_id: String(mpData.id),
-                  mercado_pago_status: mpData.status
-                })
-              }).catch(() => {});
+              const rpcErrText = await rpcRes.text();
+              console.error('[MercadoPago] RPC confirmar_pagamento_pedido retornou erro:', rpcErrText);
             }
           } catch (confirmErr) {
-            console.error('[MercadoPago] Erro ao confirmar pedido atômico:', confirmErr.message);
+            console.error('[MercadoPago] Falha ao invocar RPC de confirmação:', confirmErr.message);
           }
         }
       }
@@ -356,7 +325,7 @@ export async function onRequestPost(context) {
     });
 
   } catch (err) {
-    const corsHeaders = getCorsHeaders(context.request, context.env);
+    console.error('[Transparent Payment Error]:', err);
     return new Response(JSON.stringify({ error: err.message || 'Erro interno no servidor' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }

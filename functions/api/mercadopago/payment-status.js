@@ -1,6 +1,7 @@
 // ==========================================================================
 // LUNOCA DOCERIA - Cloudflare Pages Function: Consulta de Status
 // Permite checar em tempo real se o PIX foi pago pelo cliente.
+// Sincronização atômica devidamente aguardada via await com service_role.
 // ==========================================================================
 
 import { getCorsHeaders, handleCorsOptions } from '../_cors.js';
@@ -13,9 +14,10 @@ export async function onRequestGet(context) {
     const url = new URL(request.url);
     const paymentId = url.searchParams.get('id');
     const token = env.MERCADO_PAGO_ACCESS_TOKEN;
+
     if (!token) {
       return new Response(JSON.stringify({ error: 'MERCADO_PAGO_ACCESS_TOKEN não disponível.' }), {
-        status: 400,
+        status: 500,
         headers: { 'Content-Type': 'application/json', ...corsHeaders }
       });
     }
@@ -47,13 +49,13 @@ export async function onRequestGet(context) {
     if (authHeader.startsWith('Bearer ') && orderId) {
       const authCheck = await verifyAuth(request, env);
       if (authCheck.authorized && authCheck.user) {
-        const supabaseUrl = env.SUPABASE_URL;
-        const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
-        if (supabaseUrl && supabaseKey) {
+        const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
+        const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
+        if (supabaseUrl && serviceKey) {
           const pedRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${orderId}&select=cliente_id`, {
             headers: {
-              apikey: supabaseKey,
-              Authorization: `Bearer ${supabaseKey}`
+              apikey: serviceKey,
+              Authorization: `Bearer ${serviceKey}`
             }
           });
           const pedData = await pedRes.json();
@@ -71,26 +73,37 @@ export async function onRequestGet(context) {
       }
     }
 
-    // Se aprovado, sincronizar com o banco via RPC atômica confirmar_pagamento_pedido
+    // Se aprovado, sincronizar com o banco via RPC atômica confirmar_pagamento_pedido (aguardada via await)
     if (data.status === 'approved' && orderId) {
-      const supabaseUrl = env.SUPABASE_URL;
-      const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
-      if (supabaseUrl && supabaseKey) {
-        fetch(`${supabaseUrl}/rest/v1/rpc/confirmar_pagamento_pedido`, {
-          method: 'POST',
-          headers: {
-            apikey: supabaseKey,
-            Authorization: `Bearer ${supabaseKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            p_pedido_id: Number(orderId),
-            p_mercado_pago_payment_id: String(data.id),
-            p_status: data.status,
-            p_forma_pagamento: data.payment_method_id || 'pix',
-            p_valor: Number(data.transaction_amount || 0)
-          })
-        }).catch(() => {});
+      const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
+      const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
+
+      if (supabaseUrl && serviceKey) {
+        try {
+          const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/confirmar_pagamento_pedido`, {
+            method: 'POST',
+            headers: {
+              apikey: serviceKey,
+              Authorization: `Bearer ${serviceKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              p_pedido_id: Number(orderId),
+              p_mercado_pago_payment_id: String(data.id),
+              p_status: data.status,
+              p_forma_pagamento: data.payment_method_id || 'pix',
+              p_valor: Number(data.transaction_amount || 0),
+              p_origem: 'Consulta Status Cliente'
+            })
+          });
+
+          if (!rpcRes.ok) {
+            const rpcErr = await rpcRes.text();
+            console.error('[PaymentStatus] Erro na RPC confirmar_pagamento_pedido:', rpcErr);
+          }
+        } catch (syncErr) {
+          console.error('[PaymentStatus] Falha ao invocar confirmação atômica:', syncErr.message);
+        }
       }
     }
 
