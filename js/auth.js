@@ -155,6 +155,11 @@ async function carregarPerfilUsuario(authUser) {
         nivel: data.nivel || 'cliente',
         ativo: true
       };
+
+      // Pré-carrega módulos administrativos sob demanda apenas para equipe autorizada
+      if ((usuarioAtual.nivel === 'admin' || usuarioAtual.nivel === 'operador') && typeof garantirModulosAdmin === 'function') {
+        garantirModulosAdmin();
+      }
     }
   } catch (error) {
     console.error("Erro ao carregar perfil:", error);

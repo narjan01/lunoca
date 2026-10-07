@@ -679,6 +679,9 @@ BEGIN
     END LOOP;
   END IF;
 
+  -- 7.5.1. Baixa atômica de insumos da receita (Ficha Técnica)
+  PERFORM public.dar_baixa_ingredientes_pedido(p_pedido_id);
+
   -- 7.6. Registra receita no financeiro com proteção estrita contra duplicidade
   IF NOT EXISTS (
     SELECT 1 FROM public.financeiro_lancamentos 
@@ -934,6 +937,138 @@ DROP POLICY IF EXISTS "Apenas admins gerenciam financeiro" ON public.financeiro_
 CREATE POLICY "Apenas admins gerenciam financeiro" 
   ON public.financeiro_lancamentos FOR ALL 
   USING (public.is_admin());
+
+-- ==========================================================================
+-- 10. FICHA TÉCNICA, INSUMOS E CMV (FASE 6)
+-- ==========================================================================
+
+CREATE TABLE IF NOT EXISTS public.ingredientes (
+  id BIGSERIAL PRIMARY KEY,
+  nome TEXT NOT NULL,
+  unidade VARCHAR(10) NOT NULL DEFAULT 'g' CHECK (unidade IN ('g', 'kg', 'ml', 'l', 'un')),
+  custo_unitario NUMERIC(10,4) NOT NULL DEFAULT 0.0000,
+  estoque_qtd NUMERIC(10,3) NOT NULL DEFAULT 0.000,
+  estoque_minimo NUMERIC(10,3) NOT NULL DEFAULT 0.000,
+  ativo BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.produto_ingredientes (
+  id BIGSERIAL PRIMARY KEY,
+  produto_id BIGINT NOT NULL REFERENCES public.produtos(id) ON DELETE CASCADE,
+  ingrediente_id BIGINT NOT NULL REFERENCES public.ingredientes(id) ON DELETE CASCADE,
+  quantidade NUMERIC(10,3) NOT NULL CHECK (quantidade > 0),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT uq_produto_ingrediente UNIQUE (produto_id, ingrediente_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_produto_ingredientes_prod ON public.produto_ingredientes(produto_id);
+CREATE INDEX IF NOT EXISTS idx_produto_ingredientes_ing ON public.produto_ingredientes(ingrediente_id);
+
+CREATE OR REPLACE VIEW public.view_produto_cmv AS
+SELECT 
+  p.id AS produto_id,
+  p.nome AS produto_nome,
+  p.preco AS preco_venda,
+  p.ativo,
+  COALESCE(SUM(pi.quantidade * i.custo_unitario), 0)::NUMERIC(10,2) AS cmv_estimado,
+  CASE 
+    WHEN p.preco > 0 THEN 
+      ROUND(((p.preco - COALESCE(SUM(pi.quantidade * i.custo_unitario), 0)) / p.preco * 100), 2)
+    ELSE 0 
+  END AS margem_bruta_pct,
+  CASE 
+    WHEN p.preco > 0 THEN 
+      (p.preco - COALESCE(SUM(pi.quantidade * i.custo_unitario), 0))::NUMERIC(10,2)
+    ELSE 0 
+  END AS lucro_bruto_unitario,
+  COUNT(pi.id) AS total_ingredientes
+FROM public.produtos p
+LEFT JOIN public.produto_ingredientes pi ON pi.produto_id = p.id
+LEFT JOIN public.ingredientes i ON i.id = pi.ingrediente_id AND i.ativo = true
+GROUP BY p.id, p.nome, p.preco, p.ativo;
+
+CREATE OR REPLACE FUNCTION public.dar_baixa_ingredientes_pedido(p_pedido_id BIGINT)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+  v_pedido RECORD;
+  v_item JSONB;
+  v_prod_id BIGINT;
+  v_qtd_prod NUMERIC;
+  v_ficha RECORD;
+BEGIN
+  SELECT itens_json INTO v_pedido FROM public.pedidos WHERE id = p_pedido_id;
+  IF NOT FOUND OR v_pedido.itens_json IS NULL OR jsonb_typeof(v_pedido.itens_json) <> 'array' THEN
+    RETURN;
+  END IF;
+
+  FOR v_item IN SELECT * FROM jsonb_array_elements(v_pedido.itens_json)
+  LOOP
+    v_prod_id := (v_item->>'id')::BIGINT;
+    v_qtd_prod := GREATEST(1, COALESCE((v_item->>'quantidade')::NUMERIC, 1));
+
+    IF v_prod_id IS NOT NULL THEN
+      FOR v_ficha IN 
+        SELECT pi.ingrediente_id, pi.quantidade AS qtd_insumo
+        FROM public.produto_ingredientes pi
+        JOIN public.ingredientes i ON i.id = pi.ingrediente_id
+        WHERE pi.produto_id = v_prod_id AND i.ativo = true
+      LOOP
+        UPDATE public.ingredientes
+        SET 
+          estoque_qtd = GREATEST(0, estoque_qtd - (v_ficha.qtd_insumo * v_qtd_prod)),
+          updated_at = NOW()
+        WHERE id = v_ficha.ingrediente_id;
+      END LOOP;
+    END IF;
+  END LOOP;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.dar_baixa_ingredientes_pedido(BIGINT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.dar_baixa_ingredientes_pedido(BIGINT) TO service_role, authenticated;
+
+ALTER TABLE public.ingredientes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.produto_ingredientes ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Equipe visualiza ingredientes" ON public.ingredientes;
+CREATE POLICY "Equipe visualiza ingredientes" ON public.ingredientes
+  FOR SELECT USING (public.is_admin_or_operator());
+
+DROP POLICY IF EXISTS "Admins gerenciam ingredientes" ON public.ingredientes;
+CREATE POLICY "Admins gerenciam ingredientes" ON public.ingredientes
+  FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Equipe visualiza produto_ingredientes" ON public.produto_ingredientes;
+CREATE POLICY "Equipe visualiza produto_ingredientes" ON public.produto_ingredientes
+  FOR SELECT USING (public.is_admin_or_operator());
+
+DROP POLICY IF EXISTS "Admins gerenciam produto_ingredientes" ON public.produto_ingredientes;
+CREATE POLICY "Admins gerenciam produto_ingredientes" ON public.produto_ingredientes
+  FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.ingredientes TO service_role, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.produto_ingredientes TO service_role, authenticated;
+GRANT SELECT ON public.view_produto_cmv TO service_role, authenticated;
+
+-- Seeds de Ingredientes
+INSERT INTO public.ingredientes (nome, unidade, custo_unitario, estoque_qtd, estoque_minimo)
+VALUES 
+  ('Leite Condensado Moça', 'g', 0.0175, 5000.000, 1000.000),
+  ('Chocolate Nobre Meio Amargo', 'g', 0.0550, 4000.000, 800.000),
+  ('Creme de Leite Nestlé', 'g', 0.0160, 3000.000, 600.000),
+  ('Manteiga Extra sem Sal', 'g', 0.0450, 2000.000, 400.000),
+  ('Farinha de Trigo Especial', 'g', 0.0050, 10000.000, 2000.000),
+  ('Açúcar Refinado União', 'g', 0.0045, 10000.000, 2000.000),
+  ('Cacau em Pó 100%', 'g', 0.0480, 2500.000, 500.000),
+  ('Embalagem Individual Padrão', 'un', 1.2000, 200.000, 30.000),
+  ('Caixa Kraft para Presente', 'un', 3.5000, 100.000, 15.000)
+ON CONFLICT DO NOTHING;
 
 -- ==========================================================================
 -- FIM DO SCRIPT DE INSTALAÇÃO & SEGURANÇA

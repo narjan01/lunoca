@@ -224,13 +224,23 @@ function mostrarTela(telaId) {
   }
 
   if (telaId === 'admin-section') {
-    if (typeof configurarAcessoAdminPorNivel === 'function') {
-      configurarAcessoAdminPorNivel();
+    const inicializarPainelAdmin = () => {
+      if (typeof configurarAcessoAdminPorNivel === 'function') {
+        configurarAcessoAdminPorNivel();
+      }
+      if (usuarioAtual && usuarioAtual.nivel === 'admin') {
+        if (typeof carregarPedidosAdmin === 'function') carregarPedidosAdmin();
+      }
+      if (typeof renderizarProdutosAdmin === 'function') renderizarProdutosAdmin();
+    };
+
+    if (typeof garantirModulosAdmin === 'function') {
+      garantirModulosAdmin().then(inicializarPainelAdmin).catch(err => {
+        console.error('Falha ao inicializar módulos admin:', err);
+      });
+    } else {
+      inicializarPainelAdmin();
     }
-    if (usuarioAtual && usuarioAtual.nivel === 'admin') {
-      if (typeof carregarPedidosAdmin === 'function') carregarPedidosAdmin();
-    }
-    if (typeof renderizarProdutosAdmin === 'function') renderizarProdutosAdmin();
   }
 
   if (telaId === 'checkout-section') {

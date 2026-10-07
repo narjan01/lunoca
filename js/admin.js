@@ -31,11 +31,13 @@ function configurarAcessoAdminPorNivel() {
             if (btn) btn.style.display = 'none';
         });
 
-        // Garante exibição de Produtos e Estoque
+        // Garante exibição de Produtos, Estoque e Ficha Técnica
         const btnProd = document.getElementById('tab-btn-produtos');
         const btnEstoque = document.getElementById('tab-btn-estoque');
+        const btnFicha = document.getElementById('tab-btn-fichatecnica');
         if (btnProd) btnProd.style.display = 'inline-flex';
         if (btnEstoque) btnEstoque.style.display = 'inline-flex';
+        if (btnFicha) btnFicha.style.display = 'inline-flex';
 
         if (tituloAdmin) {
             tituloAdmin.innerHTML = '<i class="fa-solid fa-boxes-packing" style="color:var(--primary)"></i> Painel do Operador <span style="font-size:12px; background:#e0f2fe; color:#0369a1; padding:3px 10px; border-radius:12px; font-weight:700; margin-left:6px;">Produtos</span>';
@@ -52,8 +54,10 @@ function configurarAcessoAdminPorNivel() {
 
         const btnProd = document.getElementById('tab-btn-produtos');
         const btnEstoque = document.getElementById('tab-btn-estoque');
+        const btnFicha = document.getElementById('tab-btn-fichatecnica');
         if (btnProd) btnProd.style.display = 'inline-flex';
         if (btnEstoque) btnEstoque.style.display = 'inline-flex';
+        if (btnFicha) btnFicha.style.display = 'inline-flex';
 
         if (tituloAdmin) {
             tituloAdmin.innerHTML = '<i class="fa-solid fa-screwdriver-wrench" style="color:var(--primary)"></i> Painel de Controle <span style="font-size:12px; background:#fef3c7; color:#b45309; padding:3px 10px; border-radius:12px; font-weight:700; margin-left:6px;">Admin</span>';
@@ -63,7 +67,7 @@ function configurarAcessoAdminPorNivel() {
 
 function mudarTabAdmin(tab) {
     // Bloqueio de segurança no frontend para Operadores
-    if (usuarioAtual && usuarioAtual.nivel === 'operador' && tab !== 'produtos' && tab !== 'estoque') {
+    if (usuarioAtual && usuarioAtual.nivel === 'operador' && tab !== 'produtos' && tab !== 'estoque' && tab !== 'fichatecnica') {
         mostrarToast('Acesso restrito ao Administrador.', 'aviso', 3000);
         return;
     }
@@ -83,6 +87,7 @@ function mudarTabAdmin(tab) {
     if(tab === 'pagamentos') carregarConfigMercadoPagoAdmin();
     if(tab === 'whatsapp') carregarConfigWhatsAppAdmin();
     if(tab === 'estoque' && typeof carregarEstoqueAdmin === 'function') carregarEstoqueAdmin();
+    if(tab === 'fichatecnica' && typeof carregarFichaTecnicaAdmin === 'function') carregarFichaTecnicaAdmin();
     if(tab === 'financeiro' && typeof carregarFinanceiroAdmin === 'function') carregarFinanceiroAdmin();
 }
 

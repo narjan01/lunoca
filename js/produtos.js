@@ -445,9 +445,35 @@ function renderizarProdutosAdmin() {
   let html = '';
   for (let i = 0; i < produtos.length; i++) {
     let p = produtos[i];
-    html += '<div class="user-list-item"><div><strong style="color:var(--text-dark);">' + p.nome + '</strong><br><span style="font-size:13px; color:var(--primary); font-weight:600;">R$ ' + parseFloat(p.preco).toFixed(2) + '</span></div><button class="btn-outline" onclick="editarProduto(\'' + p.id + '\')" style="padding:6px 12px; font-size:12px;"><i class="fa-solid fa-pen"></i> Editar</button></div>';
+    let cmvInfo = '';
+    if (typeof produtoCmvGlobal !== 'undefined' && Array.isArray(produtoCmvGlobal)) {
+      const match = produtoCmvGlobal.find(c => c.produto_id == p.id);
+      if (match && match.total_ingredientes > 0) {
+        cmvInfo = ` <span style="font-size:11px; color:#64748b; font-weight:normal; margin-left:8px;">(CMV: <strong>R$ ${parseFloat(match.cmv_estimado).toFixed(2).replace('.', ',')}</strong> | Margem: <strong>${match.margem_bruta_pct}%</strong>)</span>`;
+      }
+    }
+
+    html += `
+      <div class="user-list-item" style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid #f1f5f9;">
+        <div>
+          <strong style="color:var(--text-dark);">${escapeHTML(p.nome)}</strong>
+          ${cmvInfo}
+          <br>
+          <span style="font-size:13px; color:var(--primary); font-weight:600;">R$ ${parseFloat(p.preco).toFixed(2).replace('.', ',')}</span>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn-outline" onclick="abrirModalFichaTecnica(${p.id})" style="padding:6px 12px; font-size:12px; border-radius:8px;" title="Ver/Editar Receita e Insumos">
+            <i class="fa-solid fa-mortar-pestle"></i> Ficha Técnica
+          </button>
+          <button class="btn-outline" onclick="editarProduto('${p.id}')" style="padding:6px 12px; font-size:12px; border-radius:8px;">
+            <i class="fa-solid fa-pen"></i> Editar
+          </button>
+        </div>
+      </div>
+    `;
   }
-  document.getElementById('lista-produtos-admin').innerHTML = html;
+  const el = document.getElementById('lista-produtos-admin');
+  if (el) el.innerHTML = html;
 }
 
 function limparFormProduto() {

@@ -420,7 +420,100 @@ assert.ok(
 );
 console.log('    ✅ js/pedidos.js suporta Guest Checkout e envio dinâmico de taxa e modalidade.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! Fases 1, 2, 3, 4 e 5 rigorosamente validadas.');
+console.log('\n📄 Verificando Fase 6: Ficha Técnica, CMV e Separação Arquitetural Store/Admin...');
+
+const fase6SqlFiles = [
+  'supabase/migrations/005_ficha_tecnica_cmv_insumos.sql',
+  'sql/install.sql',
+  'sql/schema.sql'
+];
+
+for (const file of fase6SqlFiles) {
+  const content = fs.readFileSync(file, 'utf-8');
+  console.log(`\n  🔎 Auditando Ficha Técnica e CMV em: ${file}`);
+
+  // 8.1 Tabelas de ingredientes e produto_ingredientes
+  assert.ok(
+    content.includes('CREATE TABLE IF NOT EXISTS public.ingredientes') &&
+    content.includes('custo_unitario') &&
+    content.includes('estoque_qtd'),
+    `[FALHA] ${file} não contém definição válida da tabela ingredientes!`
+  );
+  console.log('    ✅ Tabela ingredientes com custo_unitario e estoque_qtd presente.');
+
+  assert.ok(
+    content.includes('CREATE TABLE IF NOT EXISTS public.produto_ingredientes') &&
+    content.includes('uq_produto_ingrediente'),
+    `[FALHA] ${file} não contém definição válida da tabela produto_ingredientes!`
+  );
+  console.log('    ✅ Tabela produto_ingredientes com constraint única presente.');
+
+  // 8.2 View analítica view_produto_cmv
+  assert.ok(
+    content.includes('CREATE OR REPLACE VIEW public.view_produto_cmv') &&
+    content.includes('cmv_estimado') &&
+    content.includes('margem_bruta_pct'),
+    `[FALHA] ${file} não contém definição da view_produto_cmv!`
+  );
+  console.log('    ✅ View analítica view_produto_cmv presente.');
+
+  // 8.3 Função de baixa atômica de insumos
+  assert.ok(
+    content.includes('dar_baixa_ingredientes_pedido') &&
+    content.includes('SET search_path = public, auth'),
+    `[FALHA] ${file} não contém a função dar_baixa_ingredientes_pedido!`
+  );
+  console.log('    ✅ Função dar_baixa_ingredientes_pedido com search_path seguro presente.');
+
+  // 8.4 Integração na confirmação de pagamento
+  assert.ok(
+    content.includes('dar_baixa_ingredientes_pedido(p_pedido_id)'),
+    `[FALHA] ${file} não chama dar_baixa_ingredientes_pedido na confirmação do pagamento!`
+  );
+  console.log('    ✅ Baixa de insumos integrada na confirmação de pagamento.');
+
+  // 8.5 RLS em ingredientes
+  assert.ok(
+    content.includes('ALTER TABLE public.ingredientes ENABLE ROW LEVEL SECURITY;') &&
+    content.includes('ALTER TABLE public.produto_ingredientes ENABLE ROW LEVEL SECURITY;'),
+    `[FALHA] ${file} não habilita RLS em ingredientes e produto_ingredientes!`
+  );
+  console.log('    ✅ RLS ativo para ingredientes e receitas.');
+}
+
+// 8.6 Verificação Arquitetural: Desacoplamento da Loja (index.html)
+console.log('\n  🔎 Verificando Desacoplamento Arquitetural Store vs Admin...');
+const indexHtmlContent = fs.readFileSync('index.html', 'utf-8');
+
+assert.ok(
+  !indexHtmlContent.includes('<script src="js/admin.js') &&
+  !indexHtmlContent.includes('<script src="js/estoque.js') &&
+  !indexHtmlContent.includes('<script src="js/financeiro.js'),
+  '[FALHA] index.html ainda carrega scripts pesados de administração de forma síncrona/bloqueante!'
+);
+console.log('    ✅ index.html não carrega scripts de administração no bundle inicial da loja.');
+
+assert.ok(
+  indexHtmlContent.includes('js/admin-loader.js'),
+  '[FALHA] index.html não possui o script admin-loader.js!'
+);
+console.log('    ✅ index.html possui admin-loader.js para lazy-loading sob demanda.');
+
+assert.ok(
+  fs.existsSync('admin.html') && fs.existsSync('js/admin-loader.js') && fs.existsSync('js/fichatecnica.js'),
+  '[FALHA] Arquivos críticos da Fase 6 (admin.html, js/admin-loader.js ou js/fichatecnica.js) estão ausentes!'
+);
+console.log('    ✅ admin.html, js/admin-loader.js e js/fichatecnica.js devidamente criados.');
+
+const finJsContent = fs.readFileSync('js/financeiro.js', 'utf-8');
+assert.ok(
+  finJsContent.includes('cmvTotal') && finJsContent.includes('lucroBruto'),
+  '[FALHA] js/financeiro.js não integra cmvTotal e lucroBruto no resumo financeiro!'
+);
+console.log('    ✅ js/financeiro.js calcula CMV e Lucro Bruto real no DRE.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! Fases 1, 2, 3, 4, 5 e 6 rigorosamente validadas.');
+
 
 
 

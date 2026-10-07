@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel Administrativo | Lunoca Doceria</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="stylesheet" href="css/style.css?v=3.0.0">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/jpeg" href="img/logo.jpg">
+  <style>
+    body { background-color: var(--bg-color, #fdfbf7); }
+    .admin-standalone-header {
+      background: #ffffff;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+    }
+    .admin-guard-loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 60vh;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Barra Superior do Painel Administrativo -->
+  <header class="admin-standalone-header">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <img src="img/logo.jpg" alt="Lunoca" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
+      <div>
+        <h1 style="margin:0; font-size:16px; font-weight:800; color:var(--text-dark);">Lunoca Gestão</h1>
+        <span id="admin-user-badge" style="font-size:11px; color:#64748b;">Verificando credenciais...</span>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <a href="index.html" class="btn-outline" style="padding:6px 14px; font-size:12px; border-radius:10px; text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
+        <i class="fa-solid fa-store"></i> Ver Loja
+      </a>
+      <button onclick="fazerLogoutAdminStandalone()" class="btn-outline" style="padding:6px 12px; font-size:12px; border-radius:10px; color:#dc2626; border-color:#fca5a5;" title="Encerrar sessão">
+        <i class="fa-solid fa-arrow-right-from-bracket"></i> Sair
+      </button>
+    </div>
+  </header>
+
+  <main class="container" style="max-width:1100px; margin:20px auto; padding:0 15px;">
+    <!-- Guard de Carregamento e Autorização -->
+    <div id="admin-guard-container" class="admin-guard-loading">
+      <i class="fa-solid fa-spinner fa-spin fa-2x" style="color:var(--primary); margin-bottom:12px;"></i>
+      <p style="font-weight:600; font-size:14px;">Autenticando acesso restrito...</p>
+    </div>
+
+    <!-- Container Principal do Painel -->
+    <div id="admin-main-content" style="display:none;">
+      <div id="admin-section" class="screen active" style="display:block;">
+        <h2 style="margin-top:0;"><i class="fa-solid fa-screwdriver-wrench" style="color:var(--primary)"></i> Painel de Controle</h2>
+        <div class="admin-nav">
+          <button id="tab-btn-pedidos" class="active" onclick="mudarTabAdmin('pedidos')"><i class="fa-solid fa-receipt"></i> Pedidos</button>
+          <button id="tab-btn-calendario" onclick="mudarTabAdmin('calendario')"><i class="fa-regular fa-calendar-days"></i> Calendário</button>
+          <button id="tab-btn-produtos" onclick="mudarTabAdmin('produtos')"><i class="fa-solid fa-box"></i> Produtos</button>
+          <button id="tab-btn-estoque" onclick="mudarTabAdmin('estoque')"><i class="fa-solid fa-boxes-stacked"></i> Estoque</button>
+          <button id="tab-btn-fichatecnica" onclick="mudarTabAdmin('fichatecnica')"><i class="fa-solid fa-mortar-pestle"></i> Ficha Técnica & CMV</button>
+          <button id="tab-btn-financeiro" onclick="mudarTabAdmin('financeiro')"><i class="fa-solid fa-chart-line"></i> Financeiro</button>
+          <button id="tab-btn-usuarios" onclick="mudarTabAdmin('usuarios')"><i class="fa-solid fa-users"></i> Usuários</button>
+          <button id="tab-btn-pagamentos" onclick="mudarTabAdmin('pagamentos')"><i class="fa-solid fa-credit-card"></i> Mercado Pago</button>
+          <button id="tab-btn-whatsapp" onclick="mudarTabAdmin('whatsapp')"><i class="fa-brands fa-whatsapp" style="color:#25D366;"></i> WhatsApp</button>
+        </div>
+
+        <!-- ABA 1: Pedidos -->
+        <div id="admin-tab-pedidos" class="admin-tab active">
+          <button onclick="carregarPedidosAdmin()" style="width: 100%; margin-bottom: 15px;" class="btn-outline"><i class="fa-solid fa-rotate-right"></i> Atualizar Pedidos</button>
+          <div id="lista-pedidos-admin"></div>
+        </div>
+
+        <!-- ABA 2: Calendário -->
+        <div id="admin-tab-calendario" class="admin-tab">
+          <div class="calendar-header">
+            <button class="btn-outline" style="padding: 8px 15px;" onclick="mudarMes(-1)"><i class="fa-solid fa-chevron-left"></i></button>
+            <h3 id="mes-ano-atual" style="margin: 0; font-size: 16px;">Mês Ano</h3>
+            <button class="btn-outline" style="padding: 8px 15px;" onclick="mudarMes(1)"><i class="fa-solid fa-chevron-right"></i></button>
+          </div>
+          <table class="calendar" id="calendario-encomendas">
+            <thead><tr><th>D</th><th>S</th><th>T</th><th>Q</th><th>Q</th><th>S</th><th>S</th></tr></thead>
+            <tbody id="calendario-corpo"></tbody>
+          </table>
+          <div id="detalhes-dia-calendario" style="margin-top: 15px;"></div>
+        </div>
+
+        <!-- ABA 3: Produtos -->
+        <div id="admin-tab-produtos" class="admin-tab">
+          <div class="panel-card" style="flex-direction: column; align-items: stretch;">
+            <h3 style="margin-top:0;"><i class="fa-solid fa-pen-to-square"></i> Gerenciar Produto</h3>
+            <input type="hidden" id="prod-id">
+            <div class="form-group"><label>Nome do Doce</label><input type="text" id="prod-nome"></div>
+            <div class="form-group"><label>Preço (R$)</label><input type="number" step="0.01" id="prod-preco"></div>
+            <div class="form-group">
+              <label>Descrição</label>
+              <textarea id="prod-desc" rows="3"></textarea>
+            </div>
+            <div class="form-group"><label>Opções de Sabores (Separadas por vírgula)</label><input type="text" id="prod-opcoes"></div>
+            <div class="form-group" style="display: flex; gap: 15px;">
+              <div style="flex: 1;"><label>Estoque Inicial</label><input type="number" id="prod-estoque-qtd" value="10"></div>
+              <div style="flex: 1;"><label>Estoque Mínimo</label><input type="number" id="prod-estoque-minimo" value="3"></div>
+            </div>
+            <div class="form-group">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="prod-controlar-estoque" checked style="width: 18px; height: 18px;">
+                Controlar estoque deste produto
+              </label>
+            </div>
+            <div class="form-group">
+              <label>Foto do Doce</label>
+              <div style="display:flex; gap:10px; align-items:center;">
+                <input type="file" id="prod-file" accept="image/*" style="display:none;" onchange="prepararUpload(this)">
+                <button type="button" class="btn-outline" onclick="document.getElementById('prod-file').click()" id="lbl-upload">
+                  <i class="fa-solid fa-cloud-arrow-up"></i> Escolher foto...
+                </button>
+                <span id="upload-status" style="font-size:12px; color:#666;"></span>
+              </div>
+              <input type="hidden" id="prod-img">
+            </div>
+            <div style="display:flex; gap:10px; margin-top:15px;">
+              <button onclick="salvarProdutoServidor()" id="btn-salvar-produto" style="flex:2;"><i class="fa-solid fa-floppy-disk"></i> Salvar Produto</button>
+              <button onclick="limparFormProduto()" class="btn-outline" style="flex:1;">Limpar</button>
+            </div>
+          </div>
+          <h3>Lista de Produtos</h3>
+          <div id="lista-produtos-admin"></div>
+        </div>
+
+        <!-- ABA 4: Estoque -->
+        <div id="admin-tab-estoque" class="admin-tab">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 8px;">
+            <h3 style="margin:0;"><i class="fa-solid fa-boxes-stacked" style="color:var(--primary);"></i> Controle de Estoque</h3>
+            <button onclick="carregarEstoqueAdmin()" class="btn-outline" style="padding: 6px 12px; font-size: 12px; border-radius: 8px;">
+              <i class="fa-solid fa-rotate-right"></i> Atualizar Estoque
+            </button>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px;">
+            <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid var(--primary);">
+              <div style="font-size: 10px; color: var(--primary); font-weight: bold; text-transform: uppercase;">Total de Unidades</div>
+              <div id="card-estoque-total-unidades" style="font-size: 18px; font-weight: bold; color: var(--text-dark); margin-top: 4px;">0 un</div>
+              <span style="font-size: 11px; color: #64748b;">Itens prontos</span>
+            </div>
+            <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #10b981;">
+              <div style="font-size: 10px; color: #059669; font-weight: bold; text-transform: uppercase;">Valor em Estoque</div>
+              <div id="card-estoque-valor-total" style="font-size: 18px; font-weight: bold; color: #059669; margin-top: 4px;">R$ 0,00</div>
+              <span style="font-size: 11px; color: #64748b;">Preço de venda</span>
+            </div>
+            <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #f59e0b;">
+              <div style="font-size: 10px; color: #d97706; font-weight: bold; text-transform: uppercase;">Estoque Baixo</div>
+              <div id="card-estoque-itens-baixos" style="font-size: 18px; font-weight: bold; color: #d97706; margin-top: 4px;">0</div>
+              <span style="font-size: 11px; color: #64748b;">Abaixo do mínimo</span>
+            </div>
+            <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #ef4444;">
+              <div style="font-size: 10px; color: #dc2626; font-weight: bold; text-transform: uppercase;">Esgotados</div>
+              <div id="card-estoque-itens-esgotados" style="font-size: 18px; font-weight: bold; color: #dc2626; margin-top: 4px;">0</div>
+              <span style="font-size: 11px; color: #64748b;">Zerados na loja</span>
+            </div>
+          </div>
+          <div style="background: #fff; padding: 16px; border-radius: 12px; border: 1px solid #e5e7eb; margin-bottom: 20px;">
+            <div id="lista-estoque-admin"></div>
+          </div>
+          <div style="background: #fff; padding: 16px; border-radius: 12px; border: 1px solid #e5e7eb;">
+            <h4 style="margin: 0 0 12px 0; font-size: 14px;"><i class="fa-solid fa-clock-rotate-left"></i> Histórico de Movimentações</h4>
+            <div id="lista-movimentacoes-estoque"></div>
+          </div>
+        </div>
+
+        <!-- ABA 5: Ficha Técnica & CMV (Fase 6) -->
+        <div id="admin-tab-fichatecnica" class="admin-tab">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <h3 style="margin:0;"><i class="fa-solid fa-mortar-pestle" style="color:var(--primary);"></i> Ficha Técnica, Insumos & CMV</h3>
+              <p style="margin:2px 0 0; font-size:12px; color:var(--text-muted);">Controle de custos unitários, receitas e rentabilidade por doce</p>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button onclick="abrirModalNovoIngrediente()" style="padding: 6px 12px; font-size: 12px; background: var(--primary); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">
+                <i class="fa-solid fa-plus"></i> Novo Ingrediente
+              </button>
+              <button onclick="carregarFichaTecnicaAdmin()" class="btn-outline" style="padding: 6px 12px; font-size: 12px; border-radius: 8px;">
+                <i class="fa-solid fa-rotate-right"></i> Atualizar
+              </button>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px;">
+            <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid var(--primary);">
+              <div style="font-size: 10px; color: var(--primary); font-weight: bold; text-transform: uppercase;">Insumos Cadastrados</div>
+              <div id="card-ft-total-ingredientes" style="font-size: 17px; font-weight: bold; color: var(--text-dark); margin-top: 4px;">0</div>
+              <span style="font-size: 11px; color: #64748b;">Matérias-primas</span>
+            </div>
+            <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #ef4444;">
+              <div style="font-size: 10px; color: #b91c1c; font-weight: bold; text-transform: uppercase;">Estoque Crítico</div>
+              <div id="card-ft-estoque-critico" style="font-size: 17px; font-weight: bold; color: #059669; margin-top: 4px;">0</div>
+              <span style="font-size: 11px; color: #64748b;">Abaixo do mínimo</span>
+            </div>
+            <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #3b82f6;">
+              <div style="font-size: 10px; color: #1d4ed8; font-weight: bold; text-transform: uppercase;">Insumos em Estoque</div>
+              <div id="card-ft-valor-estoque" style="font-size: 17px; font-weight: bold; color: #1d4ed8; margin-top: 4px;">R$ 0,00</div>
+              <span style="font-size: 11px; color: #64748b;">Custo total estocado</span>
+            </div>
+            <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #10b981;">
+              <div style="font-size: 10px; color: #047857; font-weight: bold; text-transform: uppercase;">Margem Bruta Média</div>
+              <div id="card-ft-margem-media" style="font-size: 17px; font-weight: bold; color: #047857; margin-top: 4px;">0.0%</div>
+              <span style="font-size: 11px; color: #64748b;">Sobre vendas</span>
+            </div>
+          </div>
+          <div style="background: #fff; padding: 16px; border-radius: 12px; border: 1px solid #e5e7eb; margin-bottom: 20px;">
+            <h4 style="margin: 0 0 12px 0; font-size: 14px; color: var(--text-dark);"><i class="fa-solid fa-boxes-packing" style="color:var(--primary);"></i> Ingredientes e Matérias-Primas</h4>
+            <div id="lista-ingredientes-admin"></div>
+          </div>
+          <div style="background: #fff; padding: 16px; border-radius: 12px; border: 1px solid #e5e7eb;">
+            <h4 style="margin: 0 0 12px 0; font-size: 14px; color: var(--text-dark);"><i class="fa-solid fa-calculator" style="color:var(--primary);"></i> CMV e Margem por Produto</h4>
+            <div id="lista-cmv-produtos-admin"></div>
+          </div>
+        </div>
+
+        <!-- ABA 6: Financeiro -->
+        <div id="admin-tab-financeiro" class="admin-tab">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 8px;">
+            <h3 style="margin:0;"><i class="fa-solid fa-chart-line" style="color:var(--primary);"></i> Controle Financeiro & Fluxo de Caixa</h3>
+            <div style="display: flex; gap: 8px;">
+              <button onclick="abrirModalNovaDespesa()" style="padding: 6px 12px; font-size: 12px; background: var(--primary); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">
+                <i class="fa-solid fa-plus"></i> Lançar Despesa
+              </button>
+              <button onclick="carregarFinanceiroAdmin()" class="btn-outline" style="padding: 6px 12px; font-size: 12px; border-radius: 8px;">
+                <i class="fa-solid fa-rotate-right"></i> Atualizar
+              </button>
+            </div>
+          </div>
+          <div style="display: flex; gap: 6px; margin-bottom: 15px; overflow-x: auto; padding-bottom: 4px;">
+            <button id="btn-periodo-hoje" class="btn-periodo-fin" onclick="mudarPeriodoFinanceiro('hoje')">Hoje</button>
+            <button id="btn-periodo-7dias" class="btn-periodo-fin" onclick="mudarPeriodoFinanceiro('7dias')">Últimos 7 dias</button>
+            <button id="btn-periodo-mes_atual" class="btn-periodo-fin active" onclick="mudarPeriodoFinanceiro('mes_atual')">Este Mês</button>
+            <button id="btn-periodo-mes_anterior" class="btn-periodo-fin" onclick="mudarPeriodoFinanceiro('mes_anterior')">Mês Passado</button>
+            <button id="btn-periodo-tudo" class="btn-periodo-fin" onclick="mudarPeriodoFinanceiro('tudo')">Todo o Histórico</button>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px;">
+            <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #10b981;">
+              <div style="font-size: 10px; color: #047857; font-weight: bold; text-transform: uppercase;">Faturamento Bruto</div>
+              <div id="fin-card-faturamento" style="font-size: 17px; font-weight: bold; color: #047857; margin-top: 4px;">R$ 0,00</div>
+              <span id="fin-sub-faturamento" style="font-size: 11px; color: #64748b;">0 pedidos</span>
+            </div>
+            <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #ef4444;">
+              <div style="font-size: 10px; color: #b91c1c; font-weight: bold; text-transform: uppercase;">Despesas & Custos</div>
+              <div id="fin-card-despesas" style="font-size: 17px; font-weight: bold; color: #b91c1c; margin-top: 4px;">R$ 0,00</div>
+              <span style="font-size: 11px; color: #64748b;">Insumos e utilidades</span>
+            </div>
+            <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #3b82f6;">
+              <div style="font-size: 10px; color: #1d4ed8; font-weight: bold; text-transform: uppercase;">Lucro Líquido</div>
+              <div id="fin-card-lucro" style="font-size: 17px; font-weight: bold; color: #1d4ed8; margin-top: 4px;">R$ 0,00</div>
+              <span id="fin-sub-lucro" style="font-size: 11px; color: #64748b;">Margem: 0%</span>
+            </div>
+            <div class="panel-card" style="flex-direction: column; align-items: flex-start; padding: 12px; background: #fff; border-left: 4px solid #8b5cf6;">
+              <div style="font-size: 10px; color: #6d28d9; font-weight: bold; text-transform: uppercase;">Ticket Médio</div>
+              <div id="fin-card-ticket" style="font-size: 17px; font-weight: bold; color: #6d28d9; margin-top: 4px;">R$ 0,00</div>
+              <span style="font-size: 11px; color: #64748b;">Média por pedido</span>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin-bottom: 20px;">
+            <div id="fin-grafico-pagamentos"></div>
+            <div id="fin-dre-simplificado"></div>
+          </div>
+          <div style="background: #fff; padding: 16px; border-radius: 12px; border: 1px solid #e5e7eb;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+              <h4 style="margin: 0; font-size: 14px; color: var(--text-dark);"><i class="fa-solid fa-list-check" style="color:var(--primary);"></i> Extrato de Fluxo de Caixa</h4>
+              <div style="display: flex; gap: 6px;">
+                <button id="btn-extrato-todos" class="btn-filtro-extrato active" onclick="filtrarExtratoFinanceiro('todos')">Todos</button>
+                <button id="btn-extrato-receitas" class="btn-filtro-extrato" onclick="filtrarExtratoFinanceiro('receitas')">Entradas</button>
+                <button id="btn-extrato-despesas" class="btn-filtro-extrato" onclick="filtrarExtratoFinanceiro('despesas')">Saídas</button>
+              </div>
+            </div>
+            <div id="lista-financeiro-extrato"></div>
+          </div>
+        </div>
+
+        <!-- ABA 7: Usuários -->
+        <div id="admin-tab-usuarios" class="admin-tab">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <h3 style="margin:0;"><i class="fa-solid fa-users-gear" style="color:var(--primary);"></i> Usuários e Permissões</h3>
+              <p style="margin:2px 0 0; font-size:12px; color:var(--text-muted);">Gerencie clientes, operadores e administradores da doceria</p>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button onclick="abrirModalNovoUsuarioAdmin()" class="btn-primary" style="padding: 6px 12px; font-size: 12px; border-radius: 8px;">
+                <i class="fa-solid fa-user-plus"></i> Novo Usuário
+              </button>
+              <button onclick="carregarUsuariosAdmin()" class="btn-outline" style="padding: 6px 12px; font-size: 12px; border-radius: 8px;">
+                <i class="fa-solid fa-rotate-right"></i> Atualizar
+              </button>
+            </div>
+          </div>
+          <div id="lista-usuarios-admin"></div>
+        </div>
+
+        <!-- ABA 8: Mercado Pago -->
+        <div id="admin-tab-pagamentos" class="admin-tab">
+          <h3><i class="fa-solid fa-credit-card" style="color:var(--primary);"></i> Integração Mercado Pago</h3>
+          <p style="font-size:13px; color:#64748b;">Credenciais gerenciadas de forma segura via Cloudflare Secrets.</p>
+        </div>
+
+        <!-- ABA 9: WhatsApp -->
+        <div id="admin-tab-whatsapp" class="admin-tab">
+          <h3><i class="fa-brands fa-whatsapp" style="color:#25D366;"></i> Conexão WhatsApp</h3>
+          <div id="whatsapp-admin-conteudo"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modais Administrativos -->
+  <div id="modal-editar-ingrediente" class="modal-overlay">
+    <div class="modal-content" style="max-width: 440px; text-align: left;">
+      <span class="close-modal" role="button" aria-label="Fechar janela" onclick="fecharModalIngrediente()">&times;</span>
+      <h3 id="ing-modal-titulo" style="margin-top:0; color:var(--text-dark); font-size:17px;"><i class="fa-solid fa-mortar-pestle" style="color:var(--primary);"></i> Novo Ingrediente</h3>
+      <input type="hidden" id="ing-modal-id">
+      <div class="form-group"><label>Nome do Ingrediente / Insumo</label><input type="text" id="ing-modal-nome" placeholder="Ex: Leite Condensado Moça"></div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+        <div class="form-group">
+          <label>Unidade de Medida</label>
+          <select id="ing-modal-unidade" onchange="atualizarDicaUnidadeCusto()">
+            <option value="g">Gramas (g)</option>
+            <option value="kg">Quilos (kg)</option>
+            <option value="ml">Mililitros (ml)</option>
+            <option value="l">Litros (l)</option>
+            <option value="un">Unidade (un)</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Custo Unitário (R$)</label><input type="number" step="0.0001" id="ing-modal-custo" placeholder="Ex: 0.0175"></div>
+      </div>
+      <p id="ing-modal-dica-custo" style="font-size:11px; color:#64748b; margin-top:-6px; margin-bottom:10px;"></p>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+        <div class="form-group"><label>Estoque Atual</label><input type="number" step="0.01" id="ing-modal-estoque" placeholder="Ex: 5000"></div>
+        <div class="form-group"><label>Estoque Mínimo</label><input type="number" step="0.01" id="ing-modal-minimo" placeholder="Ex: 1000"></div>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:15px;">
+        <button type="button" onclick="salvarIngrediente()" class="btn-primary" style="flex:2;">Salvar Ingrediente</button>
+        <button type="button" onclick="fecharModalIngrediente()" class="btn-outline" style="flex:1;">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-ficha-tecnica-produto" class="modal-overlay">
+    <div class="modal-content" style="max-width: 520px; text-align: left;">
+      <span class="close-modal" role="button" aria-label="Fechar janela" onclick="fecharModalFichaTecnica()">&times;</span>
+      <h3 style="margin-top:0; color:var(--text-dark); font-size:18px;">
+        <i class="fa-solid fa-mortar-pestle" style="color:var(--primary);"></i> Ficha Técnica: <span id="ft-produto-titulo" style="color:var(--primary);">--</span>
+      </h3>
+      <p style="font-size:13px; color:#64748b; margin-top:-6px;">Preço de Venda: <strong id="ft-produto-preco-venda" style="color:#0f172a;">R$ 0,00</strong></p>
+      <div style="margin: 15px 0;">
+        <label style="font-weight:700; font-size:13px; color:#334155; display:block; margin-bottom:6px;">Ingredientes da Receita:</label>
+        <div id="ft-lista-itens-receita"></div>
+      </div>
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:12px; margin-bottom:15px;">
+        <strong style="font-size:12px; color:#475569; display:block; margin-bottom:8px;">+ Adicionar Insumo à Receita</strong>
+        <div style="display:grid; grid-template-columns: 2fr 1fr auto; gap:8px;">
+          <select id="ft-novo-ingrediente-select" style="font-size:12px;"></select>
+          <input type="number" step="0.01" id="ft-novo-ingrediente-qtd" placeholder="Qtd" style="font-size:12px;">
+          <button type="button" onclick="adicionarIngredienteNaReceita()" class="btn-primary" style="padding:6px 12px; font-size:12px;"><i class="fa-solid fa-plus"></i></button>
+        </div>
+      </div>
+      <div style="background:#f1f5f9; border-radius:12px; padding:12px; display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; text-align:center;">
+        <div><span style="font-size:11px; color:#64748b; display:block;">CMV Total</span><strong id="ft-total-cmv-calc" style="font-size:14px; color:#b91c1c;">R$ 0,00</strong></div>
+        <div><span style="font-size:11px; color:#64748b; display:block;">Lucro Bruto</span><strong id="ft-total-lucro-calc" style="font-size:14px; color:#15803d;">R$ 0,00</strong></div>
+        <div><span style="font-size:11px; color:#64748b; display:block;">Margem Bruta</span><strong id="ft-total-margem-calc" style="font-size:14px; color:var(--primary);">0%</strong></div>
+      </div>
+      <div style="margin-top:15px; text-align:right;">
+        <button type="button" onclick="fecharModalFichaTecnica()" class="btn-primary" style="padding:8px 16px;">Concluir</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-ajuste-estoque" class="modal-overlay">
+    <div class="modal-content" style="max-width: 420px; text-align: left;">
+      <span class="close-modal" role="button" aria-label="Fechar janela" onclick="fecharModalAjusteEstoque()">&times;</span>
+      <h3 style="margin-top:0; color:var(--text-dark); font-size:17px;"><i class="fa-solid fa-sliders" style="color:var(--primary);"></i> Ajustar Estoque</h3>
+      <p style="font-size:13px; color:#666; margin-top:-5px;">Doce: <strong id="ajuste-prod-nome" style="color:var(--text-dark);">--</strong> (Saldo Atual: <span id="ajuste-prod-atual" style="font-weight:bold; color:var(--primary);">--</span> un)</p>
+      <div class="form-group"><label>Nova Quantidade em Estoque</label><input type="number" id="ajuste-prod-nova-qtd" min="0" value="0" style="font-size:16px; font-weight:bold;"></div>
+      <div class="form-group"><label>Estoque Mínimo</label><input type="number" id="ajuste-prod-minimo" min="1" value="3"></div>
+      <div class="form-group">
+        <label>Tipo da Operação</label>
+        <select id="ajuste-prod-tipo">
+          <option value="entrada">Entrada (Produção / Fornada)</option>
+          <option value="ajuste">Ajuste de Balanço</option>
+          <option value="saida">Saída Manual / Descarte</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Motivo</label><input type="text" id="ajuste-prod-motivo" placeholder="Ex: Fornada fresca"></div>
+      <div class="form-group" style="margin-bottom:20px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px;">
+          <input type="checkbox" id="ajuste-prod-controlar" checked style="width:16px; height:16px; accent-color:var(--primary);">
+          Controlar estoque estritamente
+        </label>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button onclick="fecharModalAjusteEstoque()" class="btn-outline" style="flex:1;">Cancelar</button>
+        <button onclick="salvarAjusteEstoqueModal()" id="btn-salvar-ajuste-estoque" style="flex:2;"><i class="fa-solid fa-check"></i> Confirmar Ajuste</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-novo-lancamento" class="modal-overlay">
+    <div class="modal-content" style="max-width: 440px; text-align: left;">
+      <span class="close-modal" role="button" aria-label="Fechar janela" onclick="fecharModalNovaDespesa()">&times;</span>
+      <h3 style="margin-top:0; color:var(--text-dark); font-size:17px;"><i class="fa-solid fa-receipt" style="color:var(--primary);"></i> Lançar Despesa ou Receita</h3>
+      <div class="form-group">
+        <label>Tipo</label>
+        <select id="fin-novo-tipo">
+          <option value="despesa">Despesa (Saída)</option>
+          <option value="receita">Receita (Entrada)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Categoria</label>
+        <select id="fin-novo-categoria">
+          <option value="Ingredientes & Insumos">Ingredientes & Insumos</option>
+          <option value="Embalagens & Caixas">Embalagens & Caixas</option>
+          <option value="Utilidades & Contas">Utilidades (Energia, Gás, Água)</option>
+          <option value="Equipamentos & Utensílios">Equipamentos & Utensílios</option>
+          <option value="Logística & Entregas">Logística & Entregas</option>
+          <option value="Marketing & Divulgação">Marketing & Divulgação</option>
+          <option value="Taxas Bancárias & Meios">Taxas e Meios de Pagamento</option>
+          <option value="Outras Despesas">Outras Despesas</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Descrição</label><input type="text" id="fin-novo-desc" placeholder="Ex: Compra de Chocolate Callebaut"></div>
+      <div class="form-group"><label>Valor (R$)</label><input type="number" step="0.01" id="fin-novo-valor" placeholder="0.00"></div>
+      <div class="form-group"><label>Data</label><input type="date" id="fin-novo-data"></div>
+      <div class="form-group">
+        <label>Forma de Pagamento</label>
+        <select id="fin-novo-forma">
+          <option value="pix">PIX</option>
+          <option value="cartao">Cartão</option>
+          <option value="dinheiro">Dinheiro</option>
+          <option value="transferencia">Transferência</option>
+          <option value="boleto">Boleto</option>
+          <option value="outro">Outro</option>
+        </select>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:20px;">
+        <button onclick="fecharModalNovaDespesa()" class="btn-outline" style="flex:1;">Cancelar</button>
+        <button onclick="salvarNovoLancamentoFinanceiro()" id="btn-salvar-lancamento" style="flex:2;"><i class="fa-solid fa-check"></i> Salvar Lançamento</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts Administrativos Completos -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase.js?v=3.0.0"></script>
+  <script src="js/app.js?v=3.0.0"></script>
+  <script src="js/auth.js?v=3.0.0"></script>
+  <script src="js/produtos.js?v=3.0.0"></script>
+  <script src="js/pedidos.js?v=3.0.0"></script>
+  <script src="js/estoque.js?v=3.0.0"></script>
+  <script src="js/fichatecnica.js?v=3.0.0"></script>
+  <script src="js/financeiro.js?v=3.0.0"></script>
+  <script src="js/admin.js?v=3.0.0"></script>
+
+  <script>
+    async function inicializarAdminStandalone() {
+      const guard = document.getElementById('admin-guard-container');
+      const main = document.getElementById('admin-main-content');
+      const badge = document.getElementById('admin-user-badge');
+
+      try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session || !session.user) {
+          window.location.href = 'index.html';
+          return;
+        }
+
+        await carregarPerfilUsuario(session.user);
+
+        if (!usuarioAtual || (usuarioAtual.nivel !== 'admin' && usuarioAtual.nivel !== 'operador')) {
+          alert('Acesso negado: sua conta não possui privilégios de operador ou administrador.');
+          window.location.href = 'index.html';
+          return;
+        }
+
+        if (badge) {
+          badge.innerText = `${usuarioAtual.nome} (${usuarioAtual.nivel === 'admin' ? 'Administrador' : 'Operador'})`;
+        }
+
+        guard.style.display = 'none';
+        main.style.display = 'block';
+
+        if (typeof carregarProdutosServidor === 'function') await carregarProdutosServidor();
+        if (typeof configurarAcessoAdminPorNivel === 'function') configurarAcessoAdminPorNivel();
+        if (typeof carregarPedidosAdmin === 'function') carregarPedidosAdmin();
+        if (typeof renderizarProdutosAdmin === 'function') renderizarProdutosAdmin();
+      } catch (err) {
+        console.error('Erro na autorização do painel:', err);
+        alert('Erro ao validar acesso: ' + err.message);
+        window.location.href = 'index.html';
+      }
+    }
+
+    async function fazerLogoutAdminStandalone() {
+      await supabaseClient.auth.signOut();
+      window.location.href = 'index.html';
+    }
+
+    window.addEventListener('DOMContentLoaded', inicializarAdminStandalone);
+  </script>
+</body>
+</html>

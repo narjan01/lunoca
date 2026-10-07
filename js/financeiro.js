@@ -125,10 +125,19 @@ function isDataNoPeriodo(dataIso, periodo) {
 function calcularMetricasFinanceiras() {
   let faturamento = 0;
   let despesas = 0;
+  let cmvTotal = 0;
   let totalPix = 0;
   let totalCartao = 0;
   let totalOutro = 0;
   let qtdPedidos = 0;
+
+  // Mapa de custo unitário de ingredientes / CMV por produto
+  const mapaCmv = {};
+  if (typeof produtoCmvGlobal !== 'undefined' && Array.isArray(produtoCmvGlobal)) {
+    for (let c = 0; c < produtoCmvGlobal.length; c++) {
+      mapaCmv[produtoCmvGlobal[c].produto_id] = parseFloat(produtoCmvGlobal[c].cmv_estimado) || 0;
+    }
+  }
 
   // Processa pedidos confirmados/válidos
   for (let i = 0; i < pedidosGlobal.length; i++) {
@@ -141,6 +150,17 @@ function calcularMetricasFinanceiras() {
     const valor = parseFloat(p.total) || 0;
     faturamento += valor;
     qtdPedidos++;
+
+    // Calcula CMV acumulado a partir dos itens do pedido
+    if (p.itens_json && Array.isArray(p.itens_json)) {
+      for (let k = 0; k < p.itens_json.length; k++) {
+        const it = p.itens_json[k];
+        const prodId = it.id;
+        const qtdIt = parseFloat(it.quantidade) || 1;
+        const custoUnit = mapaCmv[prodId] || 0;
+        cmvTotal += (custoUnit * qtdIt);
+      }
+    }
 
     if (p.pagamento === 'pix') {
       totalPix += valor;
@@ -164,12 +184,17 @@ function calcularMetricasFinanceiras() {
     }
   }
 
-  const lucro = faturamento - despesas;
+  const lucroBruto = faturamento - cmvTotal;
+  const margemBruta = faturamento > 0 ? (lucroBruto / faturamento) * 100 : 0;
+  const lucro = faturamento - despesas - cmvTotal;
   const ticketMedio = qtdPedidos > 0 ? faturamento / qtdPedidos : 0;
   const margem = faturamento > 0 ? (lucro / faturamento) * 100 : 0;
 
   financeiroResumo = {
     faturamento,
+    cmvTotal,
+    lucroBruto,
+    margemBruta,
     despesas,
     lucro,
     ticketMedio,
@@ -303,13 +328,23 @@ function renderizarDRE() {
           <span>(+) Receita Bruta de Vendas</span>
           <span style="color:#059669;">R$ ${financeiroResumo.faturamento.toFixed(2).replace('.', ',')}</span>
         </div>
+        ${financeiroResumo.cmvTotal > 0 ? `
+        <div style="display:flex; justify-content:space-between; font-size:12px; color:#b91c1c; margin-top:4px;">
+          <span>(-) CMV Estimado dos Doces (Insumos da Ficha Técnica)</span>
+          <span>- R$ ${financeiroResumo.cmvTotal.toFixed(2).replace('.', ',')}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:12.5px; font-weight:700; color:#1e293b; margin-top:6px; background:#f8fafc; padding:4px 8px; border-radius:6px;">
+          <span>(=) Lucro Bruto Real (Margem: ${financeiroResumo.margemBruta.toFixed(1)}%)</span>
+          <span style="color:${financeiroResumo.lucroBruto >= 0 ? '#059669' : '#dc2626'};">R$ ${financeiroResumo.lucroBruto.toFixed(2).replace('.', ',')}</span>
+        </div>
+        ` : ''}
       </div>
 
       <div style="border-bottom:1px solid #f1f5f9; padding-bottom:8px; margin-bottom:8px;">
         <div style="font-size:12px; font-weight:bold; color:#475569; margin-bottom:4px;">Custos e Despesas Operacionais:</div>
         ${htmlDespesas}
         <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:bold; color:#b91c1c; margin-top:6px;">
-          <span>Total de Saídas</span>
+          <span>Total de Despesas Fixas/Variáveis</span>
           <span>- R$ ${financeiroResumo.despesas.toFixed(2).replace('.', ',')}</span>
         </div>
       </div>
