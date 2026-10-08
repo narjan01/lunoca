@@ -145,8 +145,8 @@ export async function onRequestPost(context) {
 
     const payment = await payRes.json();
 
-    // 3. Se aprovado, executa confirmação atômica no Supabase
-    if (payment.status === 'approved' && payment.external_reference) {
+    // 3. Se aprovado ou estornado/contestado, executa processamento atômico no Supabase
+    if (['approved', 'refunded', 'charged_back'].includes(payment.status) && payment.external_reference) {
       const orderId = payment.external_reference;
       const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
       const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
@@ -161,7 +161,7 @@ export async function onRequestPost(context) {
         });
       }
 
-      // Invoca a RPC atômica que confirma pedido, baixa estoque de todos os itens e credita no financeiro
+      // Invoca a RPC atômica que confirma pedido (approved) ou estorna pagamento (refunded / charged_back)
       const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/confirmar_pagamento_pedido`, {
         method: 'POST',
         headers: {
@@ -181,7 +181,7 @@ export async function onRequestPost(context) {
 
       if (!rpcRes.ok) {
         const errDetails = await rpcRes.text();
-        console.error(`[Webhook] Falha na RPC confirmar_pagamento_pedido para Pedido #${orderId}:`, errDetails);
+        console.error(`[Webhook] Falha na RPC confirmar_pagamento_pedido para Pedido #${orderId} (status: ${payment.status}):`, errDetails);
         // Retorna HTTP 500 para que o Mercado Pago faça retry com backoff exponencial
         return new Response(JSON.stringify({
           error: 'Erro no processamento da transação atômica.',
@@ -193,7 +193,7 @@ export async function onRequestPost(context) {
       }
 
       const rpcResult = await rpcRes.json();
-      console.log(`[Webhook] Pedido #${orderId} confirmado atomicamente:`, rpcResult);
+      console.log(`[Webhook] Pedido #${orderId} processado atomicamente (${payment.status}):`, rpcResult);
     }
 
     return new Response(JSON.stringify({ received: true }), {

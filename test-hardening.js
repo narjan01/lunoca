@@ -1219,6 +1219,78 @@ for (const file of etapa1Files) {
   console.log(`    ✅ ${file}: service_role devidamente autorizado em is_admin e is_admin_or_operator.`);
 }
 
+// 10.16 Lançamento Contábil Compensatório no DRE/Financeiro e RPC estornar_pagamento_pedido
+console.log('\n  🔎 10.16 Verificando lançamento contábil compensatório no DRE e RPC estornar_pagamento_pedido...');
+for (const file of etapa1Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes("OLD.status = 'aprovado' AND NEW.status = 'estornado'") &&
+    content.includes("'despesa'") &&
+    content.includes("'Estornos'"),
+    `[FALHA] ${file} não gera lançamento contábil compensatório de despesa/Estornos ao estornar pagamento aprovado!`
+  );
+  assert.ok(
+    content.includes('FUNCTION public.estornar_pagamento_pedido(') &&
+    content.includes('REVOKE ALL ON FUNCTION public.estornar_pagamento_pedido') &&
+    content.includes('GRANT EXECUTE ON FUNCTION public.estornar_pagamento_pedido(BIGINT, TEXT) TO authenticated, service_role;'),
+    `[FALHA] ${file} não implementa RPC estornar_pagamento_pedido com autorização estrita!`
+  );
+  console.log(`    ✅ ${file}: Lançamento compensatório no DRE e RPC estornar_pagamento_pedido auditáveis.`);
+}
+
+// 10.17 Idempotência no Provedor e Suporte a Estornos de Gateway no Webhook
+console.log('\n  🔎 10.17 Verificando idempotência do gateway em pedido_pagamentos e suporte a estornos no webhook...');
+for (const file of etapa1Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('idx_pedido_pagamentos_provider_unique') &&
+    content.includes('ON CONFLICT (provider, provider_payment_id)'),
+    `[FALHA] ${file} não implementa índice único e tratamento ON CONFLICT para provider_payment_id!`
+  );
+  assert.ok(
+    content.includes("IN ('refunded', 'charged_back')"),
+    `[FALHA] ${file} não implementa tratamento de estorno/contestação do gateway em confirmar_pagamento_pedido!`
+  );
+  console.log(`    ✅ ${file}: Idempotência por provider_payment_id e suporte a refunded/charged_back ativos.`);
+}
+
+const mpWebhookContent = fs.readFileSync('functions/api/mercadopago/webhook.js', 'utf-8');
+assert.ok(
+  mpWebhookContent.includes("'approved'") &&
+  mpWebhookContent.includes("'refunded'") &&
+  mpWebhookContent.includes("'charged_back'"),
+  '[FALHA] functions/api/mercadopago/webhook.js não propaga eventos de estorno (refunded/charged_back) para confirmar_pagamento_pedido!'
+);
+console.log('    ✅ functions/api/mercadopago/webhook.js: Webhook configurado para processar aprovações e estornos.');
+
+// 10.18 Isolamento e Compatibilidade Rigorosa Produto x Opção
+console.log('\n  🔎 10.18 Verificando integridade e compatibilidade produto x opção...');
+for (const file of etapa1Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('produto_id BIGINT NOT NULL REFERENCES public.produtos(id)') &&
+    content.includes('CONSTRAINT uq_produto_opcao UNIQUE (produto_id, nome)'),
+    `[FALHA] ${file} não implementa chave estrangeira NOT NULL ou unicidade de nome por produto em produto_opcoes!`
+  );
+  assert.ok(
+    content.includes('position(LOWER(TRIM(v_opcao_nome)) IN LOWER(v_prod.opcoes))') &&
+    content.includes('CONTINUE;'),
+    `[FALHA] ${file} não descarta opções espúrias não associadas ao produto em criar_pedido!`
+  );
+  console.log(`    ✅ ${file}: Catálogo produto_opcoes com constraints estritas e sanitização em criar_pedido.`);
+}
+
+// 10.19 Desacoplamento de service_role e Fallback Seguro
+console.log('\n  🔎 10.19 Verificando desacoplamento de service_role em RPCs financeiras...');
+for (const file of etapa1Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes("v_user_nome := 'Sistema / service_role';"),
+    `[FALHA] ${file} não implementa fallback de auditoria para service_role quando auth.uid() é nulo!`
+  );
+  console.log(`    ✅ ${file}: service_role desacoplado de dependência de profile de usuário.`);
+}
+
 console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas atualmente definidas nas Fases 1–10 foram aprovadas.');
 
 

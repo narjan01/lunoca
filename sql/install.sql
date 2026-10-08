@@ -186,12 +186,15 @@ CREATE INDEX IF NOT EXISTS idx_pedido_itens_produto_id ON public.pedido_itens(pr
 -- 2.3.1.5. Catálogo Oficial de Opções e Adicionais de Produtos (Garantia Anti-Preço Inventado)
 CREATE TABLE IF NOT EXISTS public.produto_opcoes (
   id BIGSERIAL PRIMARY KEY,
-  produto_id BIGINT REFERENCES public.produtos(id) ON DELETE CASCADE,
+  produto_id BIGINT NOT NULL REFERENCES public.produtos(id) ON DELETE CASCADE,
   categoria TEXT NOT NULL CHECK (categoria IN ('tamanho', 'massa', 'recheio', 'decoracao', 'adicional', 'outro')),
   nome TEXT NOT NULL,
   preco_adicional NUMERIC(10,2) NOT NULL DEFAULT 0.00 CHECK (preco_adicional >= 0),
+  obrigatorio BOOLEAN DEFAULT false,
   ativo BOOLEAN DEFAULT true,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  ordem INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT uq_produto_opcao UNIQUE (produto_id, nome)
 );
 
 CREATE INDEX IF NOT EXISTS idx_produto_opcoes_produto_id ON public.produto_opcoes(produto_id);
@@ -225,6 +228,9 @@ CREATE TABLE IF NOT EXISTS public.pedido_pagamentos (
 );
 
 CREATE INDEX IF NOT EXISTS idx_pedido_pagamentos_pedido_id ON public.pedido_pagamentos(pedido_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pedido_pagamentos_provider_unique 
+  ON public.pedido_pagamentos(provider, provider_payment_id) 
+  WHERE provider_payment_id IS NOT NULL AND provider_payment_id NOT LIKE 'manual_%';
 
 -- 2.3.4 Auditoria e Histórico de Status (Etapa 1 Confectionery OS)
 CREATE TABLE IF NOT EXISTS public.pedido_status_historico (
@@ -495,6 +501,29 @@ BEGIN
     status_financeiro = v_novo_status_fin,
     updated_at = NOW()
   WHERE id = v_ped_id;
+
+  -- Lançamento contábil compensatório no financeiro ao estornar pagamento aprovado
+  IF TG_OP = 'UPDATE' AND OLD.status = 'aprovado' AND NEW.status = 'estornado' THEN
+    INSERT INTO public.financeiro_lancamentos (
+      tipo,
+      categoria,
+      descricao,
+      valor,
+      data_lancamento,
+      forma_pagamento,
+      pedido_id,
+      observacoes
+    ) VALUES (
+      'despesa',
+      'Estornos',
+      'Estorno de Pagamento #' || NEW.id || ' do Pedido #' || v_ped_id || ' (' || upper(NEW.metodo) || ')',
+      NEW.valor,
+      CURRENT_DATE,
+      NEW.metodo,
+      v_ped_id,
+      'Estorno financeiro contábil automático via pedido_pagamentos #' || NEW.id
+    );
+  END IF;
 
   -- Se o status financeiro mudou, registrar automaticamente na auditoria de histórico
   IF v_status_fin_antigo IS DISTINCT FROM v_novo_status_fin THEN
@@ -845,7 +874,7 @@ BEGIN
     v_prod_id := v_item.produto_id;
     v_qtd := v_item.quantidade;
 
-    SELECT id, nome, preco, estoque_fisico, estoque_reservado, controlar_estoque 
+    SELECT id, nome, preco, opcoes, estoque_fisico, estoque_reservado, controlar_estoque 
     INTO v_prod
     FROM public.produtos
     WHERE id = v_prod_id;
@@ -892,8 +921,14 @@ BEGIN
         LIMIT 1;
 
         IF NOT FOUND THEN
-          v_preco_opcao_real := 0.00;
-          v_tipo_opcao := COALESCE(v_opcao->>'tipo', 'outro');
+          -- Validação rigorosa: se a opção não pertence ao catálogo deste produto, verifica se é variante gratuita em produtos.opcoes
+          IF v_prod.opcoes IS NOT NULL AND position(LOWER(TRIM(v_opcao_nome)) IN LOWER(v_prod.opcoes)) > 0 THEN
+            v_preco_opcao_real := 0.00;
+            v_tipo_opcao := 'outro';
+          ELSE
+            -- Opção incompatível/não autorizada para este produto: descarta tentativa de associação indevida
+            CONTINUE;
+          END IF;
         END IF;
 
         INSERT INTO public.pedido_item_opcoes (
@@ -1015,6 +1050,56 @@ BEGIN
     RETURN json_build_object('success', false, 'error', 'ID do pedido não informado.');
   END IF;
 
+  -- Tratamento de estorno / contestação recebido do gateway (refunded / charged_back)
+  IF LOWER(COALESCE(p_status, '')) IN ('refunded', 'charged_back') THEN
+    SELECT * INTO v_pedido
+    FROM public.pedidos
+    WHERE id = p_pedido_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+      RETURN json_build_object('success', false, 'error', 'Pedido não encontrado no banco de dados.');
+    END IF;
+
+    -- Atualiza status em pedido_pagamentos (o trigger recalcular_financeiro_pedido lançará a despesa de Estorno e atualizará saldo/status_financeiro)
+    UPDATE public.pedido_pagamentos
+    SET 
+      status = 'estornado',
+      observacoes = COALESCE(observacoes, '') || ' [Estorno via ' || COALESCE(p_origem, 'gateway') || ' status: ' || p_status || ' em ' || NOW()::TEXT || ']'
+    WHERE pedido_id = p_pedido_id 
+      AND (provider_payment_id = p_mercado_pago_payment_id OR (p_mercado_pago_payment_id IS NULL AND provider = 'mercadopago'))
+      AND status = 'aprovado';
+
+    UPDATE public.pedidos
+    SET 
+      mercado_pago_status = p_status,
+      updated_at = NOW()
+    WHERE id = p_pedido_id;
+
+    INSERT INTO public.pedido_status_historico (
+      pedido_id,
+      dimensao,
+      status_anterior,
+      status_novo,
+      origem,
+      metadata
+    ) VALUES (
+      p_pedido_id,
+      'financeiro',
+      v_pedido.status_financeiro,
+      'estornado',
+      'webhook_mercadopago',
+      jsonb_build_object('provider_payment_id', p_mercado_pago_payment_id, 'status', p_status, 'origem', p_origem)
+    );
+
+    RETURN json_build_object(
+      'success', true,
+      'message', 'Estorno processado com sucesso pelo gateway.',
+      'pedido_id', p_pedido_id,
+      'status_gateway', p_status
+    );
+  END IF;
+
   -- Validação estrita de status: somente pagamentos aprovados podem confirmar pedidos
   IF COALESCE(p_mercado_pago_payment_id, '') <> 'admin_manual'
      AND LOWER(COALESCE(p_status, '')) <> 'approved'
@@ -1022,7 +1107,7 @@ BEGIN
     RETURN json_build_object('success', false, 'error', 'Somente pagamentos aprovados podem confirmar pedidos.');
   END IF;
 
-  -- 7.1. Idempotência por Provider ID
+  -- 7.1. Idempotência por Provider ID em pagamentos_processados
   IF p_mercado_pago_payment_id IS NOT NULL AND p_mercado_pago_payment_id <> '' AND p_mercado_pago_payment_id <> 'admin_manual' THEN
     IF EXISTS (
       SELECT 1 FROM public.pagamentos_processados
@@ -1068,6 +1153,21 @@ BEGIN
     );
   END IF;
 
+  -- Idempotência por Provider ID em pedido_pagamentos
+  IF p_mercado_pago_payment_id IS NOT NULL AND p_mercado_pago_payment_id <> '' AND p_mercado_pago_payment_id <> 'admin_manual' THEN
+    IF EXISTS (
+      SELECT 1 FROM public.pedido_pagamentos
+      WHERE provider = 'mercadopago' AND provider_payment_id = p_mercado_pago_payment_id
+    ) THEN
+      RETURN json_build_object(
+        'success', true,
+        'message', 'Pagamento já processado anteriormente em pedido_pagamentos (idempotência confirmada).',
+        'pedido_id', p_pedido_id,
+        'payment_id', p_mercado_pago_payment_id
+      );
+    END IF;
+  END IF;
+
   -- 7.4. Registrar na tabela canônica pedido_pagamentos (dispara recálculo financeiro atômico)
   INSERT INTO public.pedido_pagamentos (
     pedido_id,
@@ -1087,11 +1187,12 @@ BEGIN
       ELSE 'pix'
     END,
     CASE WHEN p_mercado_pago_payment_id = 'admin_manual' THEN 'manual' ELSE 'mercadopago' END,
-    p_mercado_pago_payment_id,
+    CASE WHEN p_mercado_pago_payment_id = 'admin_manual' THEN 'manual_' || p_pedido_id || '_' || extract(epoch from now())::bigint ELSE p_mercado_pago_payment_id END,
     'aprovado',
     NOW(),
     'Confirmação de pagamento via ' || COALESCE(p_origem, 'gateway')
-  );
+  )
+  ON CONFLICT (provider, provider_payment_id) WHERE provider_payment_id IS NOT NULL AND provider_payment_id NOT LIKE 'manual_%' DO NOTHING;
 
   -- 7.5. Atualiza dados comerciais e de gateway no pedido
   UPDATE public.pedidos
@@ -1780,6 +1881,66 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
 REVOKE ALL ON FUNCTION public.registrar_pagamento_pedido(BIGINT, NUMERIC, TEXT, TEXT, TEXT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.registrar_pagamento_pedido(BIGINT, NUMERIC, TEXT, TEXT, TEXT) TO authenticated, service_role;
+
+-- 9.1. RPC para Estorno Auditável de Pagamentos
+CREATE OR REPLACE FUNCTION public.estornar_pagamento_pedido(
+  p_pagamento_id BIGINT,
+  p_motivo TEXT DEFAULT NULL
+)
+RETURNS JSON AS $$
+DECLARE
+  v_pag RECORD;
+  v_user_nome TEXT;
+BEGIN
+  -- Autorização estrita: anon -> NÃO, cliente -> NÃO, operador/admin/service_role -> SIM
+  IF NOT public.is_admin_or_operator() THEN
+    RETURN json_build_object('success', false, 'error', 'Permissão negada. Apenas administradores ou operadores podem estornar pagamentos.');
+  END IF;
+
+  IF p_pagamento_id IS NULL THEN
+    RETURN json_build_object('success', false, 'error', 'ID do pagamento não informado.');
+  END IF;
+
+  SELECT * INTO v_pag FROM public.pedido_pagamentos WHERE id = p_pagamento_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN json_build_object('success', false, 'error', 'Pagamento não encontrado.');
+  END IF;
+
+  -- Idempotência: se já estornado, retorna sucesso sem duplicar lançamentos
+  IF v_pag.status = 'estornado' THEN
+    RETURN json_build_object(
+      'success', true,
+      'message', 'Pagamento já se encontra estornado.',
+      'pagamento_id', p_pagamento_id,
+      'pedido_id', v_pag.pedido_id
+    );
+  END IF;
+
+  SELECT nome INTO v_user_nome FROM public.profiles WHERE id = auth.uid();
+  IF v_user_nome IS NULL AND auth.role() = 'service_role' THEN
+    v_user_nome := 'Sistema / service_role';
+  END IF;
+
+  -- A alteração de status para 'estornado' dispara automaticamente o trigger recalcular_financeiro_pedido,
+  -- que ajusta o saldo, transiciona status_financeiro e cria o lançamento compensatório em financeiro_lancamentos.
+  UPDATE public.pedido_pagamentos
+  SET 
+    status = 'estornado',
+    observacoes = COALESCE(observacoes, '') || ' [Estornado por ' || COALESCE(v_user_nome, 'Admin') || ' em ' || NOW()::TEXT || ': ' || COALESCE(p_motivo, 'Sem motivo informado') || ']'
+  WHERE id = p_pagamento_id;
+
+  RETURN json_build_object(
+    'success', true,
+    'message', 'Pagamento estornado com sucesso.',
+    'pagamento_id', p_pagamento_id,
+    'pedido_id', v_pag.pedido_id,
+    'valor', v_pag.valor
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+
+REVOKE ALL ON FUNCTION public.estornar_pagamento_pedido(BIGINT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.estornar_pagamento_pedido(BIGINT, TEXT) TO authenticated, service_role;
 
 -- RPC Segura para Transições Operacionais de Pedidos por Operadores/Admins (Compatibilidade Legada)
 CREATE OR REPLACE FUNCTION public.alterar_status_operacional_pedido(
