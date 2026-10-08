@@ -997,7 +997,11 @@ for (const file of etapa1Files) {
     content.includes('saldo_vencimento') && content.includes('hora_entrega'),
     `[FALHA] ${file} não contém campos operacionais saldo_vencimento ou hora_entrega!`
   );
-  console.log(`    ✅ ${file}: Estrutura multidimensional de pedidos devidamente modelada.`);
+  assert.ok(
+    content.includes('possui_estorno') && content.includes('idx_pedidos_possui_estorno'),
+    `[FALHA] ${file} não contém coluna de flag e índice possui_estorno em public.pedidos!`
+  );
+  console.log(`    ✅ ${file}: Estrutura multidimensional e flags operacionais (possui_estorno) devidamente modeladas.`);
 }
 
 // 10.2 Expansão da Tabela Canônica pedido_itens
@@ -1220,7 +1224,7 @@ for (const file of etapa1Files) {
 }
 
 // 10.16 Lançamento Contábil Compensatório no DRE/Financeiro e RPC estornar_pagamento_pedido
-console.log('\n  🔎 10.16 Verificando lançamento contábil compensatório no DRE e RPC estornar_pagamento_pedido...');
+console.log('\n  🔎 10.16 Verificando lançamento contábil compensatório no DRE, idempotência estrutural e RPC estornar_pagamento_pedido...');
 for (const file of etapa1Files) {
   const content = fs.readFileSync(file, 'utf-8');
   assert.ok(
@@ -1230,12 +1234,18 @@ for (const file of etapa1Files) {
     `[FALHA] ${file} não gera lançamento contábil compensatório de despesa/Estornos ao estornar pagamento aprovado!`
   );
   assert.ok(
+    content.includes('uq_financeiro_origem_evento') &&
+    content.includes('origem_tipo') &&
+    content.includes('ON CONFLICT (origem_tipo, origem_id, evento)'),
+    `[FALHA] ${file} não implementa idempotência estrutural no DRE / financeiro_lancamentos!`
+  );
+  assert.ok(
     content.includes('FUNCTION public.estornar_pagamento_pedido(') &&
     content.includes('REVOKE ALL ON FUNCTION public.estornar_pagamento_pedido') &&
     content.includes('GRANT EXECUTE ON FUNCTION public.estornar_pagamento_pedido(BIGINT, TEXT) TO authenticated, service_role;'),
     `[FALHA] ${file} não implementa RPC estornar_pagamento_pedido com autorização estrita!`
   );
-  console.log(`    ✅ ${file}: Lançamento compensatório no DRE e RPC estornar_pagamento_pedido auditáveis.`);
+  console.log(`    ✅ ${file}: Lançamento compensatório no DRE, idempotência estrutural e RPC estornar_pagamento_pedido auditáveis.`);
 }
 
 // 10.17 Idempotência no Provedor e Suporte a Estornos de Gateway no Webhook
@@ -1244,14 +1254,14 @@ for (const file of etapa1Files) {
   const content = fs.readFileSync(file, 'utf-8');
   assert.ok(
     content.includes('idx_pedido_pagamentos_provider_unique') &&
-    content.includes('ON CONFLICT (provider, provider_payment_id)'),
-    `[FALHA] ${file} não implementa índice único e tratamento ON CONFLICT para provider_payment_id!`
+    content.includes('ON CONFLICT (provider, provider_payment_id) WHERE provider_payment_id IS NOT NULL DO NOTHING'),
+    `[FALHA] ${file} não implementa índice único e tratamento ON CONFLICT simplificado para provider_payment_id!`
   );
   assert.ok(
     content.includes("IN ('refunded', 'charged_back')"),
     `[FALHA] ${file} não implementa tratamento de estorno/contestação do gateway em confirmar_pagamento_pedido!`
   );
-  console.log(`    ✅ ${file}: Idempotência por provider_payment_id e suporte a refunded/charged_back ativos.`);
+  console.log(`    ✅ ${file}: Idempotência simplificada por provider_payment_id e suporte a refunded/charged_back ativos.`);
 }
 
 const mpWebhookContent = fs.readFileSync('functions/api/mercadopago/webhook.js', 'utf-8');
@@ -1264,7 +1274,7 @@ assert.ok(
 console.log('    ✅ functions/api/mercadopago/webhook.js: Webhook configurado para processar aprovações e estornos.');
 
 // 10.18 Isolamento e Compatibilidade Rigorosa Produto x Opção
-console.log('\n  🔎 10.18 Verificando integridade e compatibilidade produto x opção...');
+console.log('\n  🔎 10.18 Verificando integridade e compatibilidade produto x opção com Fail-Closed...');
 for (const file of etapa1Files) {
   const content = fs.readFileSync(file, 'utf-8');
   assert.ok(
@@ -1273,11 +1283,11 @@ for (const file of etapa1Files) {
     `[FALHA] ${file} não implementa chave estrangeira NOT NULL ou unicidade de nome por produto em produto_opcoes!`
   );
   assert.ok(
-    content.includes('position(LOWER(TRIM(v_opcao_nome)) IN LOWER(v_prod.opcoes))') &&
-    content.includes('CONTINUE;'),
-    `[FALHA] ${file} não descarta opções espúrias não associadas ao produto em criar_pedido!`
+    content.includes('INVALID_PRODUCT_OPTION') &&
+    content.includes("RAISE EXCEPTION 'Opção % não é válida para o produto %'"),
+    `[FALHA] ${file} não rejeita com fail-closed (INVALID_PRODUCT_OPTION / RAISE EXCEPTION) opções não autorizadas em criar_pedido!`
   );
-  console.log(`    ✅ ${file}: Catálogo produto_opcoes com constraints estritas e sanitização em criar_pedido.`);
+  console.log(`    ✅ ${file}: Catálogo produto_opcoes com constraints estritas e fail-closed absoluto em criar_pedido.`);
 }
 
 // 10.19 Desacoplamento de service_role e Fallback Seguro

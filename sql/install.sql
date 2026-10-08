@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS public.pedidos (
   endereco_entrega TEXT NOT NULL,
   observacoes_cliente TEXT,
   observacoes_internas TEXT,
+  possui_estorno BOOLEAN NOT NULL DEFAULT false,
   mercado_pago_status TEXT,
   mercado_pago_id TEXT,
   whatsapp_notificado BOOLEAN DEFAULT false,
@@ -155,12 +156,14 @@ ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS saldo_vencimento DATE;
 ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS hora_entrega TIME;
 ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS observacoes_cliente TEXT;
 ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS observacoes_internas TEXT;
+ALTER TABLE public.pedidos ADD COLUMN IF NOT EXISTS possui_estorno BOOLEAN NOT NULL DEFAULT false;
 
 CREATE INDEX IF NOT EXISTS idx_pedidos_checkout_token ON public.pedidos(checkout_token);
 CREATE INDEX IF NOT EXISTS idx_pedidos_status_comercial ON public.pedidos(status_comercial);
 CREATE INDEX IF NOT EXISTS idx_pedidos_status_financeiro ON public.pedidos(status_financeiro);
 CREATE INDEX IF NOT EXISTS idx_pedidos_status_operacional ON public.pedidos(status_operacional);
 CREATE INDEX IF NOT EXISTS idx_pedidos_canal ON public.pedidos(canal);
+CREATE INDEX IF NOT EXISTS idx_pedidos_possui_estorno ON public.pedidos(possui_estorno);
 
 -- 2.3.1 Tabela Canônica de Itens do Pedido (Audit 5 & Etapa 1)
 CREATE TABLE IF NOT EXISTS public.pedido_itens (
@@ -230,7 +233,7 @@ CREATE TABLE IF NOT EXISTS public.pedido_pagamentos (
 CREATE INDEX IF NOT EXISTS idx_pedido_pagamentos_pedido_id ON public.pedido_pagamentos(pedido_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pedido_pagamentos_provider_unique 
   ON public.pedido_pagamentos(provider, provider_payment_id) 
-  WHERE provider_payment_id IS NOT NULL AND provider_payment_id NOT LIKE 'manual_%';
+  WHERE provider_payment_id IS NOT NULL;
 
 -- 2.3.4 Auditoria e Histórico de Status (Etapa 1 Confectionery OS)
 CREATE TABLE IF NOT EXISTS public.pedido_status_historico (
@@ -263,7 +266,7 @@ CREATE TABLE IF NOT EXISTS public.estoque_movimentacoes (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2.5 Lançamentos Financeiros (Fluxo de Caixa)
+-- 2.5 Lançamentos Financeiros (Fluxo de Caixa com Idempotência Estrutural no DRE)
 CREATE TABLE IF NOT EXISTS public.financeiro_lancamentos (
   id BIGSERIAL PRIMARY KEY,
   tipo TEXT CHECK (tipo IN ('receita', 'despesa')) NOT NULL,
@@ -273,10 +276,21 @@ CREATE TABLE IF NOT EXISTS public.financeiro_lancamentos (
   data_lancamento DATE DEFAULT CURRENT_DATE,
   forma_pagamento TEXT CHECK (forma_pagamento IN ('pix', 'cartao', 'dinheiro', 'transferencia', 'boleto', 'outro')) DEFAULT 'pix',
   pedido_id BIGINT REFERENCES public.pedidos(id) ON DELETE SET NULL,
+  origem_tipo TEXT DEFAULT 'manual',
+  origem_id BIGINT,
+  evento TEXT,
   comprovante_url TEXT,
   observacoes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE public.financeiro_lancamentos ADD COLUMN IF NOT EXISTS origem_tipo TEXT DEFAULT 'manual';
+ALTER TABLE public.financeiro_lancamentos ADD COLUMN IF NOT EXISTS origem_id BIGINT;
+ALTER TABLE public.financeiro_lancamentos ADD COLUMN IF NOT EXISTS evento TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_financeiro_origem_evento
+  ON public.financeiro_lancamentos(origem_tipo, origem_id, evento)
+  WHERE origem_id IS NOT NULL AND evento IS NOT NULL;
 
 -- ==========================================================================
 -- 3. ÍNDICES DE PERFORMANCE
@@ -499,10 +513,11 @@ BEGIN
     valor_pago = v_pago,
     saldo = v_saldo,
     status_financeiro = v_novo_status_fin,
+    possui_estorno = v_tem_estorno,
     updated_at = NOW()
   WHERE id = v_ped_id;
 
-  -- Lançamento contábil compensatório no financeiro ao estornar pagamento aprovado
+  -- Lançamento contábil compensatório no financeiro ao estornar pagamento aprovado (idempotência estrutural garantida)
   IF TG_OP = 'UPDATE' AND OLD.status = 'aprovado' AND NEW.status = 'estornado' THEN
     INSERT INTO public.financeiro_lancamentos (
       tipo,
@@ -512,6 +527,9 @@ BEGIN
       data_lancamento,
       forma_pagamento,
       pedido_id,
+      origem_tipo,
+      origem_id,
+      evento,
       observacoes
     ) VALUES (
       'despesa',
@@ -521,8 +539,12 @@ BEGIN
       CURRENT_DATE,
       NEW.metodo,
       v_ped_id,
+      'pedido_pagamento',
+      NEW.id,
+      'estorno',
       'Estorno financeiro contábil automático via pedido_pagamentos #' || NEW.id
-    );
+    )
+    ON CONFLICT (origem_tipo, origem_id, evento) WHERE origem_id IS NOT NULL AND evento IS NOT NULL DO NOTHING;
   END IF;
 
   -- Se o status financeiro mudou, registrar automaticamente na auditoria de histórico
@@ -762,7 +784,7 @@ BEGIN
     END IF;
 
     -- Bloqueio pessimista por linha do produto
-    SELECT id, nome, preco, ativo, estoque_fisico, estoque_reservado, controlar_estoque 
+    SELECT id, nome, preco, ativo, opcoes, estoque_fisico, estoque_reservado, controlar_estoque 
     INTO v_prod
     FROM public.produtos
     WHERE id = v_prod_id
@@ -783,6 +805,41 @@ BEGIN
         );
       END IF;
     END IF;
+
+    -- Pré-validação estrita das opções com Fail-Closed (Anti-spoofing e integridade de produção)
+    FOR v_opcao IN 
+      SELECT value 
+      FROM jsonb_array_elements(p_itens) elem,
+           jsonb_array_elements(CASE WHEN jsonb_typeof(elem->'opcoes') = 'array' THEN elem->'opcoes' ELSE '[]'::jsonb END) value
+      WHERE (elem->>'id')::BIGINT = v_prod_id
+    LOOP
+      v_opcao_nome := TRIM(COALESCE(v_opcao->>'nome', v_opcao->>'opcao_nome', ''));
+      IF v_opcao_nome <> '' THEN
+        SELECT COALESCE(preco_adicional, 0.00), categoria
+        INTO v_preco_opcao_real, v_tipo_opcao
+        FROM public.produto_opcoes
+        WHERE produto_id = v_prod.id AND LOWER(TRIM(nome)) = LOWER(TRIM(v_opcao_nome)) AND ativo = true
+        LIMIT 1;
+
+        IF NOT FOUND THEN
+          -- Compatibilidade legada com produtos.opcoes
+          IF v_prod.opcoes IS NOT NULL AND position(LOWER(TRIM(v_opcao_nome)) IN LOWER(v_prod.opcoes)) > 0 THEN
+            v_preco_opcao_real := 0.00;
+          ELSE
+            -- FAIL-CLOSED: Rejeita antes de criar o pedido para evitar que a cozinha produza item divergente do solicitado
+            RETURN json_build_object(
+              'success', false,
+              'code', 'INVALID_PRODUCT_OPTION',
+              'error', 'A opção "' || v_opcao_nome || '" não é válida para o item "' || v_prod.nome || '". Por favor, selecione as opções disponíveis no cardápio.',
+              'produto_id', v_prod.id,
+              'opcao', v_opcao_nome
+            );
+          END IF;
+        END IF;
+
+        v_total := v_total + (v_preco_opcao_real * v_qtd);
+      END IF;
+    END LOOP;
 
     v_total := v_total + (v_prod.preco * v_qtd);
     v_nomes_itens := array_append(v_nomes_itens, v_qtd || 'x ' || v_prod.nome);
@@ -921,13 +978,12 @@ BEGIN
         LIMIT 1;
 
         IF NOT FOUND THEN
-          -- Validação rigorosa: se a opção não pertence ao catálogo deste produto, verifica se é variante gratuita em produtos.opcoes
+          -- Compatibilidade legada com produtos.opcoes
           IF v_prod.opcoes IS NOT NULL AND position(LOWER(TRIM(v_opcao_nome)) IN LOWER(v_prod.opcoes)) > 0 THEN
             v_preco_opcao_real := 0.00;
             v_tipo_opcao := 'outro';
           ELSE
-            -- Opção incompatível/não autorizada para este produto: descarta tentativa de associação indevida
-            CONTINUE;
+            RAISE EXCEPTION 'Opção % não é válida para o produto %', v_opcao_nome, v_prod.nome;
           END IF;
         END IF;
 
@@ -1187,12 +1243,12 @@ BEGIN
       ELSE 'pix'
     END,
     CASE WHEN p_mercado_pago_payment_id = 'admin_manual' THEN 'manual' ELSE 'mercadopago' END,
-    CASE WHEN p_mercado_pago_payment_id = 'admin_manual' THEN 'manual_' || p_pedido_id || '_' || extract(epoch from now())::bigint ELSE p_mercado_pago_payment_id END,
+    CASE WHEN p_mercado_pago_payment_id = 'admin_manual' THEN NULL ELSE p_mercado_pago_payment_id END,
     'aprovado',
     NOW(),
     'Confirmação de pagamento via ' || COALESCE(p_origem, 'gateway')
   )
-  ON CONFLICT (provider, provider_payment_id) WHERE provider_payment_id IS NOT NULL AND provider_payment_id NOT LIKE 'manual_%' DO NOTHING;
+  ON CONFLICT (provider, provider_payment_id) WHERE provider_payment_id IS NOT NULL DO NOTHING;
 
   -- 7.5. Atualiza dados comerciais e de gateway no pedido
   UPDATE public.pedidos
@@ -1254,36 +1310,38 @@ BEGIN
   -- 7.7. Baixa atômica de insumos da receita (Ficha Técnica)
   PERFORM public.dar_baixa_ingredientes_pedido(p_pedido_id);
 
-  -- 7.8. Registra receita no financeiro com proteção estrita contra duplicidade
-  IF NOT EXISTS (
-    SELECT 1 FROM public.financeiro_lancamentos 
-    WHERE pedido_id = p_pedido_id AND tipo = 'receita'
-  ) THEN
-    INSERT INTO public.financeiro_lancamentos (
-      tipo,
-      categoria,
-      descricao,
-      valor,
-      data_lancamento,
-      forma_pagamento,
-      pedido_id,
-      observacoes
-    ) VALUES (
-      'receita',
-      'Vendas',
-      'Venda do Pedido #' || p_pedido_id || ' (' || v_pedido.nome_cliente || ')',
-      COALESCE(p_valor, v_pedido.total),
-      CURRENT_DATE,
-      COALESCE(p_forma_pagamento, v_pedido.pagamento, 'pix'),
-      p_pedido_id,
-      'Confirmação via ' || COALESCE(p_origem, 'Mercado Pago') ||
-        CASE 
-          WHEN p_mercado_pago_payment_id IS NOT NULL AND p_mercado_pago_payment_id <> '' 
-          THEN ' [ID: ' || p_mercado_pago_payment_id || ']' 
-          ELSE '' 
-        END
-    );
-  END IF;
+  -- 7.8. Registra receita no financeiro com proteção de idempotência estrutural
+  INSERT INTO public.financeiro_lancamentos (
+    tipo,
+    categoria,
+    descricao,
+    valor,
+    data_lancamento,
+    forma_pagamento,
+    pedido_id,
+    origem_tipo,
+    origem_id,
+    evento,
+    observacoes
+  ) VALUES (
+    'receita',
+    'Vendas',
+    'Venda do Pedido #' || p_pedido_id || ' (' || v_pedido.nome_cliente || ')',
+    COALESCE(p_valor, v_pedido.total),
+    CURRENT_DATE,
+    COALESCE(p_forma_pagamento, v_pedido.pagamento, 'pix'),
+    p_pedido_id,
+    'pedido_pagamento',
+    p_pedido_id,
+    'recebimento',
+    'Confirmação via ' || COALESCE(p_origem, 'Mercado Pago') ||
+      CASE 
+        WHEN p_mercado_pago_payment_id IS NOT NULL AND p_mercado_pago_payment_id <> '' 
+        THEN ' [ID: ' || p_mercado_pago_payment_id || ']' 
+        ELSE '' 
+      END
+  )
+  ON CONFLICT (origem_tipo, origem_id, evento) WHERE origem_id IS NOT NULL AND evento IS NOT NULL DO NOTHING;
 
   -- 7.9. Grava registro na tabela de pagamentos processados (idempotência)
   IF p_mercado_pago_payment_id IS NOT NULL AND p_mercado_pago_payment_id <> '' AND p_mercado_pago_payment_id <> 'admin_manual' THEN
@@ -1812,7 +1870,7 @@ BEGIN
     p_valor,
     v_metodo_norm,
     'manual',
-    'manual_' || extract(epoch from now())::bigint || '_' || floor(random() * 1000)::text,
+    NULL,
     'aprovado',
     NOW(),
     auth.uid(),
@@ -1820,7 +1878,7 @@ BEGIN
     p_observacoes
   ) RETURNING id INTO v_pagamento_id;
 
-  -- Lançamento automático no financeiro geral
+  -- Lançamento automático no financeiro geral com idempotência estrutural
   INSERT INTO public.financeiro_lancamentos (
     tipo,
     categoria,
@@ -1829,6 +1887,9 @@ BEGIN
     data_lancamento,
     forma_pagamento,
     pedido_id,
+    origem_tipo,
+    origem_id,
+    evento,
     observacoes
   ) VALUES (
     'receita',
@@ -1838,8 +1899,12 @@ BEGIN
     CURRENT_DATE,
     v_metodo_norm,
     p_pedido_id,
+    'pedido_pagamento',
+    v_pagamento_id,
+    'recebimento',
     p_observacoes
-  );
+  )
+  ON CONFLICT (origem_tipo, origem_id, evento) WHERE origem_id IS NOT NULL AND evento IS NOT NULL DO NOTHING;
 
   -- Registro de histórico auditável
   INSERT INTO public.pedido_status_historico (
