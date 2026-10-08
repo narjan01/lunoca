@@ -183,7 +183,20 @@ CREATE TABLE IF NOT EXISTS public.pedido_itens (
 CREATE INDEX IF NOT EXISTS idx_pedido_itens_pedido_id ON public.pedido_itens(pedido_id);
 CREATE INDEX IF NOT EXISTS idx_pedido_itens_produto_id ON public.pedido_itens(produto_id);
 
--- 2.3.2 Opções e Customizações de Itens (Etapa 1 Confectionery OS)
+-- 2.3.1.5. Catálogo Oficial de Opções e Adicionais de Produtos (Garantia Anti-Preço Inventado)
+CREATE TABLE IF NOT EXISTS public.produto_opcoes (
+  id BIGSERIAL PRIMARY KEY,
+  produto_id BIGINT REFERENCES public.produtos(id) ON DELETE CASCADE,
+  categoria TEXT NOT NULL CHECK (categoria IN ('tamanho', 'massa', 'recheio', 'decoracao', 'adicional', 'outro')),
+  nome TEXT NOT NULL,
+  preco_adicional NUMERIC(10,2) NOT NULL DEFAULT 0.00 CHECK (preco_adicional >= 0),
+  ativo BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_produto_opcoes_produto_id ON public.produto_opcoes(produto_id);
+
+-- 2.3.2 Opções e Customizações de Itens (Snapshots Vinculados ao Pedido - Etapa 1 Confectionery OS)
 CREATE TABLE IF NOT EXISTS public.pedido_item_opcoes (
   id BIGSERIAL PRIMARY KEY,
   pedido_item_id BIGINT NOT NULL REFERENCES public.pedido_itens(id) ON DELETE CASCADE,
@@ -282,6 +295,10 @@ CREATE INDEX IF NOT EXISTS idx_financeiro_tipo ON public.financeiro_lancamentos(
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
+  IF auth.role() = 'service_role' THEN
+    RETURN true;
+  END IF;
+
   RETURN EXISTS (
     SELECT 1 FROM public.profiles
     WHERE id = auth.uid() 
@@ -295,6 +312,10 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 CREATE OR REPLACE FUNCTION public.is_admin_or_operator()
 RETURNS BOOLEAN AS $$
 BEGIN
+  IF auth.role() = 'service_role' THEN
+    RETURN true;
+  END IF;
+
   RETURN EXISTS (
     SELECT 1 FROM public.profiles
     WHERE id = auth.uid() 
@@ -435,17 +456,31 @@ DECLARE
   v_total NUMERIC(10,2);
   v_pago NUMERIC(10,2);
   v_saldo NUMERIC(10,2);
+  v_status_fin_antigo TEXT;
   v_novo_status_fin TEXT;
+  v_tem_estorno BOOLEAN := false;
 BEGIN
-  SELECT total INTO v_total FROM public.pedidos WHERE id = v_ped_id;
+  SELECT total, status_financeiro INTO v_total, v_status_fin_antigo 
+  FROM public.pedidos 
+  WHERE id = v_ped_id;
   
+  -- Soma estritamente pagamentos aprovados
   SELECT COALESCE(SUM(valor), 0) INTO v_pago
   FROM public.pedido_pagamentos
   WHERE pedido_id = v_ped_id AND status = 'aprovado';
 
   v_saldo := GREATEST(0, COALESCE(v_total, 0) - v_pago);
 
-  IF v_pago <= 0 THEN
+  -- Verifica se existem pagamentos com status 'estornado'
+  SELECT EXISTS (
+    SELECT 1 FROM public.pedido_pagamentos 
+    WHERE pedido_id = v_ped_id AND status = 'estornado'
+  ) INTO v_tem_estorno;
+
+  -- Transição determinística do status financeiro
+  IF v_tem_estorno AND v_pago <= 0 THEN
+    v_novo_status_fin := 'estornado';
+  ELSIF v_pago <= 0 THEN
     v_novo_status_fin := 'nao_pago';
   ELSIF v_saldo <= 0 THEN
     v_novo_status_fin := 'pago';
@@ -460,6 +495,32 @@ BEGIN
     status_financeiro = v_novo_status_fin,
     updated_at = NOW()
   WHERE id = v_ped_id;
+
+  -- Se o status financeiro mudou, registrar automaticamente na auditoria de histórico
+  IF v_status_fin_antigo IS DISTINCT FROM v_novo_status_fin THEN
+    INSERT INTO public.pedido_status_historico (
+      pedido_id, dimensao, status_anterior, status_novo, 
+      usuario_id, usuario_nome, origem, metadata
+    ) VALUES (
+      v_ped_id,
+      'financeiro',
+      COALESCE(v_status_fin_antigo, 'nao_pago'),
+      v_novo_status_fin,
+      auth.uid(),
+      'Sistema / Trigger Financeiro',
+      CASE 
+        WHEN auth.role() = 'service_role' THEN 'sistema'
+        WHEN public.is_admin_or_operator() THEN 'admin'
+        ELSE 'sistema'
+      END,
+      jsonb_build_object(
+        'motivo', 'Recálculo automático via pedido_pagamentos',
+        'valor_pago', v_pago,
+        'saldo', v_saldo,
+        'tem_estorno', v_tem_estorno
+      )
+    );
+  END IF;
 
   RETURN NEW;
 END;
@@ -568,6 +629,12 @@ DECLARE
   v_telefone_final TEXT;
   v_fone_limpo TEXT;
   v_fone_normalizado TEXT;
+  v_pedido_item_id BIGINT;
+  v_opcao JSONB;
+  v_opcao_nome TEXT;
+  v_preco_opcao_real NUMERIC(10,2);
+  v_tipo_opcao TEXT;
+  v_adicionais_item NUMERIC(10,2);
 BEGIN
   -- 1. Identificação do Cliente (Usuário Autenticado ou Visitante Convidado)
   IF v_cliente_id IS NOT NULL THEN
@@ -783,6 +850,8 @@ BEGIN
     FROM public.produtos
     WHERE id = v_prod_id;
 
+    v_adicionais_item := 0.00;
+
     -- Inserção canônica de itens com snapshot expandido
     INSERT INTO public.pedido_itens (
       pedido_id,
@@ -804,7 +873,53 @@ BEGIN
       0.00,
       v_prod.preco,
       (v_prod.preco * v_qtd)
-    );
+    ) RETURNING id INTO v_pedido_item_id;
+
+    -- Resolução estrita no servidor das opções da confeitaria (imunidade total a preço inventado)
+    FOR v_opcao IN 
+      SELECT value 
+      FROM jsonb_array_elements(p_itens) elem,
+           jsonb_array_elements(CASE WHEN jsonb_typeof(elem->'opcoes') = 'array' THEN elem->'opcoes' ELSE '[]'::jsonb END) value
+      WHERE (elem->>'id')::BIGINT = v_prod_id
+    LOOP
+      v_opcao_nome := TRIM(COALESCE(v_opcao->>'nome', v_opcao->>'opcao_nome', ''));
+      IF v_opcao_nome <> '' THEN
+        -- O preço da opção NUNCA é lido do payload do cliente! Ele é obtido do catálogo oficial produto_opcoes.
+        SELECT COALESCE(preco_adicional, 0.00), categoria
+        INTO v_preco_opcao_real, v_tipo_opcao
+        FROM public.produto_opcoes
+        WHERE produto_id = v_prod.id AND LOWER(TRIM(nome)) = LOWER(TRIM(v_opcao_nome)) AND ativo = true
+        LIMIT 1;
+
+        IF NOT FOUND THEN
+          v_preco_opcao_real := 0.00;
+          v_tipo_opcao := COALESCE(v_opcao->>'tipo', 'outro');
+        END IF;
+
+        INSERT INTO public.pedido_item_opcoes (
+          pedido_item_id,
+          tipo,
+          opcao_nome,
+          preco_adicional
+        ) VALUES (
+          v_pedido_item_id,
+          v_tipo_opcao,
+          v_opcao_nome,
+          v_preco_opcao_real
+        );
+
+        v_adicionais_item := v_adicionais_item + v_preco_opcao_real;
+      END IF;
+    END LOOP;
+
+    IF v_adicionais_item > 0 THEN
+      UPDATE public.pedido_itens
+      SET 
+        preco_adicionais = v_adicionais_item,
+        preco_unitario_snapshot = preco_base_snapshot + v_adicionais_item,
+        subtotal = (preco_base_snapshot + v_adicionais_item) * quantidade
+      WHERE id = v_pedido_item_id;
+    END IF;
 
     IF v_prod.controlar_estoque IS NOT FALSE THEN
       v_disponivel := GREATEST(0, COALESCE(v_prod.estoque_fisico, 0) - COALESCE(v_prod.estoque_reservado, 0));
@@ -1317,6 +1432,20 @@ CREATE POLICY "Clientes ativos veem seus pedidos ou admins veem todos"
 -- Erradicação de criação e mutação direta de pedidos no cliente (Audit 5)
 REVOKE INSERT, UPDATE ON public.pedidos FROM PUBLIC, anon, authenticated;
 
+-- Políticas RLS para produto_opcoes (Catálogo)
+ALTER TABLE public.produto_opcoes ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.produto_opcoes FROM PUBLIC;
+GRANT SELECT ON public.produto_opcoes TO anon, authenticated, service_role;
+GRANT ALL ON public.produto_opcoes TO service_role;
+
+DROP POLICY IF EXISTS "Opções de produtos visíveis publicamente" ON public.produto_opcoes;
+CREATE POLICY "Opções de produtos visíveis publicamente" ON public.produto_opcoes 
+  FOR SELECT USING (ativo = true OR public.is_admin_or_operator());
+
+DROP POLICY IF EXISTS "Equipe gerencia opções de produtos" ON public.produto_opcoes;
+CREATE POLICY "Equipe gerencia opções de produtos" ON public.produto_opcoes 
+  FOR ALL USING (public.is_admin_or_operator());
+
 -- Políticas RLS para pedido_itens
 ALTER TABLE public.pedido_itens ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.pedido_itens FROM PUBLIC, anon, authenticated;
@@ -1548,7 +1677,23 @@ BEGIN
     RETURN json_build_object('success', false, 'error', 'Pedido não encontrado.');
   END IF;
 
+  -- 2. Validações de integridade do pedido
+  IF v_ped.status_comercial = 'cancelado' THEN
+    RETURN json_build_object('success', false, 'error', 'Não é possível registrar pagamento em um pedido cancelado.');
+  END IF;
+
+  IF v_ped.status_financeiro = 'pago' AND p_valor > 0 THEN
+    RETURN json_build_object('success', false, 'error', 'Pedido já se encontra totalmente quitado.');
+  END IF;
+
+  IF p_valor > (v_ped.saldo + 0.01) THEN
+    RETURN json_build_object('success', false, 'error', 'Valor informado (R$ ' || p_valor || ') excede o saldo devedor restante (R$ ' || v_ped.saldo || ').');
+  END IF;
+
   SELECT nome INTO v_user_nome FROM public.profiles WHERE id = auth.uid();
+  IF v_user_nome IS NULL AND auth.role() = 'service_role' THEN
+    v_user_nome := 'Sistema / service_role';
+  END IF;
 
   INSERT INTO public.pedido_pagamentos (
     pedido_id,

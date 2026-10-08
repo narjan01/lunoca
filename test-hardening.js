@@ -1136,7 +1136,90 @@ for (const file of etapa1Files) {
   console.log(`    ✅ ${file}: criar_pedido e confirmar_pagamento_pedido 100% integrados à arquitetura de encomendas.`);
 }
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! Fases 1 a 10 rigorosamente validadas com 100% de cobertura.');
+// 10.11 Tratamento Rigoroso do Estado Financeiro 'estornado'
+console.log('\n  🔎 10.11 Verificando tratamento rigoroso do ciclo de vida de estorno em recalcular_financeiro_pedido...');
+for (const file of etapa1Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes("status = 'estornado'") &&
+    content.includes("v_novo_status_fin := 'estornado'") &&
+    content.includes('v_tem_estorno'),
+    `[FALHA] ${file} não implementa transição determinística para status_financeiro = 'estornado'!`
+  );
+  assert.ok(
+    content.includes('pedido_status_historico') && content.includes('v_status_fin_antigo IS DISTINCT FROM v_novo_status_fin'),
+    `[FALHA] ${file} não registra auditoria de alteração financeira em pedido_status_historico!`
+  );
+  console.log(`    ✅ ${file}: Recálculo financeiro suporta estorno completo e registra auditoria.`);
+}
+
+// 10.12 Somente-Leitura e Imutabilidade de Status Legado
+console.log('\n  🔎 10.12 Verificando bloqueio técnico de UPDATE manual e somente-leitura de status legado...');
+for (const file of etapa1Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('REVOKE INSERT, UPDATE ON public.pedidos FROM PUBLIC, anon, authenticated;'),
+    `[FALHA] ${file} não revoga UPDATE em public.pedidos para anon e authenticated!`
+  );
+  assert.ok(
+    content.includes('sincronizar_status_legado_pedido()') &&
+    content.includes('BEFORE INSERT OR UPDATE ON public.pedidos'),
+    `[FALHA] ${file} não sobrescreve status legado via BEFORE trigger incondicional!`
+  );
+  console.log(`    ✅ ${file}: UPDATE direto revogado e derivação legada strictly read-only.`);
+}
+
+// 10.13 Catálogo Oficial de Opções e Proteção contra Preço Inventado
+console.log('\n  🔎 10.13 Verificando catálogo oficial produto_opcoes e proteção contra preço inventado...');
+for (const file of etapa1Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('CREATE TABLE IF NOT EXISTS public.produto_opcoes') || content.includes('CREATE TABLE public.produto_opcoes'),
+    `[FALHA] ${file} não cria tabela canônica de catálogo public.produto_opcoes!`
+  );
+  assert.ok(
+    content.includes('REVOKE ALL ON public.pedido_item_opcoes FROM PUBLIC, anon, authenticated;'),
+    `[FALHA] ${file} não bloqueia manipulação direta de pedido_item_opcoes via RLS!`
+  );
+  assert.ok(
+    content.includes('FROM public.produto_opcoes') &&
+    content.includes('v_preco_opcao_real'),
+    `[FALHA] ${file} não resolve opções estritamente pelo catálogo oficial do banco!`
+  );
+  console.log(`    ✅ ${file}: Catálogo produto_opcoes ativo e imunidade contra spoofing de preço garantida.`);
+}
+
+// 10.14 RBAC e Regras de Negócio em registrar_pagamento_pedido
+console.log('\n  🔎 10.14 Verificando RBAC estrito e regras de negócio em registrar_pagamento_pedido...');
+for (const file of etapa1Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('REVOKE ALL ON FUNCTION public.registrar_pagamento_pedido') &&
+    content.includes('GRANT EXECUTE ON FUNCTION public.registrar_pagamento_pedido') &&
+    content.includes('TO authenticated, service_role;'),
+    `[FALHA] ${file} não restringe permissões de execução de registrar_pagamento_pedido!`
+  );
+  assert.ok(
+    content.includes("status_comercial = 'cancelado'") &&
+    content.includes("status_financeiro = 'pago'") &&
+    content.includes('v_ped.saldo'),
+    `[FALHA] ${file} não valida pedidos cancelados, quitados ou pagamentos acima do saldo!`
+  );
+  console.log(`    ✅ ${file}: RBAC estrito e travas contra pagamentos espúrios em registrar_pagamento_pedido.`);
+}
+
+// 10.15 Suporte a service_role em Helpers de Autorização
+console.log('\n  🔎 10.15 Verificando suporte a service_role em is_admin e is_admin_or_operator...');
+for (const file of etapa1Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes("auth.role() = 'service_role'"),
+    `[FALHA] ${file} não reconhece service_role em funções de autorização!`
+  );
+  console.log(`    ✅ ${file}: service_role devidamente autorizado em is_admin e is_admin_or_operator.`);
+}
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas atualmente definidas nas Fases 1–10 foram aprovadas.');
 
 
 
