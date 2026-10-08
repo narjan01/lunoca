@@ -92,7 +92,8 @@ export async function onRequestPost(context) {
         options: { delay: 1200, presence: 'composing' }
       };
     } else if (provedor === 'z-api') {
-      if (clientToken) reqHeaders['Client-Token'] = clientToken.trim();
+      const zToken = env.WHATSAPP_CLIENT_TOKEN || clientToken || '';
+      if (zToken) reqHeaders['Client-Token'] = zToken.trim();
       if (!targetUrl.includes('/send-text')) {
         targetUrl = targetUrl + '/send-text';
       }
@@ -129,7 +130,7 @@ export async function onRequestPost(context) {
         error: resData.message || resData.error || `Erro HTTP ${apiRes.status} no gateway WhatsApp.`,
         telefoneFormatado: foneLimpo
       }), {
-        status: 200,
+        status: 502,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }

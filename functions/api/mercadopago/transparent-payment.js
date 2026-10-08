@@ -10,10 +10,18 @@ import { verifyAuth } from '../_auth.js';
 
 function getSafeBaseUrl(origin, env) {
   const allowedHostnames = ['lunocadoceria.com.br', 'www.lunocadoceria.com.br', 'localhost', '127.0.0.1'];
+  if (env.APP_BASE_URL) {
+    try {
+      const appUrl = new URL(env.APP_BASE_URL);
+      if (!allowedHostnames.includes(appUrl.hostname)) {
+        allowedHostnames.push(appUrl.hostname);
+      }
+    } catch (_) {}
+  }
   if (origin) {
     try {
       const u = new URL(origin);
-      if (allowedHostnames.includes(u.hostname) || u.hostname.endsWith('.pages.dev')) {
+      if (allowedHostnames.includes(u.hostname)) {
         return u.origin;
       }
     } catch (_) {}
@@ -165,8 +173,16 @@ export async function onRequestPost(context) {
       const nomeCompleto = (cliente?.nome || authUser?.nome || 'Cliente Lunoca').trim().split(' ');
       const firstName = nomeCompleto[0] || 'Cliente';
       const lastName = nomeCompleto.slice(1).join(' ') || 'Doceria';
-      const rawCpf = String(cliente?.cpf || '').replace(/\D/g, '');
-      const cpf = rawCpf.length === 11 ? rawCpf : '19119119100';
+      const rawCpf = String(cliente?.cpf || authUser?.cpf || '').replace(/\D/g, '');
+      if (rawCpf.length !== 11) {
+        return new Response(JSON.stringify({
+          error: 'CPF obrigatório e válido (11 dígitos) para emissão do PIX no Mercado Pago.'
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
+        });
+      }
+      const cpf = rawCpf;
 
       const pixPayload = {
         transaction_amount: amount,
@@ -240,8 +256,16 @@ export async function onRequestPost(context) {
       }
 
       const email = cliente?.email || authUser?.email || 'cliente@lunocadoceria.com.br';
-      const rawCpf = String(cliente?.cpf || '').replace(/\D/g, '');
-      const cleanCpf = rawCpf.length === 11 ? rawCpf : '19119119100';
+      const rawCpf = String(cliente?.cpf || authUser?.cpf || '').replace(/\D/g, '');
+      if (rawCpf.length !== 11) {
+        return new Response(JSON.stringify({
+          error: 'CPF obrigatório e válido (11 dígitos) para processamento do cartão de crédito.'
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
+        });
+      }
+      const cleanCpf = rawCpf;
 
       const cardPaymentPayload = {
         transaction_amount: amount,
@@ -261,12 +285,13 @@ export async function onRequestPost(context) {
         notification_url: `${baseUrl}/api/mercadopago/webhook`
       };
 
+      const cardAttemptId = body.attemptId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
       const mpRes = await fetch('https://api.mercadopago.com/v1/payments', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
-          'X-Idempotency-Key': `order_${pedidoId}_card_${parcelas || 1}_v1`
+          'X-Idempotency-Key': `order_${pedidoId}_card_${cardAttemptId}`
         },
         body: JSON.stringify(cardPaymentPayload)
       });

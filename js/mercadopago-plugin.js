@@ -17,6 +17,7 @@
     version: '2.5.0-transparent',
     initialized: false,
     mpInstance: null,
+    activeCardForm: null,
     pollInterval: null,
     currentOrder: null,
 
@@ -103,6 +104,10 @@
     },
 
     closeModal: function (targetScreen) {
+      if (this.activeCardForm && typeof this.activeCardForm.unmount === 'function') {
+        try { this.activeCardForm.unmount(); } catch (_) {}
+        this.activeCardForm = null;
+      }
       if (this.pollInterval) {
         clearTimeout(this.pollInterval);
         clearInterval(this.pollInterval);
@@ -184,7 +189,7 @@
           cliente: orderData.cliente || {
             nome: (window.usuarioAtual && window.usuarioAtual.nome) || 'Cliente Lunoca',
             email: (window.usuarioAtual && window.usuarioAtual.email) || 'cliente@lunocadoceria.com.br',
-            cpf: (window.usuarioAtual && window.usuarioAtual.cpf) || '19119119100'
+            cpf: (window.usuarioAtual && window.usuarioAtual.cpf) || ''
           },
           origin: window.location.origin
         };
@@ -347,22 +352,36 @@
     },
 
     switchToPix: function () {
+      if (this.activeCardForm && typeof this.activeCardForm.unmount === 'function') {
+        try { this.activeCardForm.unmount(); } catch (_) {}
+        this.activeCardForm = null;
+      }
       if (this.currentOrder) {
         this.iniciarPixTransparente(this.currentOrder);
       }
     },
 
-    // 2. FLUXO CARTÃO DE CRÉDITO TRANSPARENTE
+    // 2. FLUXO CARTÃO DE CRÉDITO TRANSPARENTE (PCI-DSS SAQ A - SECURE FIELDS)
     renderFormCartaoTransparente: function (container, orderData) {
+      if (this.activeCardForm && typeof this.activeCardForm.unmount === 'function') {
+        try { this.activeCardForm.unmount(); } catch (_) {}
+        this.activeCardForm = null;
+      }
+
       const formattedTotal = Number(orderData.total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
       const totalNum = parseFloat(orderData.total);
 
-      // Gerar opções de parcelas até 12x
       let opcoesParcelas = '';
       for (let i = 1; i <= 12; i++) {
         const valorParcela = (totalNum / i).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
         opcoesParcelas += `<option value="${i}">${i}x de ${valorParcela} sem juros</option>`;
       }
+
+      const emailPadrao = (orderData.cliente && orderData.cliente.email) || (window.usuarioAtual && window.usuarioAtual.email) || 'cliente@lunocadoceria.com.br';
+      const nomePadrao = (orderData.cliente && orderData.cliente.nome) || (window.usuarioAtual && window.usuarioAtual.nome) || '';
+      const cpfPadrao = (orderData.cliente && orderData.cliente.cpf) || (window.usuarioAtual && window.usuarioAtual.cpf) || '';
+
+      const safeEscape = (val) => String(val || '').replace(/"/g, '&quot;');
 
       container.innerHTML = `
         <div>
@@ -379,7 +398,7 @@
           <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; padding: 0 4px;">
             <div>
               <span style="font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700;">Pedido #${orderData.pedidoId}</span>
-              <div style="font-size: 13px; color: #334155; font-weight: 500;">Pague com Cartão de Crédito no próprio site</div>
+              <div style="font-size: 13px; color: #334155; font-weight: 500;">Pague com Cartão no próprio site (PCI-DSS)</div>
             </div>
             <div style="font-size: 22px; font-weight: 800; color: #0284c7;">
               ${formattedTotal}
@@ -387,18 +406,13 @@
           </div>
 
           <form id="form-mp-cartao-transparente" onsubmit="window.MercadoPagoPlugin.submitCardPayment(event)" style="display: flex; flex-direction: column; gap: 12px;">
-            <!-- Número do Cartão com detector de bandeira -->
+            <!-- Número do Cartão (Iframe Seguro Mercado Pago) -->
             <div>
               <label style="font-size: 12px; font-weight: 700; color: #334155; display: flex; justify-content: space-between; margin-bottom: 4px;">
                 <span>Número do Cartão</span>
                 <span id="card-brand-indicator" style="font-size: 11px; color: #0284c7; font-weight: 600;"></span>
               </label>
-              <div style="position: relative;">
-                <input type="text" id="mp-card-number" placeholder="0000 0000 0000 0000" maxlength="19" required
-                  oninput="window.MercadoPagoPlugin.formatCardNumber(this)"
-                  style="width: 100%; box-sizing: border-box; padding: 10px 12px 10px 38px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 14px; font-family: monospace;">
-                <i class="fa-solid fa-credit-card" style="position: absolute; left: 12px; top: 12px; color: #94a3b8; font-size: 15px;"></i>
-              </div>
+              <div id="form-checkout__cardNumber" style="height: 42px; border: 1px solid #cbd5e1; border-radius: 10px; padding: 4px 8px; background: #ffffff; box-sizing: border-box;"></div>
             </div>
 
             <!-- Nome no Cartão -->
@@ -406,26 +420,23 @@
               <label style="font-size: 12px; font-weight: 700; color: #334155; display: block; margin-bottom: 4px;">
                 Nome Impresso no Cartão
               </label>
-              <input type="text" id="mp-card-holder" placeholder="NOME COMO NO CARTAO" required
+              <input type="text" id="form-checkout__cardholderName" value="${safeEscape(nomePadrao)}" placeholder="NOME COMO NO CARTÃO" required
                 style="width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 14px; text-transform: uppercase;">
             </div>
 
-            <!-- Validade e CVV -->
+            <!-- Validade e CVV (Iframes Seguros Mercado Pago) -->
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
               <div>
                 <label style="font-size: 12px; font-weight: 700; color: #334155; display: block; margin-bottom: 4px;">
                   Validade (MM/AA)
                 </label>
-                <input type="text" id="mp-card-exp" placeholder="MM/AA" maxlength="5" required
-                  oninput="window.MercadoPagoPlugin.formatExpiry(this)"
-                  style="width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 14px; font-family: monospace; text-align: center;">
+                <div id="form-checkout__expirationDate" style="height: 42px; border: 1px solid #cbd5e1; border-radius: 10px; padding: 4px 8px; background: #ffffff; box-sizing: border-box;"></div>
               </div>
               <div>
                 <label style="font-size: 12px; font-weight: 700; color: #334155; display: block; margin-bottom: 4px;">
                   Código CVV
                 </label>
-                <input type="password" id="mp-card-cvv" placeholder="123" maxlength="4" required
-                  style="width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 14px; font-family: monospace; text-align: center;">
+                <div id="form-checkout__securityCode" style="height: 42px; border: 1px solid #cbd5e1; border-radius: 10px; padding: 4px 8px; background: #ffffff; box-sizing: border-box;"></div>
               </div>
             </div>
 
@@ -435,19 +446,23 @@
                 <label style="font-size: 12px; font-weight: 700; color: #334155; display: block; margin-bottom: 4px;">
                   CPF do Titular
                 </label>
-                <input type="text" id="mp-card-cpf" placeholder="000.000.000-00" maxlength="14" required
+                <input type="text" id="form-checkout__identificationNumber" value="${safeEscape(cpfPadrao)}" placeholder="000.000.000-00" maxlength="14" required
                   oninput="window.MercadoPagoPlugin.formatCPF(this)"
                   style="width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 13px; font-family: monospace;">
+                <select id="form-checkout__identificationType" style="display: none;"><option value="CPF">CPF</option></select>
               </div>
               <div>
                 <label style="font-size: 12px; font-weight: 700; color: #334155; display: block; margin-bottom: 4px;">
                   Parcelas
                 </label>
-                <select id="mp-card-installments" style="width: 100%; box-sizing: border-box; padding: 10px 8px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 12px; background: white; color: #334155;">
+                <select id="form-checkout__installments" style="width: 100%; box-sizing: border-box; padding: 10px 8px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 12px; background: white; color: #334155;">
                   ${opcoesParcelas}
                 </select>
               </div>
             </div>
+
+            <select id="form-checkout__issuer" style="display: none;"></select>
+            <input type="email" id="form-checkout__cardholderEmail" style="display: none;" value="${safeEscape(emailPadrao)}">
 
             <div id="mp-card-error-msg" style="display: none; padding: 10px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; font-size: 12px; color: #b91c1c; text-align: left;"></div>
 
@@ -460,41 +475,97 @@
 
             <div style="font-size: 11px; color: #64748b; text-align: center; display: flex; align-items: center; justify-content: center; gap: 6px;">
               <i class="fa-solid fa-shield-halved" style="color: #10b981;"></i>
-              <span>Dados 100% criptografados &bull; Mercado Pago Oficial</span>
+              <span>Campos Protegidos PCI-DSS (SAQ A) &bull; Mercado Pago Oficial</span>
             </div>
           </form>
         </div>
       `;
+
+      // Inicializar cardForm seguro oficial do Mercado Pago
+      this.initCardFormSecure(totalNum);
     },
 
-    // Formatação de Número do Cartão
-    formatCardNumber: function (input) {
-      let v = input.value.replace(/\D/g, '');
-      let formatted = '';
-      for (let i = 0; i < v.length; i++) {
-        if (i > 0 && i % 4 === 0) formatted += ' ';
-        formatted += v[i];
+    initCardFormSecure: function (amount) {
+      if (!this.mpInstance && typeof window.MercadoPago !== 'undefined') {
+        const cfg = this.getConfig();
+        if (cfg.publicKey) {
+          try {
+            this.mpInstance = new window.MercadoPago(cfg.publicKey, { locale: 'pt-BR' });
+          } catch (e) {
+            console.warn('[MercadoPagoPlugin] Falha ao recriar instância SDK:', e);
+          }
+        }
       }
-      input.value = formatted;
 
-      // Detectar bandeira
-      const brandIndicator = document.getElementById('card-brand-indicator');
-      if (brandIndicator) {
-        if (/^4/.test(v)) brandIndicator.innerHTML = '<i class="fa-brands fa-cc-visa" style="font-size: 16px;"></i> Visa';
-        else if (/^(5[1-5]|2[2-7])/.test(v)) brandIndicator.innerHTML = '<i class="fa-brands fa-cc-mastercard" style="font-size: 16px;"></i> Mastercard';
-        else if (/^3[47]/.test(v)) brandIndicator.innerHTML = '<i class="fa-brands fa-cc-amex" style="font-size: 16px;"></i> Amex';
-        else if (/^(606282|3841)/.test(v)) brandIndicator.innerHTML = 'Hipercard';
-        else if (/^(40117[8-9]|438935|451416|457631|457632|504175|627780|636297|636368)/.test(v)) brandIndicator.innerHTML = 'Elo';
-        else brandIndicator.innerHTML = '';
+      if (!this.mpInstance || typeof this.mpInstance.cardForm !== 'function') {
+        console.warn('[MercadoPagoPlugin] SDK do Mercado Pago ou cardForm indisponível.');
+        return;
       }
-    },
 
-    formatExpiry: function (input) {
-      let v = input.value.replace(/\D/g, '');
-      if (v.length > 2) {
-        input.value = v.substring(0, 2) + '/' + v.substring(2, 4);
-      } else {
-        input.value = v;
+      try {
+        this.activeCardForm = this.mpInstance.cardForm({
+          amount: String(amount),
+          iframe: true,
+          form: {
+            id: 'form-mp-cartao-transparente',
+            cardNumber: {
+              id: 'form-checkout__cardNumber',
+              placeholder: 'Número do cartão',
+              style: { fontSize: '14px', color: '#334155', fontFamily: 'monospace' }
+            },
+            expirationDate: {
+              id: 'form-checkout__expirationDate',
+              placeholder: 'MM/AA',
+              style: { fontSize: '14px', color: '#334155', fontFamily: 'monospace', textAlign: 'center' }
+            },
+            securityCode: {
+              id: 'form-checkout__securityCode',
+              placeholder: 'CVV',
+              style: { fontSize: '14px', color: '#334155', fontFamily: 'monospace', textAlign: 'center' }
+            },
+            cardholderName: {
+              id: 'form-checkout__cardholderName',
+              placeholder: 'Nome impresso no cartão',
+            },
+            issuer: {
+              id: 'form-checkout__issuer',
+              placeholder: 'Banco Emissor',
+            },
+            installments: {
+              id: 'form-checkout__installments',
+              placeholder: 'Parcelas',
+            },
+            identificationType: {
+              id: 'form-checkout__identificationType',
+              placeholder: 'Tipo de documento',
+            },
+            identificationNumber: {
+              id: 'form-checkout__identificationNumber',
+              placeholder: '000.000.000-00',
+            },
+            cardholderEmail: {
+              id: 'form-checkout__cardholderEmail',
+              placeholder: 'E-mail',
+            },
+          },
+          callbacks: {
+            onFormMounted: error => {
+              if (error) console.warn('[MercadoPagoPlugin] cardForm mounted error:', error);
+            },
+            onSubmit: event => {
+              event.preventDefault();
+              this.submitCardPayment(event);
+            },
+            onPaymentMethodsReceived: (error, paymentMethods) => {
+              if (!error && paymentMethods && paymentMethods[0]) {
+                const indicator = document.getElementById('card-brand-indicator');
+                if (indicator) indicator.textContent = paymentMethods[0].name || '';
+              }
+            }
+          }
+        });
+      } catch (err) {
+        console.error('[MercadoPagoPlugin] Erro ao instanciar cardForm:', err);
       }
     },
 
@@ -511,34 +582,22 @@
       }
     },
 
-    // Submissão do Cartão Transparente
+    // Submissão Segura do Cartão Transparente (PCI-DSS Compliance)
     submitCardPayment: async function (e) {
-      e.preventDefault();
+      if (e && typeof e.preventDefault === 'function') e.preventDefault();
       const btn = document.getElementById('btn-submit-cartao-transparente');
       const errBox = document.getElementById('mp-card-error-msg');
       if (errBox) errBox.style.display = 'none';
 
-      const num = document.getElementById('mp-card-number').value.replace(/\D/g, '');
-      const holder = document.getElementById('mp-card-holder').value.trim();
-      const exp = document.getElementById('mp-card-exp').value.split('/');
-      const cvv = document.getElementById('mp-card-cvv').value.trim();
-      const cpf = document.getElementById('mp-card-cpf').value.replace(/\D/g, '');
-      const installments = document.getElementById('mp-card-installments').value;
+      const cpfInput = document.getElementById('form-checkout__identificationNumber');
+      const cpf = cpfInput ? cpfInput.value.replace(/\D/g, '') : '';
+      const holderInput = document.getElementById('form-checkout__cardholderName');
+      const holder = holderInput ? holderInput.value.trim() : '';
+      const installmentsInput = document.getElementById('form-checkout__installments');
+      const installments = installmentsInput ? installmentsInput.value : '1';
 
-      if (num.length < 13 || num.length > 19) {
-        this.showCardError('Número do cartão inválido.');
-        return;
-      }
       if (!holder) {
         this.showCardError('Informe o nome impresso no cartão.');
-        return;
-      }
-      if (exp.length !== 2 || !exp[0] || !exp[1]) {
-        this.showCardError('Data de validade inválida (MM/AA).');
-        return;
-      }
-      if (cvv.length < 3) {
-        this.showCardError('Código CVV inválido.');
         return;
       }
       if (typeof window.validarCPF === 'function' && !window.validarCPF(cpf)) {
@@ -557,45 +616,29 @@
 
       try {
         let cardToken = null;
+        let paymentMethodId = null;
 
-        // Tokenização Segura no Navegador via SDK Oficial do Mercado Pago (Conformidade PCI-DSS)
-        if (this.mpInstance && typeof this.mpInstance.createCardToken === 'function') {
-          try {
-            const cleanExpYear = exp[1].length === 2 ? `20${exp[1]}` : exp[1];
-            const tokenRes = await this.mpInstance.createCardToken({
-              cardNumber: num,
-              cardholderName: holder,
-              cardExpirationMonth: exp[0],
-              cardExpirationYear: cleanExpYear,
-              securityCode: cvv,
-              identificationType: 'CPF',
-              identificationNumber: cpf
-            });
-            if (tokenRes && tokenRes.id) {
-              cardToken = tokenRes.id;
-            }
-          } catch (sdkTokenErr) {
-            console.error('[MercadoPagoPlugin] Falha na tokenização via SDK:', sdkTokenErr);
-          }
+        if (this.activeCardForm && typeof this.activeCardForm.getCardFormData === 'function') {
+          const cardFormData = this.activeCardForm.getCardFormData();
+          cardToken = cardFormData?.token;
+          paymentMethodId = cardFormData?.paymentMethodId;
         }
 
         if (!cardToken) {
-          this.showCardError('Não foi possível validar o cartão com segurança no Mercado Pago. Verifique os dados informados ou pague via PIX.');
-          if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fa-solid fa-lock"></i> Pagar com Cartão com Segurança';
-            btn.style.opacity = '1';
-          }
-          return;
+          throw new Error('Não foi possível validar o cartão com segurança no Mercado Pago. Verifique os dados informados ou pague via PIX.');
         }
 
         const token = this.currentOrder?.checkoutToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('lunoca_checkout_token_' + this.currentOrder.pedidoId) : '') || '';
+        const attemptId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'att_' + Date.now() + '_' + Math.random().toString(36).substring(2));
+
         const payload = {
           pedidoId: this.currentOrder.pedidoId,
           checkoutToken: token,
           forma: 'cartao',
           parcelas: parseInt(installments, 10),
           cardToken: cardToken,
+          paymentMethodId: paymentMethodId,
+          attemptId: attemptId,
           cliente: {
             nome: holder,
             email: window.usuarioAtual?.email || 'cliente@lunocadoceria.com.br',
@@ -623,7 +666,6 @@
 
         if (res.ok && data.success) {
           if (data.status === 'approved') {
-            // A confirmação, baixa de estoque e financeiro já foram realizados atomicamente no backend
             this.renderSucessoAprovado({
               pedidoId: this.currentOrder.pedidoId,
               total: this.currentOrder.total,
@@ -639,7 +681,6 @@
               paymentId: data.paymentId
             });
           } else {
-            // Recusado
             this.showCardError('Cartão recusado pelo emissor: ' + (data.statusDetail || 'Verifique o limite ou dados informados.'));
             if (btn) {
               btn.disabled = false;
@@ -656,7 +697,7 @@
           }
         }
       } catch (err) {
-        this.showCardError('Erro de conexão ao processar o cartão.');
+        this.showCardError(err.message || 'Erro de conexão ao processar o cartão.');
         if (btn) {
           btn.disabled = false;
           btn.innerHTML = '<i class="fa-solid fa-lock"></i> Tentar Novamente';
@@ -709,7 +750,7 @@
           });
           if (res.ok) {
             const data = await res.json();
-            if (data.status === 'approved') {
+            if (data.status === 'approved' && (data.synced || data.localStatus === 'Confirmado')) {
               // Confirmação e baixa de estoque ocorrem exclusivamente no backend (webhook / RPC)
               this.renderSucessoAprovado({
                 pedidoId: pedidoId,
@@ -718,6 +759,11 @@
                 paymentId: paymentId
               });
               return;
+            } else if (data.status === 'approved' && !data.synced) {
+              const statusBox = document.getElementById('mp-pix-status-box');
+              if (statusBox) {
+                statusBox.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="color: #0284c7;"></i> <span>Pagamento recebido! Sincronizando com a cozinha...</span>';
+              }
             }
           }
 

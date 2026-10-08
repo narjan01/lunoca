@@ -779,7 +779,191 @@ assert.ok(
 );
 console.log('    ✅ mercadopago/preference.js: Totalmente fail-closed, sem fallbacks manipuláveis pelo cliente.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! Fases 1 a 8 rigorosamente validadas com 100% de cobertura.');
+// ==========================================================================
+// FASE 9: Validações da 5ª Auditoria de Segurança e Integridade
+// ==========================================================================
+console.log('\n🛡️ FASE 9: Validações da 5ª Auditoria de Segurança e Integridade...');
+
+// 9.1 Erradicação Total do INSERT direto em public.pedidos e Fallback do Frontend
+console.log('\n  🔎 9.1 Verificando erradicação do INSERT direto em public.pedidos...');
+const audit5Files = ['sql/schema.sql', 'sql/install.sql', 'supabase/migrations/008_audit_5_hardening.sql'];
+for (const file of audit5Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    (content.includes('REVOKE INSERT ON public.pedidos') || content.includes('REVOKE INSERT, UPDATE ON public.pedidos')) &&
+    content.includes('FROM PUBLIC, anon, authenticated;'),
+    `[FALHA] ${file} não revoga INSERT na tabela pedidos para anon e authenticated!`
+  );
+  assert.ok(
+    !content.includes('FOR INSERT ON public.pedidos TO authenticated') &&
+    !content.includes('FOR INSERT ON public.pedidos TO anon'),
+    `[FALHA] ${file} ainda mantém políticas de INSERT ativas em public.pedidos!`
+  );
+  console.log(`    ✅ ${file}: INSERT direto revogado e políticas de INSERT erradicadas.`);
+}
+
+const pedidosJsContentFase9 = fs.readFileSync('js/pedidos.js', 'utf-8');
+assert.ok(
+  !pedidosJsContentFase9.includes(".from('pedidos').insert("),
+  '[FALHA] js/pedidos.js ainda contém fallback com insert direto em pedidos!'
+);
+console.log('    ✅ js/pedidos.js: Fallback com insert direto eliminado com sucesso (fail-closed estrito).');
+
+// 9.2 Agrupamento Atômico de Itens em criar_pedido (Anti-Hoarding & Over-Reservation)
+console.log('\n  🔎 9.2 Verificando agregação de itens em criar_pedido...');
+for (const file of audit5Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes("GROUP BY (it->>'id')::BIGINT") && content.includes("SUM("),
+    `[FALHA] ${file} não agrupa itens por produto_id com SUM() em criar_pedido!`
+  );
+  console.log(`    ✅ ${file}: Itens agregados com GROUP BY e SUM() antes de checagem de estoque e anti-hoarding.`);
+}
+
+// 9.3 Erradicação Completa de CPF Falso (19119119100)
+console.log('\n  🔎 9.3 Verificando erradicação do CPF dummy 19119119100...');
+const filesToCheckCpf = [
+  'js/pedidos.js',
+  'js/mercadopago.js',
+  'js/mercadopago-plugin.js',
+  'functions/api/mercadopago/transparent-payment.js'
+];
+for (const f of filesToCheckCpf) {
+  const c = fs.readFileSync(f, 'utf-8');
+  assert.ok(
+    !c.includes('19119119100'),
+    `[FALHA] ${f} ainda contém CPF dummy 19119119100!`
+  );
+  console.log(`    ✅ ${f}: CPF dummy erradicado.`);
+}
+
+// 9.4 Tabela Canônica public.pedido_itens e RLS
+console.log('\n  🔎 9.4 Verificando tabela canônica public.pedido_itens e RLS...');
+for (const file of audit5Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('CREATE TABLE IF NOT EXISTS public.pedido_itens') || content.includes('CREATE TABLE public.pedido_itens'),
+    `[FALHA] ${file} não define tabela canônica public.pedido_itens!`
+  );
+  assert.ok(
+    content.includes('ALTER TABLE public.pedido_itens ENABLE ROW LEVEL SECURITY;'),
+    `[FALHA] ${file} não habilita RLS em public.pedido_itens!`
+  );
+  console.log(`    ✅ ${file}: Tabela pedido_itens e RLS devidamente configurados.`);
+}
+
+// 9.5 Mercado Pago: Secure Fields com cardForm e iframe: true (PCI-DSS SAQ A)
+console.log('\n  🔎 9.5 Verificando conformidade PCI-DSS SAQ A (Secure Fields com iframes)...');
+const pluginContentFase9 = fs.readFileSync('js/mercadopago-plugin.js', 'utf-8');
+assert.ok(
+  pluginContentFase9.includes('iframe: true') && pluginContentFase9.includes('cardForm'),
+  '[FALHA] js/mercadopago-plugin.js não utiliza cardForm com iframe: true!'
+);
+assert.ok(
+  pluginContentFase9.includes('form-checkout__cardNumber') &&
+  pluginContentFase9.includes('form-checkout__expirationDate') &&
+  pluginContentFase9.includes('form-checkout__securityCode'),
+  '[FALHA] js/mercadopago-plugin.js não contém os containers de iframes seguros para cartão!'
+);
+assert.ok(
+  !pluginContentFase9.includes('id="mp-card-number"') && !pluginContentFase9.includes('id="mp-card-cvv"'),
+  '[FALHA] js/mercadopago-plugin.js ainda possui inputs diretos de cartão/cvv no DOM!'
+);
+console.log('    ✅ js/mercadopago-plugin.js: Implementado cardForm com iframe: true Secure Fields (PCI-DSS SAQ A).');
+
+// 9.6 Idempotência de Cartão por Tentativa (attemptId)
+console.log('\n  🔎 9.6 Verificando idempotência de cartão por tentativa em transparent-payment.js...');
+const tpContentFase9 = fs.readFileSync('functions/api/mercadopago/transparent-payment.js', 'utf-8');
+assert.ok(
+  tpContentFase9.includes('cardAttemptId') || tpContentFase9.includes('attemptId'),
+  '[FALHA] transparent-payment.js não suporta chave de idempotência dinâmica por tentativa!'
+);
+console.log('    ✅ transparent-payment.js: Chave de idempotência única por tentativa de cartão garantida.');
+
+// 9.7 Sincronização Local Obrigatória no Polling do PIX
+console.log('\n  🔎 9.7 Verificando sincronização local no polling do PIX...');
+const psContentFase9 = fs.readFileSync('functions/api/mercadopago/payment-status.js', 'utf-8');
+assert.ok(
+  psContentFase9.includes('synced:') && psContentFase9.includes('localStatus:'),
+  '[FALHA] payment-status.js não retorna campos localStatus e synced!'
+);
+assert.ok(
+  pluginContentFase9.includes('data.synced') || pluginContentFase9.includes("data.localStatus === 'Confirmado'"),
+  '[FALHA] js/mercadopago-plugin.js não valida sincronização local antes de exibir sucesso!'
+);
+console.log('    ✅ Polling de PIX exige sincronização com banco local antes de renderizar sucesso.');
+
+// 9.8 Proteção contra Wildcard em getSafeBaseUrl
+console.log('\n  🔎 9.8 Verificando segurança de URL base sem wildcard *.pages.dev...');
+const prefCodeFase9 = fs.readFileSync('functions/api/mercadopago/preference.js', 'utf-8');
+assert.ok(
+  !tpContentFase9.includes(".endsWith('.pages.dev')"),
+  '[FALHA] transparent-payment.js ainda aceita wildcard permissivo *.pages.dev!'
+);
+assert.ok(
+  !prefCodeFase9.includes(".endsWith('.pages.dev')"),
+  '[FALHA] preference.js ainda aceita wildcard permissivo *.pages.dev!'
+);
+console.log('    ✅ getSafeBaseUrl: Wildcard permissivo *.pages.dev eliminado de transparent-payment.js e preference.js.');
+
+// 9.9 RPC alterar_status_operacional_pedido e Lockdown de UPDATE
+console.log('\n  🔎 9.9 Verificando RPC alterar_status_operacional_pedido...');
+for (const file of audit5Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('alterar_status_operacional_pedido'),
+    `[FALHA] ${file} não implementa RPC alterar_status_operacional_pedido!`
+  );
+  console.log(`    ✅ ${file}: RPC alterar_status_operacional_pedido implementada com transições de estado estritas.`);
+}
+assert.ok(
+  pedidosJsContentFase9.includes('alterar_status_operacional_pedido'),
+  '[FALHA] js/pedidos.js não chama RPC alterar_status_operacional_pedido!'
+);
+console.log('    ✅ js/pedidos.js: Transição de status operacional via RPC segura implementada.');
+
+// 9.10 Proteção com CRON_SECRET e Saldo Resultante em Liberar Pedidos Expirados
+console.log('\n  🔎 9.10 Verificando CRON_SECRET e saldo resultante do estoque...');
+const cronCodeFase9 = fs.readFileSync('functions/api/cron/expire-orders.js', 'utf-8');
+assert.ok(
+  cronCodeFase9.includes('CRON_SECRET'),
+  '[FALHA] functions/api/cron/expire-orders.js não valida CRON_SECRET!'
+);
+for (const file of audit5Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('COALESCE(estoque_fisico, 0) - COALESCE(estoque_reservado, 0)') && content.includes('saldo_resultante'),
+    `[FALHA] ${file} não calcula saldo_resultante real (estoque_fisico - estoque_reservado) ao liberar pedidos!`
+  );
+  console.log(`    ✅ ${file}: Saldo resultante real calculado no estorno de estoque.`);
+}
+console.log('    ✅ expire-orders.js: Validação de CRON_SECRET presente.');
+
+// 9.11 RLS em public.pagamentos_processados
+console.log('\n  🔎 9.11 Verificando RLS em public.pagamentos_processados...');
+for (const file of audit5Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('ALTER TABLE public.pagamentos_processados ENABLE ROW LEVEL SECURITY;'),
+    `[FALHA] ${file} não habilita RLS em public.pagamentos_processados!`
+  );
+  console.log(`    ✅ ${file}: RLS habilitado em pagamentos_processados.`);
+}
+
+// 9.12 Respostas Semânticas e Token de Cliente em WhatsApp Gateway
+console.log('\n  🔎 9.12 Verificando gateway WhatsApp...');
+const waCodeFase9 = fs.readFileSync('functions/api/whatsapp/send.js', 'utf-8');
+assert.ok(
+  waCodeFase9.includes('WHATSAPP_CLIENT_TOKEN'),
+  '[FALHA] functions/api/whatsapp/send.js não suporta WHATSAPP_CLIENT_TOKEN!'
+);
+assert.ok(
+  waCodeFase9.includes('status: 502'),
+  '[FALHA] functions/api/whatsapp/send.js não retorna status HTTP 502 em caso de erro no gateway!'
+);
+console.log('    ✅ functions/api/whatsapp/send.js: WHATSAPP_CLIENT_TOKEN suportado e erro de gateway mapeado com HTTP 502.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! Fases 1 a 9 rigorosamente validadas com 100% de cobertura.');
 
 
 

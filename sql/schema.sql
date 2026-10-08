@@ -95,6 +95,21 @@ CREATE TABLE IF NOT EXISTS public.pedidos (
 
 CREATE INDEX IF NOT EXISTS idx_pedidos_checkout_token ON public.pedidos(checkout_token);
 
+-- 3.1. Tabela Canônica de Itens do Pedido (Audit 5)
+CREATE TABLE IF NOT EXISTS public.pedido_itens (
+  id BIGSERIAL PRIMARY KEY,
+  pedido_id BIGINT NOT NULL REFERENCES public.pedidos(id) ON DELETE CASCADE,
+  produto_id BIGINT REFERENCES public.produtos(id) ON DELETE SET NULL,
+  produto_nome_snapshot TEXT NOT NULL,
+  quantidade INTEGER NOT NULL CHECK (quantidade > 0),
+  preco_unitario_snapshot NUMERIC(10,2) NOT NULL,
+  subtotal NUMERIC(10,2) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pedido_itens_pedido_id ON public.pedido_itens(pedido_id);
+CREATE INDEX IF NOT EXISTS idx_pedido_itens_produto_id ON public.pedido_itens(produto_id);
+
 -- 4. Movimentações de Estoque
 CREATE TABLE IF NOT EXISTS public.estoque_movimentacoes (
   id BIGSERIAL PRIMARY KEY,
@@ -284,7 +299,7 @@ RETURNS JSON AS $$
 DECLARE
   v_cliente_id UUID := auth.uid();
   v_user_profile RECORD;
-  v_item JSONB;
+  v_item RECORD;
   v_prod_id BIGINT;
   v_qtd INTEGER;
   v_prod RECORD;
@@ -292,6 +307,7 @@ DECLARE
   v_total DECIMAL(10,2) := 0;
   v_taxa DECIMAL(10,2) := 0;
   v_nomes_itens TEXT[] := ARRAY[]::TEXT[];
+  v_itens_json_canonical JSONB := '[]'::JSONB;
   v_pedido_id BIGINT;
   v_checkout_token UUID;
   v_expires_at TIMESTAMPTZ;
@@ -315,7 +331,7 @@ BEGIN
     v_email_final := COALESCE(v_user_profile.email, NULLIF(trim(p_email_cliente), ''), 'cliente@lunocadoceria.com.br');
     v_telefone_final := COALESCE(NULLIF(trim(p_telefone_cliente), ''), v_user_profile.telefone);
   ELSE
-    -- Guest Checkout: compra como visitante
+    -- Guest Checkout (compra como visitante sem necessidade de senha prévia)
     v_nome_final := trim(COALESCE(p_nome_cliente, ''));
     v_telefone_final := trim(COALESCE(p_telefone_cliente, ''));
     v_email_final := COALESCE(NULLIF(trim(p_email_cliente), ''), 'visitante@lunocadoceria.com.br');
@@ -329,23 +345,26 @@ BEGIN
       RETURN json_build_object('success', false, 'error', 'Por favor, informe um WhatsApp válido com DDD para acompanhar o pedido.');
     END IF;
 
-    -- Normalização de telefone (DDI 55)
     IF length(v_fone_limpo) IN (10, 11) THEN
       v_fone_normalizado := '55' || v_fone_limpo;
     ELSE
       v_fone_normalizado := v_fone_limpo;
     END IF;
 
-    -- Proteção Atômica Anti-Abuso: Serializa requisições simultâneas para o mesmo telefone normalizado via advisory lock
     PERFORM pg_advisory_xact_lock(hashtext('guest_checkout_' || v_fone_normalizado));
 
-    -- Limite estrito de no máximo 3 pedidos pendentes recentes nos últimos 15 min
+    -- Rate limit estrito de no máximo 3 pedidos pendentes recentes nos últimos 15 min
     IF (
       SELECT COUNT(*)
       FROM public.pedidos
       WHERE (
         regexp_replace(COALESCE(telefone_cliente, ''), '\D', '', 'g') IN (v_fone_limpo, v_fone_normalizado)
-        OR endereco_entrega = p_endereco_entrega
+        OR (
+          p_endereco_entrega IS NOT NULL 
+          AND p_endereco_entrega <> '' 
+          AND lower(p_endereco_entrega) NOT LIKE '%retirada%'
+          AND endereco_entrega = p_endereco_entrega
+        )
       )
         AND status = 'Pendente'
         AND created_at >= (NOW() - INTERVAL '15 minutes')
@@ -373,17 +392,20 @@ BEGIN
   -- 3. Tolerância de pagamento de 30 minutos
   v_expires_at := NOW() + INTERVAL '30 minutes';
 
-  -- 4. ETAPA 1: Validação dos itens, bloqueio pessimista (FOR UPDATE) e cálculo de totais
-  FOR v_item IN SELECT * FROM jsonb_array_elements(p_itens)
+  -- 4. ETAPA 1: Agrupamento consolidado dos itens, validação de disponibilidade e cálculo de totais
+  -- O agrupamento por produto_id impede que itens duplicados contornem o estoque ou o limite anti-hoarding
+  FOR v_item IN 
+    SELECT 
+      (it->>'id')::BIGINT AS produto_id,
+      SUM(GREATEST(1, COALESCE((it->>'quantidade')::INTEGER, 1)))::INTEGER AS quantidade
+    FROM jsonb_array_elements(p_itens) it
+    WHERE (it->>'id') IS NOT NULL AND (it->>'id') ~ '^\d+$'
+    GROUP BY (it->>'id')::BIGINT
   LOOP
-    v_prod_id := (v_item->>'id')::BIGINT;
-    v_qtd := GREATEST(1, COALESCE((v_item->>'quantidade')::INTEGER, 1));
+    v_prod_id := v_item.produto_id;
+    v_qtd := v_item.quantidade;
 
-    IF v_prod_id IS NULL THEN
-      RETURN json_build_object('success', false, 'error', 'Item inválido na sacola.');
-    END IF;
-
-    -- Anti-Hoarding para Visitante
+    -- Anti-Hoarding para Visitante sobre a quantidade agregada do item
     IF v_cliente_id IS NULL AND v_qtd > 50 THEN
       RETURN json_build_object(
         'success', false,
@@ -399,10 +421,10 @@ BEGIN
     FOR UPDATE;
 
     IF NOT FOUND OR v_prod.ativo = false THEN
-      RETURN json_build_object('success', false, 'error', 'O produto "' || COALESCE(v_item->>'nome', 'item') || '" não está mais disponível.');
+      RETURN json_build_object('success', false, 'error', 'Um dos produtos selecionados não está mais disponível.');
     END IF;
 
-    -- Verifica disponibilidade real (Físico - Reservado)
+    -- Verifica disponibilidade real sobre o total consolidado (Físico - Reservado)
     IF v_prod.controlar_estoque IS NOT FALSE THEN
       v_disponivel := GREATEST(0, COALESCE(v_prod.estoque_fisico, 0) - COALESCE(v_prod.estoque_reservado, 0));
 
@@ -416,6 +438,16 @@ BEGIN
 
     v_total := v_total + (v_prod.preco * v_qtd);
     v_nomes_itens := array_append(v_nomes_itens, v_qtd || 'x ' || v_prod.nome);
+
+    -- Constrói o item JSON saneado utilizando o preço oficial do banco de dados
+    v_itens_json_canonical := v_itens_json_canonical || jsonb_build_object(
+      'id', v_prod.id,
+      'nome', v_prod.nome,
+      'quantidade', v_qtd,
+      'preco', v_prod.preco,
+      'preco_unitario', v_prod.preco,
+      'subtotal', (v_prod.preco * v_qtd)
+    );
   END LOOP;
 
   -- 5. Validação e cálculo estrito da taxa de entrega no servidor
@@ -427,7 +459,7 @@ BEGIN
 
   v_total := v_total + v_taxa;
 
-  -- 6. ETAPA 2: GRAVAÇÃO DO PEDIDO PRIMEIRO (Gera v_pedido_id e v_checkout_token deterministicamente)
+  -- 6. ETAPA 2: Gravação do Pedido primeiro
   INSERT INTO public.pedidos (
     cliente_id,
     nome_cliente,
@@ -462,20 +494,43 @@ BEGIN
     'recebido',
     v_expires_at,
     array_to_string(v_nomes_itens, ' + '),
-    p_itens,
+    v_itens_json_canonical,
     p_endereco_entrega
   ) RETURNING id, checkout_token INTO v_pedido_id, v_checkout_token;
 
-  -- 7. ETAPA 3: RESERVA ATÔMICA DO ESTOQUE COM PEDIDO_ID DIRETAMENTE ATRIBUÍDO (Sem qualquer corrida de timestamp)
-  FOR v_item IN SELECT * FROM jsonb_array_elements(p_itens)
+  -- 7. ETAPA 3: Gravação na tabela canônica pedido_itens e Reserva atômica do estoque
+  FOR v_item IN 
+    SELECT 
+      (it->>'id')::BIGINT AS produto_id,
+      SUM(GREATEST(1, COALESCE((it->>'quantidade')::INTEGER, 1)))::INTEGER AS quantidade
+    FROM jsonb_array_elements(p_itens) it
+    WHERE (it->>'id') IS NOT NULL AND (it->>'id') ~ '^\d+$'
+    GROUP BY (it->>'id')::BIGINT
   LOOP
-    v_prod_id := (v_item->>'id')::BIGINT;
-    v_qtd := GREATEST(1, COALESCE((v_item->>'quantidade')::INTEGER, 1));
+    v_prod_id := v_item.produto_id;
+    v_qtd := v_item.quantidade;
 
-    SELECT id, nome, preco, ativo, estoque_fisico, estoque_reservado, controlar_estoque 
+    SELECT id, nome, preco, estoque_fisico, estoque_reservado, controlar_estoque 
     INTO v_prod
     FROM public.produtos
     WHERE id = v_prod_id;
+
+    -- Inserção canônica de itens
+    INSERT INTO public.pedido_itens (
+      pedido_id,
+      produto_id,
+      produto_nome_snapshot,
+      quantidade,
+      preco_unitario_snapshot,
+      subtotal
+    ) VALUES (
+      v_pedido_id,
+      v_prod.id,
+      v_prod.nome,
+      v_qtd,
+      v_prod.preco,
+      (v_prod.preco * v_qtd)
+    );
 
     IF v_prod.controlar_estoque IS NOT FALSE THEN
       v_disponivel := GREATEST(0, COALESCE(v_prod.estoque_fisico, 0) - COALESCE(v_prod.estoque_reservado, 0));
@@ -735,6 +790,7 @@ DECLARE
   v_item JSONB;
   v_prod_id BIGINT;
   v_qtd INTEGER;
+  v_saldo INTEGER;
   v_total_cancelados INTEGER := 0;
 BEGIN
   FOR v_ped IN (
@@ -766,7 +822,8 @@ BEGIN
           SET 
             estoque_reservado = GREATEST(0, estoque_reservado - v_qtd),
             updated_at = NOW()
-          WHERE id = v_prod_id;
+          WHERE id = v_prod_id
+          RETURNING (COALESCE(estoque_fisico, 0) - COALESCE(estoque_reservado, 0)) INTO v_saldo;
 
           INSERT INTO public.estoque_movimentacoes (
             produto_id,
@@ -782,7 +839,7 @@ BEGIN
             COALESCE(v_item->>'nome', 'Produto'),
             'ajuste',
             v_qtd,
-            0,
+            COALESCE(v_saldo, 0),
             'Devolução de reserva por expiração de PIX do Pedido #' || v_ped.id,
             v_ped.id,
             'Sistema / Expiração Automática'
@@ -822,8 +879,109 @@ CREATE POLICY "Apenas admins inserem perfis manualmente" ON public.profiles FOR 
 CREATE POLICY "Produtos visíveis publicamente se ativos" ON public.produtos FOR SELECT USING (ativo = true OR public.is_admin_or_operator());
 CREATE POLICY "Equipe gerencia produtos" ON public.produtos FOR ALL USING (public.is_admin_or_operator());
 CREATE POLICY "Pedidos visíveis por clientes ativos ou equipe" ON public.pedidos FOR SELECT USING ((auth.uid() = cliente_id AND public.is_user_active()) OR public.is_admin_or_operator());
-CREATE POLICY "Clientes ativos criam pedidos" ON public.pedidos FOR INSERT WITH CHECK (auth.uid() = cliente_id AND public.is_user_active());
-CREATE POLICY "Equipe atualiza pedidos" ON public.pedidos FOR UPDATE USING (public.is_admin_or_operator());
+
+-- Erradicação de criação e mutação direta de pedidos no cliente (Audit 5)
+DROP POLICY IF EXISTS "Clientes ativos criam pedidos" ON public.pedidos;
+DROP POLICY IF EXISTS "Clientes ativos criam seus próprios pedidos" ON public.pedidos;
+DROP POLICY IF EXISTS "Usuários podem criar seus próprios pedidos" ON public.pedidos;
+REVOKE INSERT, UPDATE ON public.pedidos FROM PUBLIC, anon, authenticated;
+
+-- Políticas RLS para pedido_itens
+ALTER TABLE public.pedido_itens ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.pedido_itens FROM PUBLIC, anon, authenticated;
+GRANT ALL ON public.pedido_itens TO service_role;
+
+DROP POLICY IF EXISTS "Clientes visualizam itens de seus pedidos" ON public.pedido_itens;
+CREATE POLICY "Clientes visualizam itens de seus pedidos" ON public.pedido_itens
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM public.pedidos p
+      WHERE p.id = pedido_itens.pedido_id
+        AND ((p.cliente_id = auth.uid() AND public.is_user_active()) OR public.is_admin_or_operator())
+    )
+  );
+
+-- RPC Segura para Transições Operacionais de Pedidos por Operadores/Admins
+CREATE OR REPLACE FUNCTION public.alterar_status_operacional_pedido(
+  p_pedido_id BIGINT,
+  p_novo_status TEXT
+)
+RETURNS JSON AS $$
+DECLARE
+  v_ped RECORD;
+  v_status_permitido BOOLEAN := false;
+  v_status_prod TEXT;
+BEGIN
+  IF NOT public.is_admin_or_operator() THEN
+    RETURN json_build_object('success', false, 'error', 'Permissão negada. Apenas administradores ou operadores podem alterar status.');
+  END IF;
+
+  IF p_pedido_id IS NULL THEN
+    RETURN json_build_object('success', false, 'error', 'ID do pedido obrigatório.');
+  END IF;
+
+  SELECT * INTO v_ped
+  FROM public.pedidos
+  WHERE id = p_pedido_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN json_build_object('success', false, 'error', 'Pedido não encontrado.');
+  END IF;
+
+  -- Matriz restrita de transições operacionais
+  IF v_ped.status = 'Confirmado' AND p_novo_status IN ('Em Preparo', 'Cancelado') THEN
+    v_status_permitido := true;
+  ELSIF v_ped.status = 'Em Preparo' AND p_novo_status IN ('Pronto', 'Cancelado') THEN
+    v_status_permitido := true;
+  ELSIF v_ped.status = 'Pronto' AND p_novo_status IN ('Entregue', 'Cancelado') THEN
+    v_status_permitido := true;
+  ELSIF v_ped.status = 'Pendente' AND p_novo_status = 'Cancelado' THEN
+    v_status_permitido := true;
+  ELSIF v_ped.status = p_novo_status THEN
+    RETURN json_build_object('success', true, 'message', 'Pedido já está no status solicitado.', 'status', v_ped.status);
+  END IF;
+
+  IF NOT v_status_permitido THEN
+    RETURN json_build_object(
+      'success', false,
+      'error', 'Transição operacional não permitida de "' || v_ped.status || '" para "' || p_novo_status || '".'
+    );
+  END IF;
+
+  v_status_prod := CASE 
+    WHEN p_novo_status = 'Confirmado' THEN 'recebido'
+    WHEN p_novo_status = 'Em Preparo' THEN 'em_preparo'
+    WHEN p_novo_status = 'Pronto' THEN 'pronto'
+    WHEN p_novo_status = 'Entregue' THEN 'entregue'
+    WHEN p_novo_status = 'Cancelado' THEN 'cancelado'
+    ELSE v_ped.status_producao
+  END;
+
+  UPDATE public.pedidos
+  SET 
+    status = p_novo_status,
+    status_producao = v_status_prod,
+    updated_at = NOW()
+  WHERE id = p_pedido_id;
+
+  RETURN json_build_object(
+    'success', true,
+    'pedido_id', p_pedido_id,
+    'status_anterior', v_ped.status,
+    'status_novo', p_novo_status
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+
+REVOKE ALL ON FUNCTION public.alterar_status_operacional_pedido(BIGINT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.alterar_status_operacional_pedido(BIGINT, TEXT) TO authenticated, service_role;
+
+-- Lockdown estrito de pagamentos_processados
+ALTER TABLE public.pagamentos_processados ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.pagamentos_processados FROM PUBLIC, anon, authenticated;
+GRANT ALL ON public.pagamentos_processados TO service_role;
+
 CREATE POLICY "Equipe visualiza estoque" ON public.estoque_movimentacoes FOR SELECT USING (public.is_admin_or_operator());
 CREATE POLICY "Admins gerenciam financeiro" ON public.financeiro_lancamentos FOR ALL USING (public.is_admin());
 

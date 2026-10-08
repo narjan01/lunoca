@@ -3,10 +3,18 @@ import { verifyAuth } from '../_auth.js';
 
 function getSafeBaseUrl(origin, env) {
   const allowedHostnames = ['lunocadoceria.com.br', 'www.lunocadoceria.com.br', 'localhost', '127.0.0.1'];
+  if (env.APP_BASE_URL) {
+    try {
+      const appUrl = new URL(env.APP_BASE_URL);
+      if (!allowedHostnames.includes(appUrl.hostname)) {
+        allowedHostnames.push(appUrl.hostname);
+      }
+    } catch (_) {}
+  }
   if (origin) {
     try {
       const u = new URL(origin);
-      if (allowedHostnames.includes(u.hostname) || u.hostname.endsWith('.pages.dev')) {
+      if (allowedHostnames.includes(u.hostname)) {
         return u.origin;
       }
     } catch (_) {}

@@ -22,6 +22,21 @@ async function processExpiredOrders(context) {
   const { request, env } = context;
   const corsHeaders = getCorsHeaders(request, env);
 
+  // Validação opcional de CRON_SECRET (para chamadas externas ou cron jobs)
+  const cronSecret = env.CRON_SECRET;
+  if (cronSecret) {
+    const authHeader = request.headers.get('Authorization') || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    const url = new URL(request.url);
+    const querySecret = url.searchParams.get('secret') || '';
+    if (token !== cronSecret && querySecret !== cronSecret) {
+      return new Response(JSON.stringify({ error: 'Acesso não autorizado ao job de expiração de pedidos.' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+  }
+
   try {
     const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
     const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;

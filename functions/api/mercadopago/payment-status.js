@@ -45,11 +45,12 @@ export async function onRequestGet(context) {
     const orderId = data.external_reference;
 
     // Validação de titularidade e isolamento multi-tenant do pedido
+    let localOrder = null;
     if (orderId) {
       const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
       const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
       if (supabaseUrl && serviceKey) {
-        const pedRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${orderId}&select=id,cliente_id,checkout_token`, {
+        const pedRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${orderId}&select=id,cliente_id,checkout_token,status,status_pagamento`, {
           headers: {
             apikey: serviceKey,
             Authorization: `Bearer ${serviceKey}`
@@ -58,6 +59,7 @@ export async function onRequestGet(context) {
         const pedData = await pedRes.json();
         if (Array.isArray(pedData) && pedData.length > 0) {
           const ped = pedData[0];
+          localOrder = ped;
           let isAuthorized = false;
 
           // 1. Validação via JWT (Usuário autenticado)
@@ -98,13 +100,17 @@ export async function onRequestGet(context) {
     }
 
     // Consulta somente leitura estritamente idempotente (confirmação autoritativa via webhook)
+    const isSynced = Boolean(localOrder && (localOrder.status === 'Confirmado' || localOrder.status_pagamento === 'pago'));
     return new Response(JSON.stringify({
       success: true,
       id: data.id,
       status: data.status, // approved, pending, in_process, rejected
       statusDetail: data.status_detail,
       amount: data.transaction_amount,
-      orderId: orderId
+      orderId: orderId,
+      localStatus: localOrder ? localOrder.status : null,
+      localPaymentStatus: localOrder ? localOrder.status_pagamento : null,
+      synced: isSynced
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }

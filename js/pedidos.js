@@ -242,39 +242,8 @@ async function enviarPedido() {
                 throw new Error('Falha inesperada ao processar pedido no servidor.');
             }
         } catch (rpcError) {
-            console.warn('[Lunoca] RPC criar_pedido falhou ou pendente de migração, aplicando fallback com trigger:', rpcError);
-            
-            const taxaAplicada = typeof obterTaxaEntrega === 'function' ? obterTaxaEntrega() : 0;
-            const payloadFallback = {
-                cliente_id: (!isVisitante && usuarioAtual?.id) ? usuarioAtual.id : null,
-                nome_cliente: nomeInput,
-                email_cliente: (!isVisitante && usuarioAtual?.email) ? usuarioAtual.email : 'visitante@lunocadoceria.com.br',
-                telefone_cliente: whatsappInput,
-                data_pedido: new Date().toISOString().split('T')[0],
-                data_entrega: data,
-                total: total,
-                taxa_entrega: taxaAplicada,
-                modalidade_entrega: modalidade,
-                pagamento: formaPagamento,
-                status: 'Pendente',
-                itens: nomesItens.join(' + '),
-                itens_json: itensParaMP,
-                endereco_entrega: end
-            };
-
-            const resInsert = await supabaseClient.from('pedidos').insert(payloadFallback).select();
-            if (resInsert.error) {
-                delete payloadFallback.itens_json;
-                delete payloadFallback.telefone_cliente;
-                payloadFallback.endereco_entrega = `${end} [WhatsApp: ${whatsappInput}]`;
-                const resFallback = await supabaseClient.from('pedidos').insert(payloadFallback).select();
-                if (resFallback.error) throw resFallback.error;
-                pedidoId = resFallback.data[0].id;
-                totalFinal = parseFloat(resFallback.data[0].total);
-            } else {
-                pedidoId = resInsert.data[0].id;
-                totalFinal = parseFloat(resInsert.data[0].total);
-            }
+            console.error('[Lunoca] Erro crítico ao criar pedido via RPC segura:', rpcError);
+            throw new Error(rpcError.message || 'Falha ao processar pedido no servidor. Verifique o estoque ou tente novamente.');
         }
 
         try {
@@ -428,8 +397,15 @@ async function atualizarStatusPedido(pedidoId, novoStatus) {
                 throw new Error(adminPayData.error || 'Erro ao confirmar pagamento administrativamente.');
             }
         } else {
-            const { error } = await supabaseClient.from('pedidos').update({ status: novoStatus }).eq('id', pedidoId);
-            if (error) throw error;
+            const { error } = await supabaseClient.rpc('alterar_status_operacional_pedido', {
+                p_pedido_id: pedidoId,
+                p_novo_status: novoStatus
+            });
+            if (error) {
+                console.warn('[Lunoca] Fallback RPC alterar_status_operacional_pedido:', error.message);
+                const { error: updErr } = await supabaseClient.from('pedidos').update({ status: novoStatus }).eq('id', pedidoId);
+                if (updErr) throw error;
+            }
         }
         
         let ped = pedidosGlobal.find(p => String(p.id) === String(pedidoId));
@@ -809,7 +785,7 @@ async function reabrirPixPedido(pedidoId, totalRaw) {
         const clienteDados = {
             nome: (window.usuarioAtual && window.usuarioAtual.nome) || 'Cliente Lunoca',
             email: (window.usuarioAtual && window.usuarioAtual.email) || 'cliente@lunocadoceria.com.br',
-            cpf: (window.usuarioAtual && window.usuarioAtual.cpf) || '19119119100',
+            cpf: (window.usuarioAtual && window.usuarioAtual.cpf) || '',
             telefone: (window.usuarioAtual && window.usuarioAtual.telefone) || ''
         };
 

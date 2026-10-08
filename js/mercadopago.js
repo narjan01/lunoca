@@ -44,7 +44,7 @@ async function iniciarPagamentoMercadoPago(pedidoId, total, itens, forma, client
     cliente: {
       nome: clienteCustom?.nome || (window.usuarioAtual && window.usuarioAtual.nome) || 'Cliente Lunoca',
       email: clienteCustom?.email || (window.usuarioAtual && window.usuarioAtual.email) || 'cliente@lunocadoceria.com.br',
-      cpf: clienteCustom?.cpf || (window.usuarioAtual && window.usuarioAtual.cpf) || '19119119100'
+      cpf: clienteCustom?.cpf || (window.usuarioAtual && window.usuarioAtual.cpf) || ''
     }
   };
 
