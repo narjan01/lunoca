@@ -73,8 +73,21 @@ CREATE TABLE IF NOT EXISTS public.pedidos (
   telefone_cliente TEXT,
   data_pedido DATE NOT NULL DEFAULT CURRENT_DATE,
   data_entrega DATE NOT NULL,
+  hora_entrega TIME,
+  subtotal NUMERIC(10,2) NOT NULL DEFAULT 0,
+  desconto NUMERIC(10,2) NOT NULL DEFAULT 0,
   total DECIMAL(10,2) NOT NULL,
-  pagamento TEXT CHECK (pagamento IN ('pix', 'cartao')) NOT NULL,
+  taxa_entrega DECIMAL(10,2) DEFAULT 0,
+  valor_pago NUMERIC(10,2) NOT NULL DEFAULT 0,
+  saldo NUMERIC(10,2) NOT NULL DEFAULT 0,
+  sinal_minimo NUMERIC(10,2) NOT NULL DEFAULT 0,
+  saldo_vencimento DATE,
+  modalidade_entrega TEXT DEFAULT 'entrega',
+  canal TEXT NOT NULL DEFAULT 'loja_online' CHECK (canal IN ('loja_online', 'whatsapp', 'balcao', 'telefone')),
+  pagamento TEXT CHECK (pagamento IN ('pix', 'cartao', 'dinheiro', 'transferencia', 'outro')) NOT NULL,
+  status_comercial TEXT NOT NULL DEFAULT 'aguardando_confirmacao' CHECK (status_comercial IN ('aguardando_confirmacao', 'confirmado', 'cancelado', 'concluido')),
+  status_financeiro TEXT NOT NULL DEFAULT 'nao_pago' CHECK (status_financeiro IN ('nao_pago', 'parcialmente_pago', 'pago', 'estornado')),
+  status_operacional TEXT NOT NULL DEFAULT 'aguardando_producao' CHECK (status_operacional IN ('aguardando_producao', 'em_producao', 'pronto', 'saiu_para_entrega', 'entregue', 'retirado', 'cancelado')),
   status TEXT CHECK (status IN ('Pendente', 'Confirmado', 'Em Preparo', 'Pronto', 'Entregue', 'Cancelado')) DEFAULT 'Pendente',
   status_pagamento TEXT DEFAULT 'aguardando_pagamento',
   status_producao TEXT DEFAULT 'recebido',
@@ -82,33 +95,90 @@ CREATE TABLE IF NOT EXISTS public.pedidos (
   itens TEXT NOT NULL,
   itens_json JSONB,
   endereco_entrega TEXT NOT NULL,
+  observacoes_cliente TEXT,
+  observacoes_internas TEXT,
   mercado_pago_status TEXT,
   mercado_pago_id TEXT,
   whatsapp_notificado BOOLEAN DEFAULT false,
   ultimo_status_whatsapp TEXT,
-  taxa_entrega DECIMAL(10,2) DEFAULT 0,
-  modalidade_entrega TEXT DEFAULT 'entrega',
   checkout_token UUID DEFAULT gen_random_uuid(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_pedidos_checkout_token ON public.pedidos(checkout_token);
+CREATE INDEX IF NOT EXISTS idx_pedidos_status_comercial ON public.pedidos(status_comercial);
+CREATE INDEX IF NOT EXISTS idx_pedidos_status_financeiro ON public.pedidos(status_financeiro);
+CREATE INDEX IF NOT EXISTS idx_pedidos_status_operacional ON public.pedidos(status_operacional);
+CREATE INDEX IF NOT EXISTS idx_pedidos_canal ON public.pedidos(canal);
 
--- 3.1. Tabela Canônica de Itens do Pedido (Audit 5)
+-- 3.1. Tabela Canônica de Itens do Pedido (Audit 5 & Etapa 1)
 CREATE TABLE IF NOT EXISTS public.pedido_itens (
   id BIGSERIAL PRIMARY KEY,
   pedido_id BIGINT NOT NULL REFERENCES public.pedidos(id) ON DELETE CASCADE,
   produto_id BIGINT REFERENCES public.produtos(id) ON DELETE SET NULL,
   produto_nome_snapshot TEXT NOT NULL,
   quantidade INTEGER NOT NULL CHECK (quantidade > 0),
+  unidade TEXT NOT NULL DEFAULT 'un',
+  preco_base_snapshot NUMERIC(10,2) NOT NULL DEFAULT 0,
+  preco_adicionais NUMERIC(10,2) NOT NULL DEFAULT 0,
   preco_unitario_snapshot NUMERIC(10,2) NOT NULL,
   subtotal NUMERIC(10,2) NOT NULL,
+  cmv_unitario_snapshot NUMERIC(10,2) DEFAULT 0,
+  cmv_total_snapshot NUMERIC(10,2) DEFAULT 0,
+  observacoes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_pedido_itens_pedido_id ON public.pedido_itens(pedido_id);
 CREATE INDEX IF NOT EXISTS idx_pedido_itens_produto_id ON public.pedido_itens(produto_id);
+
+-- 3.2. Opções e Customizações de Itens (Etapa 1 Confectionery OS)
+CREATE TABLE IF NOT EXISTS public.pedido_item_opcoes (
+  id BIGSERIAL PRIMARY KEY,
+  pedido_item_id BIGINT NOT NULL REFERENCES public.pedido_itens(id) ON DELETE CASCADE,
+  tipo TEXT NOT NULL CHECK (tipo IN ('tamanho', 'massa', 'recheio', 'decoracao', 'adicional', 'outro')),
+  opcao_nome TEXT NOT NULL,
+  preco_adicional NUMERIC(10,2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pedido_item_opcoes_item_id ON public.pedido_item_opcoes(pedido_item_id);
+
+-- 3.3. Múltiplos Pagamentos do Pedido (Etapa 1 Confectionery OS)
+CREATE TABLE IF NOT EXISTS public.pedido_pagamentos (
+  id BIGSERIAL PRIMARY KEY,
+  pedido_id BIGINT NOT NULL REFERENCES public.pedidos(id) ON DELETE CASCADE,
+  valor NUMERIC(10,2) NOT NULL CHECK (valor > 0),
+  metodo TEXT NOT NULL CHECK (metodo IN ('pix', 'cartao', 'dinheiro', 'transferencia', 'outro')),
+  provider TEXT NOT NULL DEFAULT 'manual' CHECK (provider IN ('mercadopago', 'manual', 'caixa')),
+  provider_payment_id TEXT,
+  status TEXT NOT NULL DEFAULT 'aprovado' CHECK (status IN ('pendente', 'aprovado', 'estornado')),
+  pago_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  registrado_por UUID REFERENCES public.profiles(id),
+  comprovante_url TEXT,
+  observacoes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pedido_pagamentos_pedido_id ON public.pedido_pagamentos(pedido_id);
+
+-- 3.4. Auditoria e Histórico de Status (Etapa 1 Confectionery OS)
+CREATE TABLE IF NOT EXISTS public.pedido_status_historico (
+  id BIGSERIAL PRIMARY KEY,
+  pedido_id BIGINT NOT NULL REFERENCES public.pedidos(id) ON DELETE CASCADE,
+  dimensao TEXT NOT NULL CHECK (dimensao IN ('comercial', 'financeiro', 'operacional')),
+  status_anterior TEXT,
+  status_novo TEXT NOT NULL,
+  usuario_id UUID REFERENCES public.profiles(id),
+  usuario_nome TEXT,
+  origem TEXT NOT NULL CHECK (origem IN ('admin', 'webhook_mercadopago', 'sistema', 'cliente', 'cron')),
+  metadata JSONB DEFAULT '{}'::JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pedido_status_historico_pedido_id ON public.pedido_status_historico(pedido_id);
+CREATE INDEX IF NOT EXISTS idx_pedido_status_historico_created_at ON public.pedido_status_historico(created_at);
 
 -- 4. Movimentações de Estoque
 CREATE TABLE IF NOT EXISTS public.estoque_movimentacoes (
@@ -229,7 +299,7 @@ CREATE TRIGGER trigger_check_profile_update
 BEFORE UPDATE ON public.profiles
 FOR EACH ROW EXECUTE FUNCTION public.check_profile_update();
 
--- 7. Trigger Anti-Fraude de Total
+-- 7. Triggers de Negócio & Anti-Fraude (Confectionery OS)
 CREATE OR REPLACE FUNCTION public.validar_recalcular_total_pedido()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -256,7 +326,9 @@ BEGIN
     END LOOP;
 
     IF v_possui_itens_validos AND v_total_calculado > 0 THEN
-      NEW.total := v_total_calculado;
+      NEW.subtotal := v_total_calculado;
+      NEW.total := v_total_calculado + COALESCE(NEW.taxa_entrega, 0) - COALESCE(NEW.desconto, 0);
+      NEW.saldo := GREATEST(0, NEW.total - COALESCE(NEW.valor_pago, 0));
     END IF;
   END IF;
   NEW.updated_at := NOW();
@@ -268,6 +340,95 @@ DROP TRIGGER IF EXISTS trigger_validar_recalcular_total_pedido ON public.pedidos
 CREATE TRIGGER trigger_validar_recalcular_total_pedido
 BEFORE INSERT OR UPDATE ON public.pedidos
 FOR EACH ROW EXECUTE FUNCTION public.validar_recalcular_total_pedido();
+
+-- 7.1. Recálculo Financeiro Atômico (Fonte da Verdade em pedido_pagamentos)
+CREATE OR REPLACE FUNCTION public.recalcular_financeiro_pedido()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_ped_id BIGINT := COALESCE(NEW.pedido_id, OLD.pedido_id);
+  v_total NUMERIC(10,2);
+  v_pago NUMERIC(10,2);
+  v_saldo NUMERIC(10,2);
+  v_novo_status_fin TEXT;
+BEGIN
+  SELECT total INTO v_total FROM public.pedidos WHERE id = v_ped_id;
+  
+  SELECT COALESCE(SUM(valor), 0) INTO v_pago
+  FROM public.pedido_pagamentos
+  WHERE pedido_id = v_ped_id AND status = 'aprovado';
+
+  v_saldo := GREATEST(0, COALESCE(v_total, 0) - v_pago);
+
+  IF v_pago <= 0 THEN
+    v_novo_status_fin := 'nao_pago';
+  ELSIF v_saldo <= 0 THEN
+    v_novo_status_fin := 'pago';
+  ELSE
+    v_novo_status_fin := 'parcialmente_pago';
+  END IF;
+
+  UPDATE public.pedidos
+  SET 
+    valor_pago = v_pago,
+    saldo = v_saldo,
+    status_financeiro = v_novo_status_fin,
+    updated_at = NOW()
+  WHERE id = v_ped_id;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+
+DROP TRIGGER IF EXISTS trg_recalcular_financeiro_pedido ON public.pedido_pagamentos;
+CREATE TRIGGER trg_recalcular_financeiro_pedido
+  AFTER INSERT OR UPDATE OR DELETE ON public.pedido_pagamentos
+  FOR EACH ROW
+  EXECUTE FUNCTION public.recalcular_financeiro_pedido();
+
+-- 7.2. Compatibilidade Legada Somente-Leitura (Derivação estrita de status)
+CREATE OR REPLACE FUNCTION public.sincronizar_status_legado_pedido()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.status := CASE
+    WHEN NEW.status_comercial = 'cancelado' OR NEW.status_operacional = 'cancelado' THEN 'Cancelado'
+    WHEN NEW.status_operacional = 'entregue' OR NEW.status_operacional = 'retirado' THEN 'Entregue'
+    WHEN NEW.status_operacional = 'pronto' THEN 'Pronto'
+    WHEN NEW.status_operacional = 'em_producao' THEN 'Em Preparo'
+    WHEN NEW.status_comercial = 'confirmado' OR NEW.status_financeiro = 'pago' THEN 'Confirmado'
+    ELSE 'Pendente'
+  END;
+
+  IF NEW.status_financeiro = 'pago' THEN
+    NEW.status_pagamento := 'pago';
+  ELSIF NEW.status_financeiro = 'estornado' THEN
+    NEW.status_pagamento := 'reembolsado';
+  ELSIF NEW.status_financeiro = 'parcialmente_pago' THEN
+    NEW.status_pagamento := 'parcial';
+  ELSIF NEW.status_comercial = 'cancelado' THEN
+    NEW.status_pagamento := 'cancelado';
+  END IF;
+
+  IF NEW.status_operacional = 'em_producao' THEN
+    NEW.status_producao := 'em_preparo';
+  ELSIF NEW.status_operacional = 'pronto' THEN
+    NEW.status_producao := 'pronto';
+  ELSIF NEW.status_operacional IN ('entregue', 'retirado') THEN
+    NEW.status_producao := 'entregue';
+  ELSIF NEW.status_operacional = 'cancelado' THEN
+    NEW.status_producao := 'cancelado';
+  ELSIF NEW.status_operacional = 'aguardando_producao' AND NEW.status_comercial = 'confirmado' THEN
+    NEW.status_producao := 'recebido';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+
+DROP TRIGGER IF EXISTS trg_sincronizar_status_legado_pedido ON public.pedidos;
+CREATE TRIGGER trg_sincronizar_status_legado_pedido
+  BEFORE INSERT OR UPDATE ON public.pedidos
+  FOR EACH ROW
+  EXECUTE FUNCTION public.sincronizar_status_legado_pedido();
 
 -- 8. RPC: Criar Pedido Server-Side
 DO $$
@@ -459,7 +620,7 @@ BEGIN
 
   v_total := v_total + v_taxa;
 
-  -- 6. ETAPA 2: Gravação do Pedido primeiro
+  -- 6. ETAPA 2: Gravação do Pedido primeiro com dados do Confectionery OS
   INSERT INTO public.pedidos (
     cliente_id,
     nome_cliente,
@@ -467,10 +628,18 @@ BEGIN
     telefone_cliente,
     data_pedido,
     data_entrega,
+    subtotal,
+    desconto,
     total,
     taxa_entrega,
+    valor_pago,
+    saldo,
     modalidade_entrega,
+    canal,
     pagamento,
+    status_comercial,
+    status_financeiro,
+    status_operacional,
     status,
     status_pagamento,
     status_producao,
@@ -485,10 +654,18 @@ BEGIN
     v_telefone_final,
     CURRENT_DATE,
     p_data_entrega,
+    (v_total - v_taxa),
+    0.00,
     v_total,
     v_taxa,
+    0.00,
+    v_total,
     COALESCE(p_modalidade, 'entrega'),
+    'loja_online',
     p_pagamento,
+    'aguardando_confirmacao',
+    'nao_pago',
+    'aguardando_producao',
     'Pendente',
     'aguardando_pagamento',
     'recebido',
@@ -515,12 +692,15 @@ BEGIN
     FROM public.produtos
     WHERE id = v_prod_id;
 
-    -- Inserção canônica de itens
+    -- Inserção canônica de itens com snapshot expandido
     INSERT INTO public.pedido_itens (
       pedido_id,
       produto_id,
       produto_nome_snapshot,
       quantidade,
+      unidade,
+      preco_base_snapshot,
+      preco_adicionais,
       preco_unitario_snapshot,
       subtotal
     ) VALUES (
@@ -528,6 +708,9 @@ BEGIN
       v_prod.id,
       v_prod.nome,
       v_qtd,
+      'un',
+      v_prod.preco,
+      0.00,
       v_prod.preco,
       (v_prod.preco * v_qtd)
     );
@@ -563,9 +746,18 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- 8. Gravação do Histórico Inicial
+  INSERT INTO public.pedido_status_historico (
+    pedido_id, dimensao, status_anterior, status_novo, origem, metadata
+  ) VALUES 
+    (v_pedido_id, 'comercial', NULL, 'aguardando_confirmacao', 'cliente', jsonb_build_object('canal', 'loja_online')),
+    (v_pedido_id, 'financeiro', NULL, 'nao_pago', 'cliente', jsonb_build_object('forma', p_pagamento)),
+    (v_pedido_id, 'operacional', NULL, 'aguardando_producao', 'cliente', jsonb_build_object('modalidade', p_modalidade));
+
   RETURN json_build_object(
     'success', true,
     'pedido_id', v_pedido_id,
+    'subtotal', (v_total - v_taxa),
     'total', v_total,
     'taxa_entrega', v_taxa,
     'checkout_token', v_checkout_token,
@@ -652,7 +844,7 @@ BEGIN
   END IF;
 
   -- 9.3. Se já confirmado anteriormente, impede duplo processamento
-  IF v_pedido.status IN ('Confirmado', 'Em Preparo', 'Pronto', 'Entregue') OR v_pedido.status_pagamento = 'pago' THEN
+  IF v_pedido.status_financeiro = 'pago' OR v_pedido.status_comercial = 'confirmado' THEN
     IF p_mercado_pago_payment_id IS NOT NULL AND p_mercado_pago_payment_id <> '' AND p_mercado_pago_payment_id <> 'admin_manual' THEN
       INSERT INTO public.pagamentos_processados (provider_id, pedido_id, forma, valor)
       VALUES (p_mercado_pago_payment_id, p_pedido_id, COALESCE(p_forma_pagamento, v_pedido.pagamento), COALESCE(p_valor, v_pedido.total))
@@ -667,18 +859,42 @@ BEGIN
     );
   END IF;
 
-  -- 9.4. Atualiza status do pedido para Confirmado / Pago
+  -- 9.4. Registrar na tabela canônica pedido_pagamentos (dispara recálculo financeiro atômico)
+  INSERT INTO public.pedido_pagamentos (
+    pedido_id,
+    valor,
+    metodo,
+    provider,
+    provider_payment_id,
+    status,
+    pago_em,
+    observacoes
+  ) VALUES (
+    p_pedido_id,
+    COALESCE(p_valor, v_pedido.total),
+    CASE 
+      WHEN COALESCE(p_forma_pagamento, v_pedido.pagamento) ILIKE '%cartao%' THEN 'cartao'
+      WHEN COALESCE(p_forma_pagamento, v_pedido.pagamento) ILIKE '%dinheiro%' THEN 'dinheiro'
+      ELSE 'pix'
+    END,
+    CASE WHEN p_mercado_pago_payment_id = 'admin_manual' THEN 'manual' ELSE 'mercadopago' END,
+    p_mercado_pago_payment_id,
+    'aprovado',
+    NOW(),
+    'Confirmação de pagamento via ' || COALESCE(p_origem, 'gateway')
+  );
+
+  -- 9.5. Atualiza dados comerciais e de gateway no pedido
   UPDATE public.pedidos
   SET 
-    status = 'Confirmado',
-    status_pagamento = 'pago',
-    status_producao = CASE WHEN status_producao IS NULL OR status_producao = 'cancelado' THEN 'recebido' ELSE status_producao END,
+    status_comercial = 'confirmado',
+    status_operacional = CASE WHEN status_operacional = 'aguardando_producao' OR status_operacional IS NULL THEN 'aguardando_producao' ELSE status_operacional END,
     mercado_pago_status = COALESCE(p_status, 'approved'),
     mercado_pago_id = COALESCE(p_mercado_pago_payment_id, mercado_pago_id),
     updated_at = NOW()
   WHERE id = p_pedido_id;
 
-  -- 9.5. Baixa física e liberação da reserva no estoque (SELECT FOR UPDATE)
+  -- 9.6. Baixa física e liberação da reserva no estoque (SELECT FOR UPDATE)
   IF v_pedido.itens_json IS NOT NULL AND jsonb_typeof(v_pedido.itens_json) = 'array' THEN
     FOR v_item IN SELECT * FROM jsonb_array_elements(v_pedido.itens_json)
     LOOP
@@ -725,10 +941,10 @@ BEGIN
     END LOOP;
   END IF;
 
-  -- 9.5.1. Baixa atômica de insumos da receita (Ficha Técnica)
+  -- 9.7. Baixa atômica de insumos da receita (Ficha Técnica)
   PERFORM public.dar_baixa_ingredientes_pedido(p_pedido_id);
 
-  -- 9.6. Registra receita no financeiro com proteção estrita contra duplicidade
+  -- 9.8. Registra receita no financeiro com proteção estrita contra duplicidade
   IF NOT EXISTS (
     SELECT 1 FROM public.financeiro_lancamentos 
     WHERE pedido_id = p_pedido_id AND tipo = 'receita'
@@ -746,7 +962,7 @@ BEGIN
       'receita',
       'Vendas',
       'Venda do Pedido #' || p_pedido_id || ' (' || v_pedido.nome_cliente || ')',
-      v_pedido.total,
+      COALESCE(p_valor, v_pedido.total),
       CURRENT_DATE,
       COALESCE(p_forma_pagamento, v_pedido.pagamento, 'pix'),
       p_pedido_id,
@@ -759,7 +975,7 @@ BEGIN
     );
   END IF;
 
-  -- 9.7. Grava registro na tabela de pagamentos processados (idempotência)
+  -- 9.9. Grava registro na tabela de pagamentos processados (idempotência)
   IF p_mercado_pago_payment_id IS NOT NULL AND p_mercado_pago_payment_id <> '' AND p_mercado_pago_payment_id <> 'admin_manual' THEN
     INSERT INTO public.pagamentos_processados (
       provider_id,
@@ -775,7 +991,47 @@ BEGIN
     ON CONFLICT (provider_id) DO NOTHING;
   END IF;
 
-  RETURN json_build_object('success', true, 'pedido_id', p_pedido_id, 'status', 'Confirmado');
+  -- 9.10. Registro no Histórico de Status
+  INSERT INTO public.pedido_status_historico (
+    pedido_id,
+    dimensao,
+    status_anterior,
+    status_novo,
+    origem,
+    metadata
+  ) VALUES (
+    p_pedido_id,
+    'financeiro',
+    v_pedido.status_financeiro,
+    'pago',
+    CASE WHEN p_origem ILIKE '%admin%' THEN 'admin' WHEN p_origem ILIKE '%webhook%' THEN 'webhook_mercadopago' ELSE 'sistema' END,
+    jsonb_build_object('provider_payment_id', p_mercado_pago_payment_id, 'valor', COALESCE(p_valor, v_pedido.total), 'origem', p_origem)
+  );
+
+  INSERT INTO public.pedido_status_historico (
+    pedido_id,
+    dimensao,
+    status_anterior,
+    status_novo,
+    origem,
+    metadata
+  ) VALUES (
+    p_pedido_id,
+    'comercial',
+    v_pedido.status_comercial,
+    'confirmado',
+    CASE WHEN p_origem ILIKE '%admin%' THEN 'admin' WHEN p_origem ILIKE '%webhook%' THEN 'webhook_mercadopago' ELSE 'sistema' END,
+    jsonb_build_object('motivo', 'pagamento_confirmado')
+  );
+
+  RETURN json_build_object(
+    'success', true,
+    'pedido_id', p_pedido_id,
+    'status', 'Confirmado',
+    'status_comercial', 'confirmado',
+    'status_financeiro', 'pago',
+    'status_operacional', 'aguardando_producao'
+  );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
@@ -901,16 +1157,66 @@ CREATE POLICY "Clientes visualizam itens de seus pedidos" ON public.pedido_itens
     )
   );
 
--- RPC Segura para Transições Operacionais de Pedidos por Operadores/Admins
-CREATE OR REPLACE FUNCTION public.alterar_status_operacional_pedido(
+-- Políticas RLS para pedido_item_opcoes
+ALTER TABLE public.pedido_item_opcoes ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.pedido_item_opcoes FROM PUBLIC, anon, authenticated;
+GRANT ALL ON public.pedido_item_opcoes TO service_role;
+
+DROP POLICY IF EXISTS "Clientes visualizam opcoes de itens de seus pedidos" ON public.pedido_item_opcoes;
+CREATE POLICY "Clientes visualizam opcoes de itens de seus pedidos" ON public.pedido_item_opcoes
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM public.pedido_itens pi
+      JOIN public.pedidos p ON p.id = pi.pedido_id
+      WHERE pi.id = pedido_item_opcoes.pedido_item_id
+        AND ((p.cliente_id = auth.uid() AND public.is_user_active()) OR public.is_admin_or_operator())
+    )
+  );
+
+-- Políticas RLS para pedido_pagamentos
+ALTER TABLE public.pedido_pagamentos ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.pedido_pagamentos FROM PUBLIC, anon, authenticated;
+GRANT ALL ON public.pedido_pagamentos TO service_role;
+
+DROP POLICY IF EXISTS "Clientes visualizam pagamentos de seus pedidos" ON public.pedido_pagamentos;
+CREATE POLICY "Clientes visualizam pagamentos de seus pedidos" ON public.pedido_pagamentos
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM public.pedidos p
+      WHERE p.id = pedido_pagamentos.pedido_id
+        AND ((p.cliente_id = auth.uid() AND public.is_user_active()) OR public.is_admin_or_operator())
+    )
+  );
+
+-- Políticas RLS para pedido_status_historico
+ALTER TABLE public.pedido_status_historico ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.pedido_status_historico FROM PUBLIC, anon, authenticated;
+GRANT ALL ON public.pedido_status_historico TO service_role;
+
+DROP POLICY IF EXISTS "Clientes visualizam historico de seus pedidos" ON public.pedido_status_historico;
+CREATE POLICY "Clientes visualizam historico de seus pedidos" ON public.pedido_status_historico
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM public.pedidos p
+      WHERE p.id = pedido_status_historico.pedido_id
+        AND ((p.cliente_id = auth.uid() AND public.is_user_active()) OR public.is_admin_or_operator())
+    )
+  );
+
+-- RPC alterar_status_pedido com Matriz de Transições e Auditoria
+CREATE OR REPLACE FUNCTION public.alterar_status_pedido(
   p_pedido_id BIGINT,
-  p_novo_status TEXT
+  p_dimensao TEXT,
+  p_novo_status TEXT,
+  p_motivo TEXT DEFAULT NULL,
+  p_metadata JSONB DEFAULT '{}'::JSONB
 )
 RETURNS JSON AS $$
 DECLARE
   v_ped RECORD;
-  v_status_permitido BOOLEAN := false;
-  v_status_prod TEXT;
+  v_status_antigo TEXT;
+  v_permitido BOOLEAN := false;
+  v_user_nome TEXT;
 BEGIN
   IF NOT public.is_admin_or_operator() THEN
     RETURN json_build_object('success', false, 'error', 'Permissão negada. Apenas administradores ou operadores podem alterar status.');
@@ -920,57 +1226,268 @@ BEGIN
     RETURN json_build_object('success', false, 'error', 'ID do pedido obrigatório.');
   END IF;
 
-  SELECT * INTO v_ped
-  FROM public.pedidos
-  WHERE id = p_pedido_id
-  FOR UPDATE;
-
+  SELECT * INTO v_ped FROM public.pedidos WHERE id = p_pedido_id FOR UPDATE;
   IF NOT FOUND THEN
     RETURN json_build_object('success', false, 'error', 'Pedido não encontrado.');
   END IF;
 
-  -- Matriz restrita de transições operacionais
-  IF v_ped.status = 'Confirmado' AND p_novo_status IN ('Em Preparo', 'Cancelado') THEN
-    v_status_permitido := true;
-  ELSIF v_ped.status = 'Em Preparo' AND p_novo_status IN ('Pronto', 'Cancelado') THEN
-    v_status_permitido := true;
-  ELSIF v_ped.status = 'Pronto' AND p_novo_status IN ('Entregue', 'Cancelado') THEN
-    v_status_permitido := true;
-  ELSIF v_ped.status = 'Pendente' AND p_novo_status = 'Cancelado' THEN
-    v_status_permitido := true;
-  ELSIF v_ped.status = p_novo_status THEN
-    RETURN json_build_object('success', true, 'message', 'Pedido já está no status solicitado.', 'status', v_ped.status);
+  SELECT nome INTO v_user_nome FROM public.profiles WHERE id = auth.uid();
+
+  IF p_dimensao = 'operacional' THEN
+    v_status_antigo := v_ped.status_operacional;
+
+    IF p_novo_status NOT IN ('aguardando_producao', 'em_producao', 'pronto', 'saiu_para_entrega', 'entregue', 'retirado', 'cancelado') THEN
+      RETURN json_build_object('success', false, 'error', 'Status operacional inválido: ' || p_novo_status);
+    END IF;
+
+    -- Matriz de transições operacionais
+    IF v_status_antigo = p_novo_status THEN
+      v_permitido := true;
+    ELSIF v_status_antigo = 'aguardando_producao' AND p_novo_status IN ('em_producao', 'cancelado') THEN
+      v_permitido := true;
+    ELSIF v_status_antigo = 'em_producao' AND p_novo_status IN ('pronto', 'cancelado') THEN
+      v_permitido := true;
+    ELSIF v_status_antigo = 'pronto' AND p_novo_status IN ('saiu_para_entrega', 'entregue', 'retirado', 'cancelado') THEN
+      v_permitido := true;
+    ELSIF v_status_antigo = 'saiu_para_entrega' AND p_novo_status IN ('entregue', 'pronto', 'cancelado') THEN
+      v_permitido := true;
+    ELSIF public.is_admin() THEN
+      v_permitido := true;
+    END IF;
+
+    IF NOT v_permitido THEN
+      RETURN json_build_object(
+        'success', false,
+        'error', 'Transição operacional não permitida de "' || v_status_antigo || '" para "' || p_novo_status || '".'
+      );
+    END IF;
+
+    UPDATE public.pedidos
+    SET 
+      status_operacional = p_novo_status,
+      updated_at = NOW()
+    WHERE id = p_pedido_id;
+
+  ELSIF p_dimensao = 'comercial' THEN
+    v_status_antigo := v_ped.status_comercial;
+
+    IF p_novo_status NOT IN ('aguardando_confirmacao', 'confirmado', 'cancelado', 'concluido') THEN
+      RETURN json_build_object('success', false, 'error', 'Status comercial inválido: ' || p_novo_status);
+    END IF;
+
+    IF v_status_antigo = p_novo_status THEN
+      v_permitido := true;
+    ELSIF v_status_antigo = 'aguardando_confirmacao' AND p_novo_status IN ('confirmado', 'cancelado') THEN
+      v_permitido := true;
+    ELSIF v_status_antigo = 'confirmado' AND p_novo_status IN ('concluido', 'cancelado') THEN
+      v_permitido := true;
+    ELSIF public.is_admin() THEN
+      v_permitido := true;
+    END IF;
+
+    IF NOT v_permitido THEN
+      RETURN json_build_object(
+        'success', false,
+        'error', 'Transição comercial não permitida de "' || v_status_antigo || '" para "' || p_novo_status || '".'
+      );
+    END IF;
+
+    UPDATE public.pedidos
+    SET 
+      status_comercial = p_novo_status,
+      updated_at = NOW()
+    WHERE id = p_pedido_id;
+
+  ELSE
+    RETURN json_build_object('success', false, 'error', 'Dimensão de status inválida. Use "operacional" ou "comercial". Para financeiro, registre pagamentos.');
   END IF;
 
-  IF NOT v_status_permitido THEN
-    RETURN json_build_object(
-      'success', false,
-      'error', 'Transição operacional não permitida de "' || v_ped.status || '" para "' || p_novo_status || '".'
-    );
-  END IF;
-
-  v_status_prod := CASE 
-    WHEN p_novo_status = 'Confirmado' THEN 'recebido'
-    WHEN p_novo_status = 'Em Preparo' THEN 'em_preparo'
-    WHEN p_novo_status = 'Pronto' THEN 'pronto'
-    WHEN p_novo_status = 'Entregue' THEN 'entregue'
-    WHEN p_novo_status = 'Cancelado' THEN 'cancelado'
-    ELSE v_ped.status_producao
-  END;
-
-  UPDATE public.pedidos
-  SET 
-    status = p_novo_status,
-    status_producao = v_status_prod,
-    updated_at = NOW()
-  WHERE id = p_pedido_id;
+  -- Gravação auditável do histórico
+  INSERT INTO public.pedido_status_historico (
+    pedido_id,
+    dimensao,
+    status_anterior,
+    status_novo,
+    usuario_id,
+    usuario_nome,
+    origem,
+    metadata
+  ) VALUES (
+    p_pedido_id,
+    p_dimensao,
+    v_status_antigo,
+    p_novo_status,
+    auth.uid(),
+    v_user_nome,
+    'admin',
+    jsonb_build_object('motivo', p_motivo) || COALESCE(p_metadata, '{}'::JSONB)
+  );
 
   RETURN json_build_object(
     'success', true,
     'pedido_id', p_pedido_id,
-    'status_anterior', v_ped.status,
+    'dimensao', p_dimensao,
+    'status_anterior', v_status_antigo,
     'status_novo', p_novo_status
   );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+
+REVOKE ALL ON FUNCTION public.alterar_status_pedido(BIGINT, TEXT, TEXT, TEXT, JSONB) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.alterar_status_pedido(BIGINT, TEXT, TEXT, TEXT, JSONB) TO authenticated, service_role;
+
+-- RPC registrar_pagamento_pedido
+CREATE OR REPLACE FUNCTION public.registrar_pagamento_pedido(
+  p_pedido_id BIGINT,
+  p_valor NUMERIC,
+  p_metodo TEXT,
+  p_observacoes TEXT DEFAULT NULL,
+  p_comprovante_url TEXT DEFAULT NULL
+)
+RETURNS JSON AS $$
+DECLARE
+  v_ped RECORD;
+  v_pagamento_id BIGINT;
+  v_metodo_norm TEXT;
+  v_user_nome TEXT;
+BEGIN
+  IF NOT public.is_admin_or_operator() THEN
+    RETURN json_build_object('success', false, 'error', 'Permissão negada. Apenas administradores ou operadores podem registrar pagamentos.');
+  END IF;
+
+  IF p_pedido_id IS NULL THEN
+    RETURN json_build_object('success', false, 'error', 'ID do pedido obrigatório.');
+  END IF;
+
+  IF p_valor IS NULL OR p_valor <= 0 THEN
+    RETURN json_build_object('success', false, 'error', 'Valor de pagamento deve ser positivo.');
+  END IF;
+
+  v_metodo_norm := LOWER(TRIM(COALESCE(p_metodo, 'pix')));
+  IF v_metodo_norm NOT IN ('pix', 'cartao', 'dinheiro', 'transferencia', 'outro') THEN
+    RETURN json_build_object('success', false, 'error', 'Método de pagamento inválido: ' || p_metodo);
+  END IF;
+
+  SELECT * INTO v_ped FROM public.pedidos WHERE id = p_pedido_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN json_build_object('success', false, 'error', 'Pedido não encontrado.');
+  END IF;
+
+  SELECT nome INTO v_user_nome FROM public.profiles WHERE id = auth.uid();
+
+  INSERT INTO public.pedido_pagamentos (
+    pedido_id,
+    valor,
+    metodo,
+    provider,
+    provider_payment_id,
+    status,
+    pago_em,
+    registrado_por,
+    comprovante_url,
+    observacoes
+  ) VALUES (
+    p_pedido_id,
+    p_valor,
+    v_metodo_norm,
+    'manual',
+    'manual_' || extract(epoch from now())::bigint || '_' || floor(random() * 1000)::text,
+    'aprovado',
+    NOW(),
+    auth.uid(),
+    p_comprovante_url,
+    p_observacoes
+  ) RETURNING id INTO v_pagamento_id;
+
+  -- Lançamento automático no financeiro geral
+  INSERT INTO public.financeiro_lancamentos (
+    tipo,
+    categoria,
+    descricao,
+    valor,
+    data_lancamento,
+    forma_pagamento,
+    pedido_id,
+    observacoes
+  ) VALUES (
+    'receita',
+    'Vendas',
+    'Recebimento registrado do Pedido #' || p_pedido_id || ' via ' || upper(v_metodo_norm),
+    p_valor,
+    CURRENT_DATE,
+    v_metodo_norm,
+    p_pedido_id,
+    p_observacoes
+  );
+
+  -- Registro de histórico auditável
+  INSERT INTO public.pedido_status_historico (
+    pedido_id,
+    dimensao,
+    status_anterior,
+    status_novo,
+    usuario_id,
+    usuario_nome,
+    origem,
+    metadata
+  ) VALUES (
+    p_pedido_id,
+    'financeiro',
+    v_ped.status_financeiro,
+    (SELECT status_financeiro FROM public.pedidos WHERE id = p_pedido_id),
+    auth.uid(),
+    v_user_nome,
+    'admin',
+    jsonb_build_object(
+      'pagamento_id', v_pagamento_id,
+      'valor', p_valor,
+      'metodo', v_metodo_norm,
+      'observacoes', p_observacoes
+    )
+  );
+
+  RETURN json_build_object(
+    'success', true,
+    'pagamento_id', v_pagamento_id,
+    'pedido_id', p_pedido_id,
+    'valor', p_valor,
+    'metodo', v_metodo_norm,
+    'saldo_restante', (SELECT saldo FROM public.pedidos WHERE id = p_pedido_id),
+    'status_financeiro', (SELECT status_financeiro FROM public.pedidos WHERE id = p_pedido_id)
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+
+REVOKE ALL ON FUNCTION public.registrar_pagamento_pedido(BIGINT, NUMERIC, TEXT, TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.registrar_pagamento_pedido(BIGINT, NUMERIC, TEXT, TEXT, TEXT) TO authenticated, service_role;
+
+-- RPC Segura para Transições Operacionais de Pedidos por Operadores/Admins (Compatibilidade Legada)
+CREATE OR REPLACE FUNCTION public.alterar_status_operacional_pedido(
+  p_pedido_id BIGINT,
+  p_novo_status TEXT
+)
+RETURNS JSON AS $$
+DECLARE
+  v_status_op TEXT;
+  v_res JSON;
+BEGIN
+  -- Mapeia status legado de texto para novo status operacional
+  v_status_op := CASE 
+    WHEN p_novo_status IN ('Em Preparo', 'em_preparo', 'em_producao') THEN 'em_producao'
+    WHEN p_novo_status IN ('Pronto', 'pronto') THEN 'pronto'
+    WHEN p_novo_status IN ('Entregue', 'entregue') THEN 'entregue'
+    WHEN p_novo_status IN ('Cancelado', 'cancelado') THEN 'cancelado'
+    WHEN p_novo_status IN ('Confirmado', 'recebido', 'aguardando_producao') THEN 'aguardando_producao'
+    ELSE LOWER(p_novo_status)
+  END;
+
+  v_res := public.alterar_status_pedido(p_pedido_id, 'operacional', v_status_op, 'Transição solicitada via adapter operacional legado');
+
+  IF (v_res->>'success')::BOOLEAN IS TRUE AND v_status_op = 'cancelado' THEN
+    PERFORM public.alterar_status_pedido(p_pedido_id, 'comercial', 'cancelado', 'Cancelamento comercial em cascata via adapter operacional');
+  END IF;
+
+  RETURN v_res;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
