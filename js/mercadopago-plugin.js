@@ -198,9 +198,12 @@
         if (orderData.checkoutToken) {
           headers['X-Checkout-Token'] = orderData.checkoutToken;
         }
-        if (window.supabaseClient?.auth?.session?.()?.access_token) {
-          headers['Authorization'] = `Bearer ${window.supabaseClient.auth.session().access_token}`;
-        }
+        try {
+          const authData = await window.supabaseClient?.auth?.getSession?.();
+          if (authData?.data?.session?.access_token) {
+            headers['Authorization'] = `Bearer ${authData.data.session.access_token}`;
+          }
+        } catch (_) {}
 
         const res = await fetch(apiUrl, {
           method: 'POST',
@@ -603,9 +606,12 @@
 
         const cardHeaders = { 'Content-Type': 'application/json' };
         if (token) cardHeaders['X-Checkout-Token'] = token;
-        if (window.supabaseClient?.auth?.session?.()?.access_token) {
-          cardHeaders['Authorization'] = `Bearer ${window.supabaseClient.auth.session().access_token}`;
-        }
+        try {
+          const authData = await window.supabaseClient?.auth?.getSession?.();
+          if (authData?.data?.session?.access_token) {
+            cardHeaders['Authorization'] = `Bearer ${authData.data.session.access_token}`;
+          }
+        } catch (_) {}
 
         const res = await fetch('/api/mercadopago/transparent-payment', {
           method: 'POST',
@@ -690,9 +696,12 @@
           // 1. Checa status oficial no Mercado Pago com autenticação do pedido
           const pollHeaders = {};
           if (token) pollHeaders['X-Checkout-Token'] = token;
-          if (window.supabaseClient?.auth?.session?.()?.access_token) {
-            pollHeaders['Authorization'] = `Bearer ${window.supabaseClient.auth.session().access_token}`;
-          }
+          try {
+            const authData = await window.supabaseClient?.auth?.getSession?.();
+            if (authData?.data?.session?.access_token) {
+              pollHeaders['Authorization'] = `Bearer ${authData.data.session.access_token}`;
+            }
+          } catch (_) {}
 
           const queryToken = token ? `&checkout_token=${encodeURIComponent(token)}` : '';
           const res = await fetch(`/api/mercadopago/payment-status?id=${encodeURIComponent(paymentId)}${queryToken}`, {
