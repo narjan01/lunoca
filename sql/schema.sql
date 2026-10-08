@@ -486,6 +486,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_pedidos_mercado_pago_id_unique
   ON public.pedidos(mercado_pago_id) 
   WHERE mercado_pago_id IS NOT NULL;
 
+DROP FUNCTION IF EXISTS public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT, TEXT, NUMERIC, TEXT);
+
 CREATE OR REPLACE FUNCTION public.confirmar_pagamento_pedido(
   p_pedido_id BIGINT,
   p_mercado_pago_payment_id TEXT DEFAULT NULL,

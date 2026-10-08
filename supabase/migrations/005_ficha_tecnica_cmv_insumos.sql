@@ -104,13 +104,15 @@ END;
 $$;
 
 -- 5. ATUALIZAÇÃO DA RPC CONFIRMAR_PAGAMENTO_PEDIDO (COM BAIXA DE INSUMOS INTEGRADA)
+DROP FUNCTION IF EXISTS public.confirmar_pagamento_pedido(BIGINT, TEXT, TEXT, TEXT, NUMERIC, TEXT);
+
 CREATE OR REPLACE FUNCTION public.confirmar_pagamento_pedido(
   p_pedido_id BIGINT,
+  p_mercado_pago_payment_id TEXT DEFAULT NULL,
   p_status TEXT DEFAULT 'approved',
   p_forma_pagamento TEXT DEFAULT NULL,
-  p_mercado_pago_payment_id TEXT DEFAULT NULL,
   p_valor NUMERIC DEFAULT NULL,
-  p_operador_nome TEXT DEFAULT 'Sistema'
+  p_origem TEXT DEFAULT 'webhook'
 )
 RETURNS JSON
 LANGUAGE plpgsql
@@ -124,6 +126,10 @@ DECLARE
   v_qtd INTEGER;
   v_prod RECORD;
 BEGIN
+  IF p_pedido_id IS NULL THEN
+    RETURN json_build_object('success', false, 'error', 'ID do pedido não informado.');
+  END IF;
+
   -- 5.1. Valida existência de registro no livro-caixa de idempotência
   IF p_mercado_pago_payment_id IS NOT NULL AND p_mercado_pago_payment_id <> '' AND p_mercado_pago_payment_id <> 'admin_manual' THEN
     IF EXISTS (SELECT 1 FROM public.pagamentos_processados WHERE provider_id = p_mercado_pago_payment_id) THEN
@@ -213,7 +219,7 @@ BEGIN
             GREATEST(0, v_prod.estoque_fisico - v_qtd),
             'Venda confirmada - Pedido #' || p_pedido_id,
             p_pedido_id,
-            p_operador_nome
+            COALESCE(p_origem, 'Sistema / Mercado Pago')
           );
         END IF;
       END IF;
@@ -241,7 +247,7 @@ BEGIN
     CURRENT_DATE,
     COALESCE(p_forma_pagamento, v_pedido.pagamento),
     p_pedido_id,
-    'Confirmado via ' || COALESCE(p_mercado_pago_payment_id, 'manual') || ' por ' || p_operador_nome
+    'Confirmado via ' || COALESCE(p_mercado_pago_payment_id, 'manual') || ' (' || COALESCE(p_origem, 'Sistema') || ')'
   );
 
   -- 5.8. Registro de Idempotência
