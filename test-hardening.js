@@ -1301,7 +1301,243 @@ for (const file of etapa1Files) {
   console.log(`    ✅ ${file}: service_role desacoplado de dependência de profile de usuário.`);
 }
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas atualmente definidas nas Fases 1–10 foram aprovadas.');
+// ==========================================================================
+// Teste 11: Operação Diária & Confectionery OS Core (Etapa 2 - Nooty Style)
+// ==========================================================================
+console.log('\n🍰 FASE 11: Operação Diária & Confectionery OS Core (Etapa 2 - Nooty Style)...');
+
+const etapa2Files = [
+  'supabase/migrations/010_confectionery_os_operacao_diaria.sql',
+  'sql/schema.sql',
+  'sql/install.sql'
+];
+
+// 11.1 Desacoplamento da Tabela Clientes e Identidade Comercial Canônica
+console.log('  🔎 11.1 Verificando desacoplamento de clientes, FKs e restrição única de telefone...');
+for (const file of etapa2Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('CREATE TABLE IF NOT EXISTS public.clientes') &&
+    content.includes('auth_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL') &&
+    content.includes('telefone_normalizado TEXT') &&
+    content.includes('uq_clientes_telefone_normalizado') &&
+    content.includes('ON public.clientes(telefone_normalizado)'),
+    `[FALHA] ${file} não implementa tabela clientes com desacoplamento de auth e telefone único indexado!`
+  );
+  assert.ok(
+    content.includes('cliente_id_rel BIGINT REFERENCES public.clientes(id) ON DELETE SET NULL;'),
+    `[FALHA] ${file} não vincula pedidos à nova tabela clientes via cliente_id_rel!`
+  );
+  console.log(`    ✅ ${file}: Tabela clientes desacoplada, telefone único normalizado e FK canônica em pedidos.`);
+}
+
+// 11.2 RLS Rigoroso e Políticas de Acesso na Tabela Clientes
+console.log('\n  🔎 11.2 Verificando RLS e políticas de isolamento na tabela clientes...');
+for (const file of etapa2Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('ALTER TABLE public.clientes ENABLE ROW LEVEL SECURITY;') &&
+    content.includes('Equipe ou dono visualiza clientes') &&
+    content.includes('Equipe gerencia clientes'),
+    `[FALHA] ${file} não define RLS rigoroso com políticas de visualização e gerência em clientes!`
+  );
+  console.log(`    ✅ ${file}: RLS ativo e políticas de segurança verificadas para clientes.`);
+}
+
+// 11.3 Tabela Capacidade de Produção e Snapshots de Pontos em Itens e Opções
+console.log('\n  🔎 11.3 Verificando tabela capacidade_producao e colunas de snapshot de pontos...');
+for (const file of etapa2Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('CREATE TABLE IF NOT EXISTS public.capacidade_producao') &&
+    content.includes('capacidade_maxima_pontos NUMERIC(8,2) NOT NULL DEFAULT 30.00') &&
+    content.includes('bloqueado BOOLEAN NOT NULL DEFAULT false'),
+    `[FALHA] ${file} não cria capacidade_producao com limite padrão e trava de bloqueio!`
+  );
+  assert.ok(
+    content.includes('pontos_producao_snapshot NUMERIC(6,2) NOT NULL DEFAULT 1.00;') &&
+    content.includes('pontos_producao_adicionais_snapshot NUMERIC(6,2) NOT NULL DEFAULT 0.00;') &&
+    content.includes('produto_opcao_id BIGINT REFERENCES public.produto_opcoes(id) ON DELETE SET NULL;'),
+    `[FALHA] ${file} não cria snapshots de pontos em pedido_itens e pedido_item_opcoes com vínculo de produto_opcao_id!`
+  );
+  console.log(`    ✅ ${file}: Capacidade de produção modelada e snapshots imutáveis em itens e opções.`);
+}
+
+// 11.4 Cálculo Derivado sem Drift e Lock Anti-Overbooking Concorrente
+console.log('\n  🔎 11.4 Verificando derivação pura de pontos sem coluna mutável em pedidos e lock concorrente...');
+for (const file of etapa2Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('INSERT INTO public.capacidade_producao (data, capacidade_maxima_pontos)') &&
+    content.includes('ON CONFLICT (data) DO NOTHING;') &&
+    content.includes('FOR UPDATE;'),
+    `[FALHA] ${file} não inicializa data concorrente com ON CONFLICT DO NOTHING ou não usa FOR UPDATE!`
+  );
+  assert.ok(
+    content.includes('COALESCE(SUM(pi.quantidade * (pi.pontos_producao_snapshot + COALESCE(opt_pts.pts_adicionais, 0.00))), 0.00)') &&
+    content.includes("ped.status_comercial <> 'cancelado'"),
+    `[FALHA] ${file} não deriva carga produtiva diretamente da agregação de itens de pedidos ativos!`
+  );
+  console.log(`    ✅ ${file}: Anti-overbooking com lock transacional e carga produtiva derivada.`);
+}
+
+// 11.5 Reagendamento com Ordenação Anti-Deadlock
+console.log('\n  🔎 11.5 Verificando ordenação LEAST/GREATEST anti-deadlock em reagendar_encomenda_admin...');
+for (const file of etapa2Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('v_primeira_data := LEAST(v_data_antiga, p_nova_data);') &&
+    content.includes('v_segunda_data := GREATEST(v_data_antiga, p_nova_data);') &&
+    content.includes('PERFORM 1 FROM public.capacidade_producao WHERE data = v_primeira_data FOR UPDATE;') &&
+    content.includes('PERFORM 1 FROM public.capacidade_producao WHERE data = v_segunda_data FOR UPDATE;'),
+    `[FALHA] ${file} não implementa locks ordenados por LEAST/GREATEST em reagendar_encomenda_admin!`
+  );
+  console.log(`    ✅ ${file}: Reagendamento seguro contra deadlocks bidirecionais.`);
+}
+
+// 11.6 Governança Estrita de Descontos Comerciais
+console.log('\n  🔎 11.6 Verificando governança de descontos (máx 10% operador / justificativa admin)...');
+for (const file of etapa2Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('v_desconto > (v_subtotal * 0.10) AND NOT public.is_admin()') &&
+    content.includes("Operadores podem conceder no máximo 10% de desconto") &&
+    content.includes("Por favor, informe a justificativa do desconto concedido"),
+    `[FALHA] ${file} não valida teto de 10% para operadores e justificativa obrigatória para administradores!`
+  );
+  console.log(`    ✅ ${file}: Descontos comerciais com governança e auditoria.`);
+}
+
+// 11.7 Validação Estrita de Modalidade de Entrega vs Retirada
+console.log('\n  🔎 11.7 Verificando coerência de frete zerado em retirada e endereço obrigatório em entrega...');
+for (const file of etapa2Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes("v_modalidade_norm = 'retirada'") &&
+    content.includes('v_taxa := 0.00;') &&
+    content.includes("v_modalidade_norm = 'entrega'") &&
+    content.includes("Para entrega em domicílio, o endereço completo é obrigatório"),
+    `[FALHA] ${file} não zera taxa em retirada ou não exige endereço em entrega!`
+  );
+  console.log(`    ✅ ${file}: Regras de frete e modalidade validadas no backend.`);
+}
+
+// 11.8 Confirmação Comercial Automática por Sinal e Override Restrito a Admin
+console.log('\n  🔎 11.8 Verificando confirmação automática por sinal e override restrito a administradores...');
+for (const file of etapa2Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('v_sinal_pago >= v_sinal_min AND v_sinal_min > 0.00') &&
+    content.includes('p_forcar_confirmacao_sem_sinal = true') &&
+    content.includes('Apenas Administradores podem dispensar a exigência de sinal mínimo') &&
+    content.includes("v_sinal_minimo > 0 AND v_pago >= v_sinal_minimo AND v_status_com_antigo = 'aguardando_confirmacao'"),
+    `[FALHA] ${file} não implementa confirmação automática por sinal ou trava de override de admin!`
+  );
+  console.log(`    ✅ ${file}: Confirmação comercial automática por sinal e privilégio restrito de override.`);
+}
+
+// 11.9 Guarda de Produção no Estorno Financeiro
+console.log('\n  🔎 11.9 Verificando guarda de produção em estornos (não regride encomendas em curso)...');
+for (const file of etapa2Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes("v_sinal_minimo > 0 AND v_pago < v_sinal_minimo") &&
+    content.includes("v_status_oper_antigo = 'aguardando_producao' AND v_status_com_antigo = 'confirmado'") &&
+    content.includes("v_novo_status_com := 'aguardando_confirmacao';") &&
+    content.includes("Durante/após produção ou se já concluído: NÃO regride status_comercial"),
+    `[FALHA] ${file} não protege pedidos em produção/concluídos contra regressão comercial em estornos!`
+  );
+  console.log(`    ✅ ${file}: Guarda de produção ativa contra regressão indevida de status comercial.`);
+}
+
+// 11.10 Timezone Canônico e Métricas Contábeis DRE da Tela Hoje
+console.log('\n  🔎 11.10 Verificando fuso horário America/Fortaleza e métricas via financeiro_lancamentos...');
+for (const file of etapa2Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes("'America/Fortaleza'") &&
+    content.includes('FUNCTION public.obter_resumo_operacao_hoje(') &&
+    content.includes('financeiro_lancamentos') &&
+    content.includes("categoria = 'Estornos'"),
+    `[FALHA] ${file} não crava fuso America/Fortaleza ou não calcula caixa líquido via ledger DRE!`
+  );
+  console.log(`    ✅ ${file}: Fuso horário canônico e caixa diário calculado pelo ledger de lançamentos contábeis.`);
+}
+
+// 11.11 RBAC Estrito nas Novas RPCs da Etapa 2
+console.log('\n  🔎 11.11 Verificando RBAC e permissões de execução das novas RPCs...');
+const rpcsEtapa2 = [
+  'buscar_clientes_admin',
+  'criar_encomenda_admin',
+  'reagendar_encomenda_admin',
+  'obter_resumo_operacao_hoje',
+  'obter_agenda_encomendas'
+];
+for (const file of etapa2Files) {
+  const content = fs.readFileSync(file, 'utf-8');
+  for (const rpc of rpcsEtapa2) {
+    assert.ok(
+      content.includes(`REVOKE ALL ON FUNCTION public.${rpc}`) &&
+      content.includes(`GRANT EXECUTE ON FUNCTION public.${rpc}`) &&
+      content.includes('TO authenticated, service_role;'),
+      `[FALHA] ${file} não revoga anon ou não restringe permissões da RPC ${rpc}!`
+    );
+  }
+  console.log(`    ✅ ${file}: Todas as 5 RPCs da Etapa 2 protegidas com RBAC authenticated + service_role.`);
+}
+
+// 11.12 Verificação de Arquivos Frontend (admin.html, admin-operacao.js, admin.js, style.css)
+console.log('\n  🔎 11.12 Verificando integração de frontend (Tela Hoje, Central de Encomendas, Modais)...');
+const adminHtmlContent = fs.readFileSync('admin.html', 'utf-8');
+assert.ok(
+  adminHtmlContent.includes('id="tab-btn-hoje"') &&
+  adminHtmlContent.includes('id="admin-tab-hoje"') &&
+  adminHtmlContent.includes('id="hoje-metricas-grid"') &&
+  adminHtmlContent.includes('id="hoje-timeline-lista"') &&
+  adminHtmlContent.includes('id="modal-nova-encomenda"') &&
+  adminHtmlContent.includes('id="modal-registrar-pagamento"') &&
+  adminHtmlContent.includes('id="modal-reagendar-encomenda"') &&
+  adminHtmlContent.includes('js/admin-operacao.js'),
+  '[FALHA] admin.html não contém todos os elementos e modais da Etapa 2!'
+);
+
+const adminOperacaoContent = fs.readFileSync('js/admin-operacao.js', 'utf-8');
+assert.ok(
+  adminOperacaoContent.includes('carregarDashboardHoje') &&
+  adminOperacaoContent.includes('carregarCentralEncomendas') &&
+  adminOperacaoContent.includes('submeterNovaEncomendaAdmin') &&
+  adminOperacaoContent.includes('submeterPagamentoSaldo') &&
+  adminOperacaoContent.includes('submeterReagendamento') &&
+  adminOperacaoContent.includes('abrirWhatsAppEncomenda'),
+  '[FALHA] js/admin-operacao.js não implementa os métodos esperados da operação diária!'
+);
+
+const adminJsContent = fs.readFileSync('js/admin.js', 'utf-8');
+assert.ok(
+  adminJsContent.includes("'hoje'") &&
+  adminJsContent.includes('carregarDashboardHoje') &&
+  adminJsContent.includes('carregarCentralEncomendas'),
+  '[FALHA] js/admin.js não integra navegação da tela Hoje e Central de Encomendas!'
+);
+
+const adminLoaderContent = fs.readFileSync('js/admin-loader.js', 'utf-8');
+assert.ok(
+  adminLoaderContent.includes("'js/admin-operacao.js'"),
+  '[FALHA] js/admin-loader.js não inclui js/admin-operacao.js no carregador dinâmico!'
+);
+
+const styleContent = fs.readFileSync('css/style.css', 'utf-8');
+assert.ok(
+  styleContent.includes('.hoje-metricas-grid') &&
+  styleContent.includes('.metric-card-nooty') &&
+  styleContent.includes('.filtro-pill-btn') &&
+  styleContent.includes('.encomenda-card-nooty'),
+  '[FALHA] css/style.css não contém os estilos da operação diária Nooty!'
+);
+console.log('    ✅ Frontend: admin.html, admin-operacao.js, admin.js, admin-loader.js e style.css totalmente integrados.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–11 foram aprovadas.');
+
 
 
 

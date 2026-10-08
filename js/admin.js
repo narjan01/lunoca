@@ -12,14 +12,21 @@ function configurarAcessoAdminPorNivel() {
     const isOperador = usuarioAtual && usuarioAtual.nivel === 'operador';
     const isAdm = usuarioAtual && usuarioAtual.nivel === 'admin';
 
-    // Abas restritas a administradores
+    // Abas estritas a administradores (financeiro sensível, gestão de acessos e credenciais)
     const abasRestritas = [
-        'tab-btn-pedidos',
-        'tab-btn-calendario',
         'tab-btn-financeiro',
         'tab-btn-usuarios',
         'tab-btn-pagamentos',
         'tab-btn-whatsapp'
+    ];
+
+    const abasOperacionais = [
+        'tab-btn-hoje',
+        'tab-btn-pedidos',
+        'tab-btn-calendario',
+        'tab-btn-produtos',
+        'tab-btn-estoque',
+        'tab-btn-fichatecnica'
     ];
 
     const tituloAdmin = document.querySelector('#admin-section h2');
@@ -31,33 +38,24 @@ function configurarAcessoAdminPorNivel() {
             if (btn) btn.style.display = 'none';
         });
 
-        // Garante exibição de Produtos, Estoque e Ficha Técnica
-        const btnProd = document.getElementById('tab-btn-produtos');
-        const btnEstoque = document.getElementById('tab-btn-estoque');
-        const btnFicha = document.getElementById('tab-btn-fichatecnica');
-        if (btnProd) btnProd.style.display = 'inline-flex';
-        if (btnEstoque) btnEstoque.style.display = 'inline-flex';
-        if (btnFicha) btnFicha.style.display = 'inline-flex';
-
-        if (tituloAdmin) {
-            tituloAdmin.innerHTML = '<i class="fa-solid fa-boxes-packing" style="color:var(--primary)"></i> Painel do Operador <span style="font-size:12px; background:#e0f2fe; color:#0369a1; padding:3px 10px; border-radius:12px; font-weight:700; margin-left:6px;">Produtos</span>';
-        }
-
-        // Abre direto a aba de produtos
-        mudarTabAdmin('produtos');
-    } else {
-        // Administrador tem acesso a todas as abas
-        abasRestritas.forEach(id => {
+        // Garante exibição da rotina diária operacional (Hoje, Pedidos, Calendário, Catálogo, Estoque)
+        abasOperacionais.forEach(id => {
             const btn = document.getElementById(id);
             if (btn) btn.style.display = 'inline-flex';
         });
 
-        const btnProd = document.getElementById('tab-btn-produtos');
-        const btnEstoque = document.getElementById('tab-btn-estoque');
-        const btnFicha = document.getElementById('tab-btn-fichatecnica');
-        if (btnProd) btnProd.style.display = 'inline-flex';
-        if (btnEstoque) btnEstoque.style.display = 'inline-flex';
-        if (btnFicha) btnFicha.style.display = 'inline-flex';
+        if (tituloAdmin) {
+            tituloAdmin.innerHTML = '<i class="fa-solid fa-boxes-packing" style="color:var(--primary)"></i> Painel Operacional <span style="font-size:12px; background:#e0f2fe; color:#0369a1; padding:3px 10px; border-radius:12px; font-weight:700; margin-left:6px;">Operador</span>';
+        }
+
+        // Abre a tela Hoje por padrão na rotina do operador
+        mudarTabAdmin('hoje');
+    } else {
+        // Administrador tem acesso irrestrito a todas as abas
+        [...abasRestritas, ...abasOperacionais].forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) btn.style.display = 'inline-flex';
+        });
 
         if (tituloAdmin) {
             tituloAdmin.innerHTML = '<i class="fa-solid fa-screwdriver-wrench" style="color:var(--primary)"></i> Painel de Controle <span style="font-size:12px; background:#fef3c7; color:#b45309; padding:3px 10px; border-radius:12px; font-weight:700; margin-left:6px;">Admin</span>';
@@ -67,7 +65,8 @@ function configurarAcessoAdminPorNivel() {
 
 function mudarTabAdmin(tab) {
     // Bloqueio de segurança no frontend para Operadores
-    if (usuarioAtual && usuarioAtual.nivel === 'operador' && tab !== 'produtos' && tab !== 'estoque' && tab !== 'fichatecnica') {
+    const abasPermitidasOperador = ['hoje', 'pedidos', 'calendario', 'produtos', 'estoque', 'fichatecnica'];
+    if (usuarioAtual && usuarioAtual.nivel === 'operador' && !abasPermitidasOperador.includes(tab)) {
         mostrarToast('Acesso restrito ao Administrador.', 'aviso', 3000);
         return;
     }
@@ -80,12 +79,19 @@ function mudarTabAdmin(tab) {
     if (targetBtn) targetBtn.classList.add('active');
     if (targetTab) targetTab.classList.add('active');
     
-    if(tab === 'pedidos') carregarPedidosAdmin();
-    if(tab === 'calendario') renderizarCalendario();
+    if(tab === 'hoje' && typeof carregarDashboardHoje === 'function') carregarDashboardHoje();
+    if(tab === 'pedidos') {
+        if (typeof carregarCentralEncomendas === 'function') {
+            carregarCentralEncomendas();
+        } else if (typeof carregarPedidosAdmin === 'function') {
+            carregarPedidosAdmin();
+        }
+    }
+    if(tab === 'calendario' && typeof renderizarCalendario === 'function') renderizarCalendario();
     if(tab === 'produtos' && typeof renderizarProdutosAdmin === 'function') renderizarProdutosAdmin();
-    if(tab === 'usuarios') carregarUsuariosAdmin();
-    if(tab === 'pagamentos') carregarConfigMercadoPagoAdmin();
-    if(tab === 'whatsapp') carregarConfigWhatsAppAdmin();
+    if(tab === 'usuarios' && typeof carregarUsuariosAdmin === 'function') carregarUsuariosAdmin();
+    if(tab === 'pagamentos' && typeof carregarConfigMercadoPagoAdmin === 'function') carregarConfigMercadoPagoAdmin();
+    if(tab === 'whatsapp' && typeof carregarConfigWhatsAppAdmin === 'function') carregarConfigWhatsAppAdmin();
     if(tab === 'estoque' && typeof carregarEstoqueAdmin === 'function') carregarEstoqueAdmin();
     if(tab === 'fichatecnica' && typeof carregarFichaTecnicaAdmin === 'function') carregarFichaTecnicaAdmin();
     if(tab === 'financeiro' && typeof carregarFinanceiroAdmin === 'function') carregarFinanceiroAdmin();
