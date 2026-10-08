@@ -207,6 +207,7 @@ async function enviarPedido() {
         // =====================================================================
         let pedidoId = null;
         let totalFinal = 0;
+        let checkoutToken = null;
 
         try {
             const taxaAplicada = typeof obterTaxaEntrega === 'function' ? obterTaxaEntrega() : 0;
@@ -229,6 +230,12 @@ async function enviarPedido() {
             if (rpcRes && rpcRes.success) {
                 pedidoId = rpcRes.pedido_id;
                 totalFinal = parseFloat(rpcRes.total);
+                checkoutToken = rpcRes.checkout_token || null;
+                if (checkoutToken) {
+                    try {
+                        localStorage.setItem('lunoca_checkout_token_' + pedidoId, checkoutToken);
+                    } catch (_) {}
+                }
             } else if (rpcRes && rpcRes.error) {
                 throw new Error(rpcRes.error);
             } else {
@@ -294,7 +301,7 @@ async function enviarPedido() {
 
         // Iniciar fluxo de pagamento Mercado Pago (PIX com QR Code ou Cartão)
         if (typeof iniciarPagamentoMercadoPago === 'function') {
-            await iniciarPagamentoMercadoPago(pedidoId, totalFinal, itensParaMP, formaPagamento, clienteDados);
+            await iniciarPagamentoMercadoPago(pedidoId, totalFinal, itensParaMP, formaPagamento, clienteDados, checkoutToken);
         } else {
             alert("Pedido Criado com Sucesso! A Lunoca agradece a preferência.");
             mostrarTela('menu-section');
@@ -806,18 +813,20 @@ async function reabrirPixPedido(pedidoId, totalRaw) {
             telefone: (window.usuarioAtual && window.usuarioAtual.telefone) || ''
         };
 
+        const token = (typeof localStorage !== 'undefined' ? localStorage.getItem('lunoca_checkout_token_' + pedidoId) : null) || null;
         const orderData = {
             pedidoId: pedidoId,
             total: total,
             items: [],
             forma: 'pix',
+            checkoutToken: token,
             cliente: clienteDados
         };
 
         if (window.MercadoPagoPlugin && typeof window.MercadoPagoPlugin.iniciarCheckoutTransparente === 'function') {
             await window.MercadoPagoPlugin.iniciarCheckoutTransparente(orderData);
         } else if (typeof iniciarPagamentoMercadoPago === 'function') {
-            await iniciarPagamentoMercadoPago(pedidoId, total, [], 'pix', clienteDados);
+            await iniciarPagamentoMercadoPago(pedidoId, total, [], 'pix', clienteDados, token);
         } else {
             throw new Error('Módulo de pagamento Mercado Pago não encontrado no navegador.');
         }

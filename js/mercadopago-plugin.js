@@ -177,6 +177,7 @@
       try {
         const payload = {
           pedidoId: orderData.pedidoId,
+          checkoutToken: orderData.checkoutToken || null,
           total: orderData.total,
           forma: 'pix',
           items: orderData.items || [],
@@ -193,9 +194,17 @@
           apiUrl = 'https://lunocadoceria.com.br/api/mercadopago/transparent-payment';
         }
 
+        const headers = { 'Content-Type': 'application/json' };
+        if (orderData.checkoutToken) {
+          headers['X-Checkout-Token'] = orderData.checkoutToken;
+        }
+        if (window.supabaseClient?.auth?.session?.()?.access_token) {
+          headers['Authorization'] = `Bearer ${window.supabaseClient.auth.session().access_token}`;
+        }
+
         const res = await fetch(apiUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: headers,
           body: JSON.stringify(payload)
         });
 
@@ -577,8 +586,10 @@
           return;
         }
 
+        const token = this.currentOrder?.checkoutToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('lunoca_checkout_token_' + this.currentOrder.pedidoId) : '') || '';
         const payload = {
           pedidoId: this.currentOrder.pedidoId,
+          checkoutToken: token,
           forma: 'cartao',
           parcelas: parseInt(installments, 10),
           cardToken: cardToken,
@@ -590,9 +601,15 @@
           origin: window.location.origin
         };
 
+        const cardHeaders = { 'Content-Type': 'application/json' };
+        if (token) cardHeaders['X-Checkout-Token'] = token;
+        if (window.supabaseClient?.auth?.session?.()?.access_token) {
+          cardHeaders['Authorization'] = `Bearer ${window.supabaseClient.auth.session().access_token}`;
+        }
+
         const res = await fetch('/api/mercadopago/transparent-payment', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: cardHeaders,
           body: JSON.stringify(payload)
         });
 
@@ -663,23 +680,28 @@
       if (this.pollInterval) clearTimeout(this.pollInterval);
       const startTime = Date.now();
       const maxTime = 20 * 60 * 1000; // 20 minutos
+      const token = this.currentOrder?.checkoutToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('lunoca_checkout_token_' + pedidoId) : '') || '';
 
       const pollCycle = async () => {
         const decorrido = Date.now() - startTime;
         if (decorrido > maxTime) return;
 
         try {
-          // 1. Checa status oficial no Mercado Pago
-          const res = await fetch(`/api/mercadopago/payment-status?id=${encodeURIComponent(paymentId)}`);
+          // 1. Checa status oficial no Mercado Pago com autenticação do pedido
+          const pollHeaders = {};
+          if (token) pollHeaders['X-Checkout-Token'] = token;
+          if (window.supabaseClient?.auth?.session?.()?.access_token) {
+            pollHeaders['Authorization'] = `Bearer ${window.supabaseClient.auth.session().access_token}`;
+          }
+
+          const queryToken = token ? `&checkout_token=${encodeURIComponent(token)}` : '';
+          const res = await fetch(`/api/mercadopago/payment-status?id=${encodeURIComponent(paymentId)}${queryToken}`, {
+            headers: pollHeaders
+          });
           if (res.ok) {
             const data = await res.json();
             if (data.status === 'approved') {
-              if (typeof window.supabaseClient !== 'undefined') {
-                await window.supabaseClient.from('pedidos').update({
-                  status: 'Confirmado'
-                }).eq('id', pedidoId).catch(() => {});
-              }
-
+              // Confirmação e baixa de estoque ocorrem exclusivamente no backend (webhook / RPC)
               this.renderSucessoAprovado({
                 pedidoId: pedidoId,
                 total: this.currentOrder?.total || data.amount,

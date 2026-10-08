@@ -41,7 +41,7 @@ export async function onRequestPost(context) {
     const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
 
     if (supabaseUrl && supabaseKey && pedidoId) {
-      const pedRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}&select=id,total,itens,cliente_id,status`, {
+      const pedRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}&select=id,total,itens,cliente_id,status,checkout_token`, {
         headers: {
           apikey: supabaseKey,
           Authorization: `Bearer ${supabaseKey}`
@@ -50,19 +50,37 @@ export async function onRequestPost(context) {
       const pedData = await pedRes.json();
       if (Array.isArray(pedData) && pedData.length > 0) {
         const ped = pedData[0];
-        // Checar autorização se token Bearer estiver presente
+
+        let isAuthorized = false;
         const authHeader = request.headers.get('Authorization') || '';
         if (authHeader.startsWith('Bearer ')) {
           const authCheck = await verifyAuth(request, env);
           if (authCheck.authorized && authCheck.user) {
             const u = authCheck.user;
-            if (ped.cliente_id && u.id !== ped.cliente_id && u.nivel !== 'admin' && u.nivel !== 'operador') {
+            if (u.nivel === 'admin' || u.nivel === 'operador' || (ped.cliente_id && u.id === ped.cliente_id)) {
+              isAuthorized = true;
+            } else if (ped.cliente_id && u.id !== ped.cliente_id) {
               return new Response(JSON.stringify({ error: 'Acesso negado a este pedido.' }), {
                 status: 403,
                 headers: { 'Content-Type': 'application/json', ...corsHeaders }
               });
             }
           }
+        }
+
+        const headerToken = request.headers.get('X-Checkout-Token') || '';
+        const bodyToken = body.checkoutToken || body.checkout_token || '';
+        const clientToken = (headerToken || bodyToken).trim();
+
+        if (!isAuthorized && clientToken && ped.checkout_token && clientToken === ped.checkout_token) {
+          isAuthorized = true;
+        }
+
+        if (ped.checkout_token && !isAuthorized) {
+          return new Response(JSON.stringify({ error: 'Acesso não autorizado a este pedido (checkout_token inválido ou ausente).' }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
         }
 
         // Usar total do banco

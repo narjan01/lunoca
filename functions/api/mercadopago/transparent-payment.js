@@ -26,7 +26,7 @@ function getSafeBaseUrl(origin, env) {
  * Lança exceção caso o pedido não exista ou haja divergência de segurança.
  * NUNCA recorre a fallbacks inseguros de valores do cliente.
  */
-async function fetchAndValidateOrder(pedidoId, env, authUser) {
+async function fetchAndValidateOrder(pedidoId, env, authUser, clientCheckoutToken) {
   const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
   const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -34,7 +34,7 @@ async function fetchAndValidateOrder(pedidoId, env, authUser) {
     throw new Error('Configuração crítica ausente no servidor: SUPABASE_SERVICE_ROLE_KEY.');
   }
 
-  const pedidoRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}&select=id,total,itens,cliente_id,status`, {
+  const pedidoRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}&select=id,total,itens,cliente_id,status,checkout_token`, {
     headers: {
       'apikey': serviceKey,
       'Authorization': `Bearer ${serviceKey}`
@@ -52,9 +52,17 @@ async function fetchAndValidateOrder(pedidoId, env, authUser) {
 
   const order = pedidos[0];
 
-  // Se o usuário estiver autenticado, garante que ele é o dono do pedido ou membro da equipe
-  if (authUser && authUser.id && order.cliente_id && authUser.id !== order.cliente_id && authUser.nivel !== 'admin' && authUser.nivel !== 'operador') {
+  // Validação de Titularidade (RBAC / Token)
+  const isTeam = authUser && (authUser.nivel === 'admin' || authUser.nivel === 'operador');
+  const isOwnerUser = authUser && order.cliente_id && authUser.id === order.cliente_id;
+  const hasValidCheckoutToken = Boolean(order.checkout_token && clientCheckoutToken && order.checkout_token === clientCheckoutToken);
+
+  if (authUser && order.cliente_id && authUser.id !== order.cliente_id && !isTeam) {
     throw new Error('Acesso negado: este pedido pertence a outro usuário.');
+  }
+
+  if (order.checkout_token && !isTeam && !isOwnerUser && !hasValidCheckoutToken) {
+    throw new Error('Acesso não autorizado a este pedido (checkout_token inválido ou ausente).');
   }
 
   // Não permitir pagamento de pedido já confirmado ou entregue
@@ -134,12 +142,17 @@ export async function onRequestPost(context) {
     // Validação server-side estrita do total diretamente do banco de dados (Fail-Closed)
     let amount;
     try {
-      const { validatedTotal } = await fetchAndValidateOrder(pedidoId, env, authUser);
+      const headerToken = request.headers.get('X-Checkout-Token') || '';
+      const bodyToken = body.checkoutToken || body.checkout_token || '';
+      const clientCheckoutToken = (headerToken || bodyToken).trim();
+
+      const { validatedTotal } = await fetchAndValidateOrder(pedidoId, env, authUser, clientCheckoutToken);
       amount = validatedTotal;
     } catch (valErr) {
       console.error('[Validação do Pedido Falhou]:', valErr.message);
+      const isForbidden = valErr.message.includes('Acesso negado') || valErr.message.includes('não autorizado');
       return new Response(JSON.stringify({ error: valErr.message }), {
-        status: 400,
+        status: isForbidden ? 403 : 400,
         headers: { 'Content-Type': 'application/json', ...corsHeaders }
       });
     }

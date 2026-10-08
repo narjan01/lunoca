@@ -44,30 +44,54 @@ export async function onRequestGet(context) {
 
     const orderId = data.external_reference;
 
-    // Se o cliente enviar token de autenticação, validar titularidade do pedido
-    const authHeader = request.headers.get('Authorization') || '';
-    if (authHeader.startsWith('Bearer ') && orderId) {
-      const authCheck = await verifyAuth(request, env);
-      if (authCheck.authorized && authCheck.user) {
-        const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
-        const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
-        if (supabaseUrl && serviceKey) {
-          const pedRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${orderId}&select=cliente_id`, {
-            headers: {
-              apikey: serviceKey,
-              Authorization: `Bearer ${serviceKey}`
+    // Validação de titularidade e isolamento multi-tenant do pedido
+    if (orderId) {
+      const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
+      const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
+      if (supabaseUrl && serviceKey) {
+        const pedRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${orderId}&select=id,cliente_id,checkout_token`, {
+          headers: {
+            apikey: serviceKey,
+            Authorization: `Bearer ${serviceKey}`
+          }
+        });
+        const pedData = await pedRes.json();
+        if (Array.isArray(pedData) && pedData.length > 0) {
+          const ped = pedData[0];
+          let isAuthorized = false;
+
+          // 1. Validação via JWT (Usuário autenticado)
+          const authHeader = request.headers.get('Authorization') || '';
+          if (authHeader.startsWith('Bearer ')) {
+            const authCheck = await verifyAuth(request, env);
+            if (authCheck.authorized && authCheck.user) {
+              const u = authCheck.user;
+              if (u.nivel === 'admin' || u.nivel === 'operador' || (ped.cliente_id && u.id === ped.cliente_id)) {
+                isAuthorized = true;
+              } else if (ped.cliente_id && u.id !== ped.cliente_id) {
+                return new Response(JSON.stringify({ error: 'Acesso negado aos dados deste pagamento.' }), {
+                  status: 403,
+                  headers: { 'Content-Type': 'application/json', ...corsHeaders }
+                });
+              }
             }
-          });
-          const pedData = await pedRes.json();
-          if (Array.isArray(pedData) && pedData.length > 0) {
-            const donoId = pedData[0].cliente_id;
-            const u = authCheck.user;
-            if (donoId && u.id !== donoId && u.nivel !== 'admin' && u.nivel !== 'operador') {
-              return new Response(JSON.stringify({ error: 'Acesso negado aos dados deste pagamento.' }), {
-                status: 403,
-                headers: { 'Content-Type': 'application/json', ...corsHeaders }
-              });
-            }
+          }
+
+          // 2. Validação via checkout_token (Guest Checkout)
+          const headerToken = request.headers.get('X-Checkout-Token') || '';
+          const queryToken = url.searchParams.get('checkout_token') || '';
+          const clientToken = (headerToken || queryToken).trim();
+
+          if (!isAuthorized && clientToken && ped.checkout_token && clientToken === ped.checkout_token) {
+            isAuthorized = true;
+          }
+
+          // Bloqueio estrito se o pedido tiver proteção por token e o chamador não comprovar titularidade
+          if (ped.checkout_token && !isAuthorized) {
+            return new Response(JSON.stringify({ error: 'Acesso não autorizado aos dados deste pagamento (checkout_token inválido ou ausente).' }), {
+              status: 403,
+              headers: { 'Content-Type': 'application/json', ...corsHeaders }
+            });
           }
         }
       }

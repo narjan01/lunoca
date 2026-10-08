@@ -88,9 +88,12 @@ CREATE TABLE IF NOT EXISTS public.pedidos (
   ultimo_status_whatsapp TEXT,
   taxa_entrega DECIMAL(10,2) DEFAULT 0,
   modalidade_entrega TEXT DEFAULT 'entrega',
+  checkout_token UUID DEFAULT gen_random_uuid(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_pedidos_checkout_token ON public.pedidos(checkout_token);
 
 -- 4. Movimentações de Estoque
 CREATE TABLE IF NOT EXISTS public.estoque_movimentacoes (
@@ -290,6 +293,7 @@ DECLARE
   v_taxa DECIMAL(10,2) := 0;
   v_nomes_itens TEXT[] := ARRAY[]::TEXT[];
   v_pedido_id BIGINT;
+  v_checkout_token UUID;
   v_expires_at TIMESTAMPTZ;
   v_nome_final TEXT;
   v_email_final TEXT;
@@ -324,6 +328,20 @@ BEGIN
     IF length(v_fone_limpo) < 10 THEN
       RETURN json_build_object('success', false, 'error', 'Por favor, informe um WhatsApp válido com DDD para acompanhar o pedido.');
     END IF;
+
+    -- 1.2. Proteção Anti-Abuso para Visitantes: limite de pedidos pendentes recentes (máx 3 nos últimos 15 min)
+    IF (
+      SELECT COUNT(*)
+      FROM public.pedidos
+      WHERE (telefone_cliente = v_telefone_final OR endereco_entrega = p_endereco_entrega)
+        AND status = 'Pendente'
+        AND created_at >= (NOW() - INTERVAL '15 minutes')
+    ) >= 3 THEN
+      RETURN json_build_object(
+        'success', false,
+        'error', 'Limite de pedidos pendentes atingido para este telefone/endereço (máx. 3 nos últimos 15 min). Aguarde alguns minutos.'
+      );
+    END IF;
   END IF;
 
   -- 2. Validações de entrada
@@ -350,6 +368,14 @@ BEGIN
 
     IF v_prod_id IS NULL THEN
       RETURN json_build_object('success', false, 'error', 'Item inválido na sacola.');
+    END IF;
+
+    -- Anti-Hoarding para Visitante: limite razoável por item no checkout anônimo
+    IF v_cliente_id IS NULL AND v_qtd > 50 THEN
+      RETURN json_build_object(
+        'success', false,
+        'error', 'Quantidade máxima por item para checkout rápido sem cadastro é de 50 unidades. Para encomendas maiores, acesse sua conta ou entre em contato.'
+      );
     END IF;
 
     -- Bloqueio pessimista por linha do produto
@@ -405,16 +431,17 @@ BEGIN
     v_nomes_itens := array_append(v_nomes_itens, v_qtd || 'x ' || v_prod.nome);
   END LOOP;
 
-  -- 5. Adiciona taxa de entrega validada (caso seja entrega em domicílio)
-  IF COALESCE(p_modalidade, 'entrega') = 'entrega' THEN
-    v_taxa := GREATEST(0, COALESCE(p_taxa_entrega, 0));
+  -- 5. Validação e cálculo estrito da taxa de entrega no servidor (desconsidera manipulação do cliente)
+  IF LOWER(COALESCE(p_modalidade, 'entrega')) = 'retirada' THEN
+    v_taxa := 0.00;
   ELSE
-    v_taxa := 0;
+    -- Taxa fixa oficial de entrega Lunoca
+    v_taxa := 10.00;
   END IF;
 
   v_total := v_total + v_taxa;
 
-  -- 6. Grava o pedido com status de pagamento e expiração
+  -- 6. Grava o pedido com status de pagamento, token e expiração
   INSERT INTO public.pedidos (
     cliente_id,
     nome_cliente,
@@ -451,7 +478,7 @@ BEGIN
     array_to_string(v_nomes_itens, ' + '),
     p_itens,
     p_endereco_entrega
-  ) RETURNING id INTO v_pedido_id;
+  ) RETURNING id, checkout_token INTO v_pedido_id, v_checkout_token;
 
   -- Vincula o ID do pedido nas movimentações de reserva geradas nesta transação
   UPDATE public.estoque_movimentacoes
@@ -463,6 +490,7 @@ BEGIN
     'pedido_id', v_pedido_id,
     'total', v_total,
     'taxa_entrega', v_taxa,
+    'checkout_token', v_checkout_token,
     'expires_at', v_expires_at
   );
 END;
@@ -853,8 +881,10 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.dar_baixa_ingredientes_pedido(BIGINT) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.dar_baixa_ingredientes_pedido(BIGINT) TO service_role, authenticated;
+REVOKE ALL ON FUNCTION public.dar_baixa_ingredientes_pedido(BIGINT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.dar_baixa_ingredientes_pedido(BIGINT) TO service_role;
+
+REVOKE INSERT, UPDATE, DELETE ON public.ingredientes, public.produto_ingredientes FROM authenticated;
 
 ALTER TABLE public.ingredientes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.produto_ingredientes ENABLE ROW LEVEL SECURITY;
