@@ -30,84 +30,120 @@ export async function onRequestPost(context) {
       });
     }
 
-    const { pedidoId, items, total, cliente, forma, origin } = body;
+    const { pedidoId, cliente, forma, origin } = body;
     const baseUrl = getSafeBaseUrl(origin, env);
 
-    // Validação de titularidade e busca de dados confiáveis no Supabase
-    let safeItems = items;
-    let safeTotal = total;
+    if (!pedidoId) {
+      return new Response(JSON.stringify({ error: 'ID do pedido é obrigatório para gerar a preferência.' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
 
     const supabaseUrl = env.SUPABASE_URL;
     const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
 
-    if (supabaseUrl && supabaseKey && pedidoId) {
-      const pedRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}&select=id,total,itens,cliente_id,status,checkout_token`, {
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`
-        }
+    if (!supabaseUrl || !supabaseKey) {
+      return new Response(JSON.stringify({ error: 'Configuração do banco de dados não disponível.' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
       });
-      const pedData = await pedRes.json();
-      if (Array.isArray(pedData) && pedData.length > 0) {
-        const ped = pedData[0];
+    }
 
-        let isAuthorized = false;
-        const authHeader = request.headers.get('Authorization') || '';
-        if (authHeader.startsWith('Bearer ')) {
-          const authCheck = await verifyAuth(request, env);
-          if (authCheck.authorized && authCheck.user) {
-            const u = authCheck.user;
-            if (u.nivel === 'admin' || u.nivel === 'operador' || (ped.cliente_id && u.id === ped.cliente_id)) {
-              isAuthorized = true;
-            } else if (ped.cliente_id && u.id !== ped.cliente_id) {
-              return new Response(JSON.stringify({ error: 'Acesso negado a este pedido.' }), {
-                status: 403,
-                headers: { 'Content-Type': 'application/json', ...corsHeaders }
-              });
-            }
-          }
-        }
+    const pedRes = await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}&select=id,total,taxa_entrega,itens_json,cliente_id,status,checkout_token`, {
+      headers: {
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`
+      }
+    });
 
-        const headerToken = request.headers.get('X-Checkout-Token') || '';
-        const bodyToken = body.checkoutToken || body.checkout_token || '';
-        const clientToken = (headerToken || bodyToken).trim();
+    if (!pedRes.ok) {
+      return new Response(JSON.stringify({ error: 'Falha ao buscar dados do pedido no servidor.' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
 
-        if (!isAuthorized && clientToken && ped.checkout_token && clientToken === ped.checkout_token) {
+    const pedData = await pedRes.json();
+    if (!Array.isArray(pedData) || pedData.length === 0) {
+      return new Response(JSON.stringify({ error: `Pedido #${pedidoId} não encontrado.` }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const ped = pedData[0];
+
+    // Validação estrita de autorização
+    let isAuthorized = false;
+    const authHeader = request.headers.get('Authorization') || '';
+    if (authHeader.startsWith('Bearer ')) {
+      const authCheck = await verifyAuth(request, env);
+      if (authCheck.authorized && authCheck.user) {
+        const u = authCheck.user;
+        if (u.nivel === 'admin' || u.nivel === 'operador' || (ped.cliente_id && u.id === ped.cliente_id)) {
           isAuthorized = true;
-        }
-
-        if (ped.checkout_token && !isAuthorized) {
-          return new Response(JSON.stringify({ error: 'Acesso não autorizado a este pedido (checkout_token inválido ou ausente).' }), {
+        } else if (ped.cliente_id && u.id !== ped.cliente_id) {
+          return new Response(JSON.stringify({ error: 'Acesso negado a este pedido.' }), {
             status: 403,
             headers: { 'Content-Type': 'application/json', ...corsHeaders }
           });
         }
-
-        // Usar total do banco
-        safeTotal = parseFloat(ped.total);
-        if (ped.itens && Array.isArray(ped.itens) && ped.itens.length > 0) {
-          safeItems = ped.itens;
-        }
       }
     }
 
-    // Montar preferência de checkout no Mercado Pago
-    const preferencePayload = {
-      items: (safeItems && safeItems.length > 0) ? safeItems.map((it, idx) => ({
+    const headerToken = request.headers.get('X-Checkout-Token') || '';
+    const bodyToken = body.checkoutToken || body.checkout_token || '';
+    const clientToken = (headerToken || bodyToken).trim();
+
+    if (!isAuthorized && clientToken && ped.checkout_token && clientToken === ped.checkout_token) {
+      isAuthorized = true;
+    }
+
+    if (ped.checkout_token && !isAuthorized) {
+      return new Response(JSON.stringify({ error: 'Acesso não autorizado a este pedido (checkout_token inválido ou ausente).' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    // Usar dados 100% autoritativos do banco de dados (sem fallback inseguro do cliente)
+    const safeTotal = parseFloat(ped.total);
+    const taxaEntrega = parseFloat(ped.taxa_entrega || 0);
+    let preferenceItems = [];
+
+    if (Array.isArray(ped.itens_json) && ped.itens_json.length > 0) {
+      preferenceItems = ped.itens_json.map((it, idx) => ({
         id: String(it.id || idx + 1),
         title: String(it.nome || 'Doce Artesanal Lunoca'),
         quantity: parseInt(it.quantidade || 1, 10),
         currency_id: 'BRL',
-        unit_price: parseFloat(it.preco_unitario || it.preco || (safeTotal / (safeItems.length || 1)))
-      })) : [
-        {
-          id: String(pedidoId || '1'),
-          title: `Pedido Lunoca Doceria #${pedidoId || ''}`,
+        unit_price: parseFloat(it.preco_unitario || it.preco || 0)
+      }));
+
+      if (taxaEntrega > 0) {
+        preferenceItems.push({
+          id: 'taxa_entrega',
+          title: 'Taxa de Entrega',
           quantity: 1,
           currency_id: 'BRL',
-          unit_price: parseFloat(safeTotal)
+          unit_price: taxaEntrega
+        });
+      }
+    } else {
+      preferenceItems = [
+        {
+          id: String(ped.id),
+          title: `Pedido Lunoca Doceria #${ped.id}`,
+          quantity: 1,
+          currency_id: 'BRL',
+          unit_price: safeTotal
         }
-      ],
+      ];
+    }
+
+    const preferencePayload = {
+      items: preferenceItems,
       payer: {
         name: cliente?.nome || 'Cliente Lunoca',
         email: cliente?.email || 'cliente@lunocadoceria.com.br'

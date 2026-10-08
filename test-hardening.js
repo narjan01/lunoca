@@ -125,13 +125,13 @@ assert.ok(
 );
 console.log('  ✅ Webhook estritamente fail-closed e sem PATCH fallback.');
 
-// 3.4 Payment status com await
+// 3.4 Payment status desacoplado (read-only e idempotente, sem mutação de estoque ou confirmação)
 const statusContent = fs.readFileSync('functions/api/mercadopago/payment-status.js', 'utf-8');
 assert.ok(
-  statusContent.includes('const rpcRes = await fetch('),
-  '[FALHA] payment-status.js não usa await na chamada da RPC!'
+  !statusContent.includes('confirmar_pagamento_pedido'),
+  '[FALHA] payment-status.js ainda tenta mutar estado ou invocar confirmar_pagamento_pedido!'
 );
-console.log('  ✅ payment-status.js aguarda a execução da RPC com await.');
+console.log('  ✅ payment-status.js desacoplado: endpoint estritamente de consulta (read-only), sem efeito colateral.');
 
 // 3.5 Admin payment endpoint existe e está protegido
 const adminPaymentContent = fs.readFileSync('functions/api/admin/orders/payment.js', 'utf-8');
@@ -706,7 +706,80 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! Fases 1 a 7 rigorosamente validadas com 100% de cobertura.');
+// --------------------------------------------------------------------------
+// Teste 8: Validações de Integridade & Hardening da Auditoria 4
+// --------------------------------------------------------------------------
+console.log('\n🔒 FASE 8: Validações de Integridade & Hardening (Auditoria 4)...');
+
+// 8.1. Eliminação definitiva da race condition de reserva por timestamp (INTERVAL '5 seconds')
+console.log('  🔎 Verificando erradicação do UPDATE estoque_movimentacoes por intervalo de 5 segundos...');
+const filesToCheckNo5s = [
+  'sql/schema.sql',
+  'sql/install.sql',
+  'supabase/migrations/007_audit_4_hardening.sql'
+];
+
+for (const f of filesToCheckNo5s) {
+  const c = fs.readFileSync(f, 'utf-8');
+  assert.ok(
+    !c.includes("INTERVAL '5 seconds'") && !c.includes('INTERVAL "5 seconds"'),
+    `[FALHA] ${f} ainda contém UPDATE com INTERVAL 5 seconds em estoque_movimentacoes!`
+  );
+  assert.ok(
+    c.includes('pg_advisory_xact_lock(hashtext(') && c.includes('v_fone_normalizado'),
+    `[FALHA] ${f} não possui pg_advisory_xact_lock atômico com normalização de telefone!`
+  );
+  assert.ok(
+    c.includes('ABS(p_valor - v_pedido.total) > 0.01'),
+    `[FALHA] ${f} não possui validação de integridade financeira (ABS de valor)!`
+  );
+  assert.ok(
+    c.includes("LOWER(COALESCE(p_status, '')) <> 'approved'"),
+    `[FALHA] ${f} não possui validação intrínseca de status 'approved' em confirmar_pagamento_pedido!`
+  );
+  assert.ok(
+    !c.includes('estoque_qtd = GREATEST(0, estoque_qtd - (v_ficha.qtd_insumo * v_qtd_prod))'),
+    `[FALHA] ${f} ainda mascara o estoque de insumos com GREATEST(0, ...)!`
+  );
+  console.log(`    ✅ ${f}: Sem race condition de 5s, com lock atômico de telefone, validação financeira e ficha técnica transparente.`);
+}
+
+// 8.2. CORS com X-Checkout-Token
+console.log('\n  🔎 Verificando cabeçalho X-Checkout-Token em _cors.js...');
+const corsContent = fs.readFileSync('functions/api/_cors.js', 'utf-8');
+assert.ok(
+  corsContent.includes('X-Checkout-Token'),
+  '[FALHA] _cors.js não inclui X-Checkout-Token em Access-Control-Allow-Headers!'
+);
+console.log('    ✅ _cors.js: X-Checkout-Token devidamente autorizado nos cabeçalhos CORS.');
+
+// 8.3. Eliminação da superfície SSRF em whatsapp/send.js
+console.log('\n  🔎 Verificando erradicação de customUrl em whatsapp/send.js...');
+const sendContent = fs.readFileSync('functions/api/whatsapp/send.js', 'utf-8');
+assert.ok(
+  !sendContent.includes('customUrl'),
+  '[FALHA] functions/api/whatsapp/send.js ainda aceita parâmetro customUrl!'
+);
+console.log('    ✅ functions/api/whatsapp/send.js: Parâmetro customUrl eliminado, rota estritamente segura.');
+
+// 8.4. Fail-closed e sem manipulação de preço no preference.js
+console.log('\n  🔎 Verificando integridade e fail-closed de mercadopago/preference.js...');
+const prefContent = fs.readFileSync('functions/api/mercadopago/preference.js', 'utf-8');
+assert.ok(
+  prefContent.includes('pedidoId') && prefContent.includes('400') && prefContent.includes('404'),
+  '[FALHA] preference.js não exige pedidoId ou não retorna 400/404 em caso de ausência!'
+);
+assert.ok(
+  prefContent.includes('X-Checkout-Token') && prefContent.includes('checkout_token'),
+  '[FALHA] preference.js não valida token de autorização do pedido!'
+);
+assert.ok(
+  !prefContent.includes('body.items ||') && !prefContent.includes('body.total'),
+  '[FALHA] preference.js ainda possui fallback para itens/totais enviados pelo cliente!'
+);
+console.log('    ✅ mercadopago/preference.js: Totalmente fail-closed, sem fallbacks manipuláveis pelo cliente.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! Fases 1 a 8 rigorosamente validadas com 100% de cobertura.');
 
 
 

@@ -299,10 +299,10 @@ DECLARE
   v_email_final TEXT;
   v_telefone_final TEXT;
   v_fone_limpo TEXT;
+  v_fone_normalizado TEXT;
 BEGIN
   -- 1. Identificação do Cliente (Usuário Autenticado ou Visitante Convidado)
   IF v_cliente_id IS NOT NULL THEN
-    -- Cliente logado: busca perfil oficial
     SELECT * INTO v_user_profile
     FROM public.profiles
     WHERE id = v_cliente_id AND ativo = true;
@@ -315,7 +315,7 @@ BEGIN
     v_email_final := COALESCE(v_user_profile.email, NULLIF(trim(p_email_cliente), ''), 'cliente@lunocadoceria.com.br');
     v_telefone_final := COALESCE(NULLIF(trim(p_telefone_cliente), ''), v_user_profile.telefone);
   ELSE
-    -- Guest Checkout (compra como visitante sem necessidade de senha prévia)
+    -- Guest Checkout: compra como visitante
     v_nome_final := trim(COALESCE(p_nome_cliente, ''));
     v_telefone_final := trim(COALESCE(p_telefone_cliente, ''));
     v_email_final := COALESCE(NULLIF(trim(p_email_cliente), ''), 'visitante@lunocadoceria.com.br');
@@ -329,11 +329,24 @@ BEGIN
       RETURN json_build_object('success', false, 'error', 'Por favor, informe um WhatsApp válido com DDD para acompanhar o pedido.');
     END IF;
 
-    -- 1.2. Proteção Anti-Abuso para Visitantes: limite de pedidos pendentes recentes (máx 3 nos últimos 15 min)
+    -- Normalização de telefone (DDI 55)
+    IF length(v_fone_limpo) IN (10, 11) THEN
+      v_fone_normalizado := '55' || v_fone_limpo;
+    ELSE
+      v_fone_normalizado := v_fone_limpo;
+    END IF;
+
+    -- Proteção Atômica Anti-Abuso: Serializa requisições simultâneas para o mesmo telefone normalizado via advisory lock
+    PERFORM pg_advisory_xact_lock(hashtext('guest_checkout_' || v_fone_normalizado));
+
+    -- Limite estrito de no máximo 3 pedidos pendentes recentes nos últimos 15 min
     IF (
       SELECT COUNT(*)
       FROM public.pedidos
-      WHERE (telefone_cliente = v_telefone_final OR endereco_entrega = p_endereco_entrega)
+      WHERE (
+        regexp_replace(COALESCE(telefone_cliente, ''), '\D', '', 'g') IN (v_fone_limpo, v_fone_normalizado)
+        OR endereco_entrega = p_endereco_entrega
+      )
         AND status = 'Pendente'
         AND created_at >= (NOW() - INTERVAL '15 minutes')
     ) >= 3 THEN
@@ -357,10 +370,10 @@ BEGIN
     RETURN json_build_object('success', false, 'error', 'Forma de pagamento inválida.');
   END IF;
 
-  -- 3. Tolerância de pagamento: 30 minutos para PIX/Checkout
+  -- 3. Tolerância de pagamento de 30 minutos
   v_expires_at := NOW() + INTERVAL '30 minutes';
 
-  -- 4. Loop com bloqueio pessimista (FOR UPDATE) e reserva de estoque
+  -- 4. ETAPA 1: Validação dos itens, bloqueio pessimista (FOR UPDATE) e cálculo de totais
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_itens)
   LOOP
     v_prod_id := (v_item->>'id')::BIGINT;
@@ -370,7 +383,7 @@ BEGIN
       RETURN json_build_object('success', false, 'error', 'Item inválido na sacola.');
     END IF;
 
-    -- Anti-Hoarding para Visitante: limite razoável por item no checkout anônimo
+    -- Anti-Hoarding para Visitante
     IF v_cliente_id IS NULL AND v_qtd > 50 THEN
       RETURN json_build_object(
         'success', false,
@@ -399,49 +412,22 @@ BEGIN
           'error', 'Estoque esgotado ou insuficiente para "' || v_prod.nome || '". Disponível no momento: apenas ' || v_disponivel || ' unidade(s).'
         );
       END IF;
-
-      -- Reserva o estoque atômica e temporariamente
-      UPDATE public.produtos
-      SET 
-        estoque_reservado = estoque_reservado + v_qtd,
-        updated_at = NOW()
-      WHERE id = v_prod_id;
-
-      -- Registra movimentação de reserva
-      INSERT INTO public.estoque_movimentacoes (
-        produto_id,
-        produto_nome,
-        tipo,
-        quantidade,
-        saldo_resultante,
-        motivo,
-        usuario_nome
-      ) VALUES (
-        v_prod.id,
-        v_prod.nome,
-        'reserva',
-        v_qtd,
-        v_disponivel - v_qtd,
-        'Reserva temporária para novo pedido (tolerância 30 min)',
-        'Sistema / Reserva'
-      );
     END IF;
 
     v_total := v_total + (v_prod.preco * v_qtd);
     v_nomes_itens := array_append(v_nomes_itens, v_qtd || 'x ' || v_prod.nome);
   END LOOP;
 
-  -- 5. Validação e cálculo estrito da taxa de entrega no servidor (desconsidera manipulação do cliente)
+  -- 5. Validação e cálculo estrito da taxa de entrega no servidor
   IF LOWER(COALESCE(p_modalidade, 'entrega')) = 'retirada' THEN
     v_taxa := 0.00;
   ELSE
-    -- Taxa fixa oficial de entrega Lunoca
     v_taxa := 10.00;
   END IF;
 
   v_total := v_total + v_taxa;
 
-  -- 6. Grava o pedido com status de pagamento, token e expiração
+  -- 6. ETAPA 2: GRAVAÇÃO DO PEDIDO PRIMEIRO (Gera v_pedido_id e v_checkout_token deterministicamente)
   INSERT INTO public.pedidos (
     cliente_id,
     nome_cliente,
@@ -480,10 +466,47 @@ BEGIN
     p_endereco_entrega
   ) RETURNING id, checkout_token INTO v_pedido_id, v_checkout_token;
 
-  -- Vincula o ID do pedido nas movimentações de reserva geradas nesta transação
-  UPDATE public.estoque_movimentacoes
-  SET pedido_id = v_pedido_id
-  WHERE pedido_id IS NULL AND tipo = 'reserva' AND created_at >= NOW() - INTERVAL '5 seconds';
+  -- 7. ETAPA 3: RESERVA ATÔMICA DO ESTOQUE COM PEDIDO_ID DIRETAMENTE ATRIBUÍDO (Sem qualquer corrida de timestamp)
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_itens)
+  LOOP
+    v_prod_id := (v_item->>'id')::BIGINT;
+    v_qtd := GREATEST(1, COALESCE((v_item->>'quantidade')::INTEGER, 1));
+
+    SELECT id, nome, preco, ativo, estoque_fisico, estoque_reservado, controlar_estoque 
+    INTO v_prod
+    FROM public.produtos
+    WHERE id = v_prod_id;
+
+    IF v_prod.controlar_estoque IS NOT FALSE THEN
+      v_disponivel := GREATEST(0, COALESCE(v_prod.estoque_fisico, 0) - COALESCE(v_prod.estoque_reservado, 0));
+
+      UPDATE public.produtos
+      SET 
+        estoque_reservado = estoque_reservado + v_qtd,
+        updated_at = NOW()
+      WHERE id = v_prod_id;
+
+      INSERT INTO public.estoque_movimentacoes (
+        produto_id,
+        produto_nome,
+        tipo,
+        quantidade,
+        saldo_resultante,
+        pedido_id,
+        motivo,
+        usuario_nome
+      ) VALUES (
+        v_prod.id,
+        v_prod.nome,
+        'reserva',
+        v_qtd,
+        v_disponivel - v_qtd,
+        v_pedido_id,
+        'Reserva temporária para novo pedido #' || v_pedido_id || ' (tolerância 30 min)',
+        'Sistema / Reserva'
+      );
+    END IF;
+  END LOOP;
 
   RETURN json_build_object(
     'success', true,
@@ -536,6 +559,13 @@ BEGIN
     RETURN json_build_object('success', false, 'error', 'ID do pedido não informado.');
   END IF;
 
+  -- Validação estrita de status: somente pagamentos aprovados podem confirmar pedidos
+  IF COALESCE(p_mercado_pago_payment_id, '') <> 'admin_manual'
+     AND LOWER(COALESCE(p_status, '')) <> 'approved'
+  THEN
+    RETURN json_build_object('success', false, 'error', 'Somente pagamentos aprovados podem confirmar pedidos.');
+  END IF;
+
   -- 9.1. Idempotência por Provider ID
   IF p_mercado_pago_payment_id IS NOT NULL AND p_mercado_pago_payment_id <> '' AND p_mercado_pago_payment_id <> 'admin_manual' THEN
     IF EXISTS (
@@ -559,6 +589,11 @@ BEGIN
 
   IF NOT FOUND THEN
     RETURN json_build_object('success', false, 'error', 'Pedido não encontrado no banco de dados.');
+  END IF;
+
+  -- Validação de integridade financeira do valor pago vs total do pedido
+  IF p_valor IS NOT NULL AND ABS(p_valor - v_pedido.total) > 0.01 THEN
+    RETURN json_build_object('success', false, 'error', 'Valor do pagamento (R$ ' || p_valor || ') diverge do total do pedido (R$ ' || v_pedido.total || ').');
   END IF;
 
   -- 9.3. Se já confirmado anteriormente, impede duplo processamento
@@ -625,7 +660,7 @@ BEGIN
             v_prod.nome,
             'venda',
             v_qtd,
-            GREATEST(0, v_prod.estoque_fisico - v_qtd - GREATEST(0, v_prod.estoque_reservado - v_qtd)),
+            GREATEST(0, v_prod.estoque_fisico - v_qtd),
             'Venda confirmada no Pedido #' || p_pedido_id,
             p_pedido_id,
             COALESCE(p_origem, 'Sistema / Mercado Pago')
@@ -872,7 +907,7 @@ BEGIN
       LOOP
         UPDATE public.ingredientes
         SET 
-          estoque_qtd = GREATEST(0, estoque_qtd - (v_ficha.qtd_insumo * v_qtd_prod)),
+          estoque_qtd = estoque_qtd - (v_ficha.qtd_insumo * v_qtd_prod),
           updated_at = NOW()
         WHERE id = v_ficha.ingrediente_id;
       END LOOP;

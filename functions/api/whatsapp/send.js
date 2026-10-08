@@ -46,7 +46,6 @@ export async function onRequestPost(context) {
       telefone, 
       mensagem, 
       provedor = 'evolution', 
-      instanciaUrl: customUrl, 
       instanciaNome: customNome,
       clientToken
     } = body;
@@ -66,26 +65,12 @@ export async function onRequestPost(context) {
       foneLimpo = '55' + foneLimpo;
     }
 
-    // 2. Resolução Segura de Credenciais (Server-Side Environment Variables)
+    // 2. Resolução Segura de Credenciais (Server-Side Environment Variables exclusivamente)
     const serverApiKey = env.EVOLUTION_API_KEY || env.WHATSAPP_API_KEY || '';
     const defaultUrl = env.EVOLUTION_API_URL || env.WHATSAPP_API_URL || 'https://lunoca-whatsapp.onrender.com';
     const serverInstanciaNome = env.EVOLUTION_INSTANCE_NAME || env.WHATSAPP_INSTANCE_NAME || customNome || 'lunoca-whatsapp';
 
     let targetBaseUrl = defaultUrl;
-    if (customUrl && typeof customUrl === 'string' && customUrl.trim()) {
-      const trimmed = customUrl.trim();
-      if (!isSafeExternalUrl(trimmed)) {
-        return new Response(JSON.stringify({
-          success: false,
-          error: 'URL de instância inválida ou não autorizada por política de segurança (Anti-SSRF).'
-        }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      targetBaseUrl = trimmed;
-    }
-
     let targetUrl = targetBaseUrl.replace(/\/+$/, '');
     let reqHeaders = { 'Content-Type': 'application/json' };
     let reqBody = {};

@@ -97,57 +97,7 @@ export async function onRequestGet(context) {
       }
     }
 
-    // Se aprovado, sincronizar com o banco via RPC atômica confirmar_pagamento_pedido (aguardada via await)
-    if (data.status === 'approved' && orderId) {
-      const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
-      const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
-
-      if (supabaseUrl && serviceKey) {
-        try {
-          const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/confirmar_pagamento_pedido`, {
-            method: 'POST',
-            headers: {
-              apikey: serviceKey,
-              Authorization: `Bearer ${serviceKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              p_pedido_id: Number(orderId),
-              p_mercado_pago_payment_id: String(data.id),
-              p_status: data.status,
-              p_forma_pagamento: data.payment_method_id || 'pix',
-              p_valor: Number(data.transaction_amount || 0),
-              p_origem: 'Consulta Status Cliente'
-            })
-          });
-
-          if (!rpcRes.ok) {
-            const rpcErr = await rpcRes.text();
-            console.error('[PaymentStatus] Erro na RPC confirmar_pagamento_pedido:', rpcErr);
-          }
-        } catch (syncErr) {
-          console.error('[PaymentStatus] Falha ao invocar confirmação atômica:', syncErr.message);
-        }
-      }
-    } else if ((data.status === 'cancelled' || data.status === 'expired') && orderId) {
-      // Se cancelado ou expirado no gateway, libera as reservas do pedido
-      const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
-      const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
-      if (supabaseUrl && serviceKey) {
-        try {
-          await fetch(`${supabaseUrl}/rest/v1/rpc/liberar_pedidos_expirados`, {
-            method: 'POST',
-            headers: {
-              apikey: serviceKey,
-              Authorization: `Bearer ${serviceKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({})
-          });
-        } catch (_) {}
-      }
-    }
-
+    // Consulta somente leitura estritamente idempotente (confirmação autoritativa via webhook)
     return new Response(JSON.stringify({
       success: true,
       id: data.id,

@@ -31,7 +31,7 @@ export function getCorsHeaders(request, env) {
   return {
     'Access-Control-Allow-Origin': isAllowed ? origin : allowedOrigins[0],
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Checkout-Token',
     'Vary': 'Origin'
   };
 }
