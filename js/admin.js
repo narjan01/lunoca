@@ -23,6 +23,7 @@ function configurarAcessoAdminPorNivel() {
     const abasOperacionais = [
         'tab-btn-hoje',
         'tab-btn-pedidos',
+        'tab-btn-orcamentos',
         'tab-btn-calendario',
         'tab-btn-produtos',
         'tab-btn-estoque',
@@ -38,7 +39,7 @@ function configurarAcessoAdminPorNivel() {
             if (btn) btn.style.display = 'none';
         });
 
-        // Garante exibição da rotina diária operacional (Hoje, Pedidos, Calendário, Catálogo, Estoque)
+        // Garante exibição da rotina diária operacional (Hoje, Pedidos, Orçamentos, Calendário, Catálogo, Estoque)
         abasOperacionais.forEach(id => {
             const btn = document.getElementById(id);
             if (btn) btn.style.display = 'inline-flex';
@@ -65,7 +66,7 @@ function configurarAcessoAdminPorNivel() {
 
 function mudarTabAdmin(tab) {
     // Bloqueio de segurança no frontend para Operadores
-    const abasPermitidasOperador = ['hoje', 'pedidos', 'calendario', 'produtos', 'estoque', 'fichatecnica'];
+    const abasPermitidasOperador = ['hoje', 'pedidos', 'orcamentos', 'calendario', 'produtos', 'estoque', 'fichatecnica'];
     if (usuarioAtual && usuarioAtual.nivel === 'operador' && !abasPermitidasOperador.includes(tab)) {
         mostrarToast('Acesso restrito ao Administrador.', 'aviso', 3000);
         return;
@@ -87,6 +88,7 @@ function mudarTabAdmin(tab) {
             carregarPedidosAdmin();
         }
     }
+    if(tab === 'orcamentos' && typeof carregarOrcamentosAdmin === 'function') carregarOrcamentosAdmin();
     if(tab === 'calendario' && typeof renderizarCalendario === 'function') renderizarCalendario();
     if(tab === 'produtos' && typeof renderizarProdutosAdmin === 'function') renderizarProdutosAdmin();
     if(tab === 'usuarios' && typeof carregarUsuariosAdmin === 'function') carregarUsuariosAdmin();

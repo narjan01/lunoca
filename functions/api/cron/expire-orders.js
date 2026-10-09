@@ -99,6 +99,7 @@ async function processExpiredOrders(context) {
   limite = Math.min(1000, Math.max(1, Number.isFinite(limite) ? Math.floor(limite) : 200));
 
   try {
+    // 1. Expiração de pedidos e holds (loja online + encomendas)
     const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/expirar_pedidos_e_holds`, {
       method: 'POST',
       headers: {
@@ -120,11 +121,25 @@ async function processExpiredOrders(context) {
       }, rpcRes.ok ? 500 : (rpcRes.status || 500), corsHeaders);
     }
 
+    // 2. Expiração de orçamentos vencidos (Etapa 3 - cron unificado)
+    const orcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/expirar_orcamentos`, {
+      method: 'POST',
+      headers: {
+        'apikey': serviceKey,
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ p_limite: limite })
+    });
+    const orcData = await orcRes.json().catch(() => ({}));
+
     return json({
       success: true,
       processados: rpcData?.processados ?? 0,
       cancelados_sem_pagamento: rpcData?.cancelados_sem_pagamento ?? 0,
       enviados_para_revisao: rpcData?.enviados_para_revisao ?? 0,
+      orcamentos_expirados: orcData?.expirados_count ?? 0,
+      orcamentos_ids: orcData?.orcamentos_ids ?? [],
       timestamp: rpcData?.timestamp || new Date().toISOString()
     }, 200, corsHeaders);
 

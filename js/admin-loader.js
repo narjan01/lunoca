@@ -37,7 +37,8 @@ async function garantirModulosAdmin() {
         'js/fichatecnica.js',
         'js/financeiro.js',
         'js/admin.js',
-        'js/admin-operacao.js'
+        'js/admin-operacao.js',
+        'js/admin-orcamentos.js'
       ];
 
       for (let i = 0; i < scripts.length; i++) {

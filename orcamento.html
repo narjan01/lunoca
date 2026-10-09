@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Proposta Comercial • Lunoca Doceria</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/style.css?v=3.1.0">
+  <style>
+    :root {
+      --bg-page: #f8fafc;
+      --card-bg: #ffffff;
+      --border-color: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+    }
+    body {
+      background: var(--bg-page);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      color: var(--text-main);
+      margin: 0;
+      padding: 0;
+    }
+    .orcamento-container {
+      max-width: 800px;
+      margin: 30px auto;
+      padding: 0 16px;
+    }
+    .proposta-card {
+      background: var(--card-bg);
+      border-radius: 16px;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+      padding: 32px;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .status-enviado { background: #dbeafe; color: #1e40af; }
+    .status-aprovado { background: #dcfce7; color: #15803d; }
+    .status-expirado { background: #fef3c7; color: #b45309; }
+    .status-convertido { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .status-recusado { background: #fee2e2; color: #b91c1c; }
+
+    .tabela-itens {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+    }
+    .tabela-itens th {
+      background: #f8fafc;
+      padding: 12px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 2px solid var(--border-color);
+      text-align: left;
+    }
+    .tabela-itens td {
+      padding: 14px 12px;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 14px;
+    }
+
+    @media print {
+      body { background: #fff !important; }
+      .orcamento-container { max-width: 100% !important; margin: 0 !important; padding: 0 !important; }
+      .proposta-card { border: none !important; box-shadow: none !important; padding: 0 !important; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="orcamento-container">
+    <!-- Header Simples com Botão Voltar -->
+    <div class="no-print" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <a href="index.html" style="text-decoration:none; color:var(--text-muted); font-size:13px; font-weight:600; display:inline-flex; align-items:center; gap:6px;">
+        <i class="fa-solid fa-arrow-left"></i> Conhecer Lunoca Doceria
+      </a>
+      <div style="display:flex; gap:8px;">
+        <button onclick="window.print()" class="btn-outline" style="padding:6px 14px; font-size:12px; border-radius:8px; cursor:pointer;">
+          <i class="fa-solid fa-print"></i> Imprimir
+        </button>
+      </div>
+    </div>
+
+    <!-- Card de Conteúdo Principal -->
+    <div id="orcamento-loading" style="text-align:center; padding:60px 20px; background:#fff; border-radius:16px; border:1px solid #e2e8f0;">
+      <i class="fa-solid fa-spinner fa-spin fa-2x" style="color:var(--primary);"></i>
+      <p style="margin-top:14px; font-size:14px; color:var(--text-muted);">Carregando detalhes da proposta comercial...</p>
+    </div>
+
+    <div id="orcamento-erro" style="display:none; text-align:center; padding:50px 20px; background:#fff; border-radius:16px; border:1px solid #fecaca;">
+      <i class="fa-solid fa-circle-exclamation fa-3x" style="color:#ef4444; margin-bottom:12px;"></i>
+      <h3 style="margin:0 0 8px 0; color:#991b1b;">Proposta Não Encontrada ou Expirada</h3>
+      <p id="orcamento-erro-msg" style="margin:0; font-size:14px; color:#7f1d1d;"></p>
+      <a href="index.html" class="btn-primary" style="margin-top:20px; display:inline-block; padding:10px 22px; text-decoration:none; border-radius:8px;">
+        Ir para a Loja Virtual
+      </a>
+    </div>
+
+    <div id="orcamento-conteudo" class="proposta-card" style="display:none;">
+      <!-- Cabeçalho da Proposta -->
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid var(--border-color); padding-bottom:20px; margin-bottom:24px; flex-wrap:wrap; gap:16px;">
+        <div>
+          <h1 style="margin:0; font-family:'Playfair Display', serif; font-size:28px; color:var(--primary); font-weight:700;">Lunoca Doceria</h1>
+          <p style="margin:4px 0 0 0; font-size:14px; color:var(--text-muted);">Confeitaria Fina & Doces Artesanais para Eventos</p>
+        </div>
+        <div style="text-align:right;">
+          <div id="orc-numero" style="font-size:18px; font-weight:800; color:var(--text-main);">ORC-0000</div>
+          <div id="orc-status-badge" style="margin-top:6px;"></div>
+        </div>
+      </div>
+
+      <!-- Banner de Alerta / Sucesso -->
+      <div id="orc-banner-aprovado" style="display:none; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:10px; padding:14px 18px; margin-bottom:20px; color:#065f46;">
+        <div style="font-weight:700; display:flex; align-items:center; gap:8px;">
+          <i class="fa-solid fa-circle-check fa-lg"></i> Proposta Comercial Aprovada!
+        </div>
+        <div style="font-size:13px; margin-top:4px;">
+          Agradecemos a confiança! Nossa equipe já recebeu a confirmação e entrará em contato para alinhar os detalhes e o pagamento do sinal.
+        </div>
+      </div>
+
+      <div id="orc-banner-expirado" style="display:none; background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:14px 18px; margin-bottom:20px; color:#92400e;">
+        <div style="font-weight:700; display:flex; align-items:center; gap:8px;">
+          <i class="fa-solid fa-clock fa-lg"></i> Prazo de Validade Expirado
+        </div>
+        <div style="font-size:13px; margin-top:4px;">
+          O prazo para aprovação desta proposta expirou. Entre em contato conosco via WhatsApp para renovar as condições e confirmar a disponibilidade.
+        </div>
+      </div>
+
+      <!-- Dados do Cliente e do Evento -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; background:#f8fafc; border:1px solid var(--border-color); border-radius:12px; padding:18px; margin-bottom:24px;">
+        <div>
+          <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--text-muted);">Cliente</div>
+          <div id="orc-cliente-nome" style="font-size:15px; font-weight:700; margin-top:2px; color:var(--text-main);">-</div>
+          <div id="orc-cliente-tel" style="font-size:12px; color:var(--text-muted); margin-top:2px;">-</div>
+        </div>
+        <div>
+          <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--text-muted);">Data & Horário do Evento</div>
+          <div id="orc-data-evento" style="font-size:15px; font-weight:700; margin-top:2px; color:var(--text-main);">-</div>
+          <div id="orc-validade-info" style="font-size:12px; color:var(--text-muted); margin-top:2px;">-</div>
+        </div>
+        <div>
+          <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--text-muted);">Modalidade</div>
+          <div id="orc-tipo-entrega" style="font-size:15px; font-weight:700; margin-top:2px; color:var(--text-main);">-</div>
+          <div id="orc-endereco-entrega" style="font-size:12px; color:var(--text-muted); margin-top:2px;">-</div>
+        </div>
+      </div>
+
+      <!-- Tabela de Itens -->
+      <h3 style="margin:24px 0 10px 0; font-size:16px; font-weight:700;">Itens da Proposta</h3>
+      <div style="overflow-x:auto;">
+        <table class="tabela-itens">
+          <thead>
+            <tr>
+              <th>Produto</th>
+              <th style="text-align:center;">Qtd</th>
+              <th style="text-align:right;">Preço Unit.</th>
+              <th style="text-align:right;">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody id="orc-itens-tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- Totais Financeiros -->
+      <div style="display:flex; justify-content:flex-end; margin-top:16px;">
+        <div style="width:100%; max-width:320px; background:#f8fafc; border:1px solid var(--border-color); border-radius:12px; padding:16px;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size:13px; color:var(--text-muted);">
+            <span>Subtotal dos produtos:</span>
+            <span id="orc-subtotal-val" style="font-weight:600; color:var(--text-main);">R$ 0,00</span>
+          </div>
+          <div id="orc-desconto-linha" style="display:none; justify-content:space-between; margin-bottom:8px; font-size:13px; color:#16a34a; font-weight:600;">
+            <span>Desconto:</span>
+            <span id="orc-desconto-val">- R$ 0,00</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-size:13px; color:var(--text-muted);">
+            <span>Taxa de Entrega:</span>
+            <span id="orc-frete-val" style="font-weight:600; color:var(--text-main);">R$ 0,00</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding-top:12px; border-top:2px solid var(--border-color); font-size:18px; font-weight:800; color:var(--text-main);">
+            <span>Total da Proposta:</span>
+            <span id="orc-total-val" style="color:var(--primary);">R$ 0,00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Condições Comerciais e Sinal Sugerido -->
+      <div style="margin-top:24px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:16px;">
+        <div style="font-weight:700; font-size:13px; color:#166534; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">
+          <i class="fa-solid fa-handshake"></i> Condições Comerciais & Pagamento
+        </div>
+        <div style="font-size:13px; color:#14532d; line-height:1.6;">
+          • <strong>Sinal de Confirmação:</strong> <span id="orc-sinal-val" style="font-weight:800;">R$ 0,00</span> (<span id="orc-sinal-pct">50%</span> do total) para reserva definitiva da data.<br>
+          • <strong>Saldo Restante:</strong> <span id="orc-saldo-val" style="font-weight:800;">R$ 0,00</span> a ser pago na entrega ou retirada.<br>
+          • A produção artesanal dos doces é iniciada somente após a confirmação do sinal.
+        </div>
+      </div>
+
+      <!-- Observações do Cliente se houver -->
+      <div id="orc-obs-cliente-container" style="display:none; margin-top:16px; background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:12px; font-size:13px; color:#78350f;">
+        <strong>Observações do Pedido:</strong> <span id="orc-obs-cliente-txt"></span>
+      </div>
+
+      <!-- Ações do Cliente (Aprovar / WhatsApp) -->
+      <div class="no-print" style="margin-top:32px; padding-top:20px; border-top:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+        <div id="orc-msg-rodape" style="font-size:12px; color:var(--text-muted);">
+          Dúvidas sobre o pedido? Fale conosco antes de aprovar.
+        </div>
+        <div style="display:flex; gap:10px;">
+          <a id="btn-contato-zap" href="#" target="_blank" class="btn-outline" style="padding:10px 18px; border-radius:10px; text-decoration:none; display:inline-flex; align-items:center; gap:8px; color:#15803d; border-color:#bbf7d0; font-size:14px; font-weight:600;">
+            <i class="fa-brands fa-whatsapp fa-lg"></i> Falar no WhatsApp
+          </a>
+          <button id="btn-aprovar-orcamento" onclick="aprovarPropostaPublica()" class="btn-primary" style="padding:12px 24px; border-radius:10px; font-size:15px; font-weight:700; display:inline-flex; align-items:center; gap:8px; background:#16a34a; border:none; color:#fff; cursor:pointer;">
+            <i class="fa-solid fa-circle-check"></i> Aprovar Proposta
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase.js?v=3.0.0"></script>
+  <script src="js/orcamento-publico.js?v=3.1.0"></script>
+</body>
+</html>

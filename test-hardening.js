@@ -1775,12 +1775,203 @@ console.log('\n🧩 FASE 12: Paridade sql/install.sql e sql/schema.sql com basel
   const schemaGen = fs.readFileSync('sql/schema.sql', 'utf-8');
   assert.strictEqual(installGen, schemaGen, '[FALHA] sql/schema.sql deve ser idêntico a sql/install.sql (gerados)');
   assert.ok(installGen.includes('>>> MIGRATION 011_etapa2_fechamento_concorrencia.sql'), '[FALHA] install.sql não inclui a migration 011');
+  assert.ok(installGen.includes('>>> MIGRATION 012_hardening_politicas_e_nucleo.sql'), '[FALHA] install.sql não inclui a migration 012');
+  assert.ok(installGen.includes('>>> MIGRATION 013_etapa3_orcamentos_conversao_comercial.sql'), '[FALHA] install.sql não inclui a migration 013');
   assert.ok(installGen.includes('baixar_estoque_pedido_batch'), '[FALHA] install.sql perdeu baixar_estoque_pedido_batch');
 }
 console.log('    ✅ Arquivos gerados em paridade com a fonte canônica (migrations).');
-console.log('    ℹ️  A execução COMPLETA de sql/install.sql num PostgreSQL vazio (zero erros) + reaplicação idempotente é provada em npm run test:integration (before() + teste R2-1).');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–12 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// --------------------------------------------------------------------------
+// FASE 13: ETAPA 3 - ORÇAMENTOS, PROPOSTA PÚBLICA & CONVERSÃO COMERCIAL
+// --------------------------------------------------------------------------
+console.log('\n📜 FASE 13: Etapa 3 - Orçamentos, Proposta Pública & Conversão Comercial...');
+
+const sqlFilesEtapa3 = [
+  'supabase/migrations/013_etapa3_orcamentos_conversao_comercial.sql',
+  'sql/schema.sql',
+  'sql/install.sql'
+];
+
+for (const file of sqlFilesEtapa3) {
+  const content = fs.readFileSync(file, 'utf-8');
+
+  // 13.1 Tabelas do Módulo de Orçamentos e Constraints
+  console.log(`  🔎 13.1 ${file}: tabelas, unicidade de pedido/orçamento e snapshots...`);
+  assert.ok(
+    content.includes('CREATE TABLE IF NOT EXISTS public.orcamentos') &&
+    content.includes('CREATE TABLE IF NOT EXISTS public.orcamento_itens') &&
+    content.includes('CREATE TABLE IF NOT EXISTS public.orcamento_item_opcoes') &&
+    content.includes('CREATE TABLE IF NOT EXISTS public.orcamento_autorizacoes') &&
+    content.includes('CREATE TABLE IF NOT EXISTS public.orcamento_status_historico') &&
+    content.includes('CREATE TABLE IF NOT EXISTS public.orcamento_comunicacoes'),
+    `[FALHA] ${file} não cria todas as 6 tabelas do módulo de orçamentos!`
+  );
+
+  assert.ok(
+    content.includes('token_publico UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE') &&
+    content.includes('pedido_id BIGINT UNIQUE REFERENCES public.pedidos(id) ON DELETE SET NULL') &&
+    (file === 'supabase/migrations/013_etapa3_orcamentos_conversao_comercial.sql' || content.includes('orcamento_origem_id BIGINT UNIQUE')),
+    `[FALHA] ${file} não garante unicidade do token_publico, orcamentos.pedido_id e pedidos.orcamento_origem_id!`
+  );
+
+  assert.ok(
+    content.includes('preco_unitario_snapshot NUMERIC(10,2) NOT NULL') &&
+    content.includes('pontos_producao_snapshot NUMERIC(6,2) NOT NULL DEFAULT 1.00') &&
+    content.includes('preco_adicional_snapshot NUMERIC(10,2) NOT NULL DEFAULT 0.00'),
+    `[FALHA] ${file} não implementa colunas de snapshot imutável em itens e opções de orçamento!`
+  );
+
+  // 13.2 RLS Rigoroso e Políticas nas Tabelas de Orçamentos
+  console.log(`  🔎 13.2 ${file}: RLS fail-closed nas tabelas de orçamentos...`);
+  assert.ok(
+    content.includes('ALTER TABLE public.orcamentos ENABLE ROW LEVEL SECURITY;') &&
+    content.includes('ALTER TABLE public.orcamento_itens ENABLE ROW LEVEL SECURITY;') &&
+    content.includes('ALTER TABLE public.orcamento_item_opcoes ENABLE ROW LEVEL SECURITY;') &&
+    content.includes('ALTER TABLE public.orcamento_autorizacoes ENABLE ROW LEVEL SECURITY;') &&
+    content.includes('ALTER TABLE public.orcamento_status_historico ENABLE ROW LEVEL SECURITY;') &&
+    content.includes('ALTER TABLE public.orcamento_comunicacoes ENABLE ROW LEVEL SECURITY;'),
+    `[FALHA] ${file} não habilita RLS em todas as tabelas de orçamentos!`
+  );
+
+  // Sem concessão de SELECT em orcamentos para anon / PUBLIC
+  assert.ok(
+    !content.includes('CREATE POLICY "Anon visualiza orcamentos" ON public.orcamentos FOR SELECT TO anon') &&
+    !content.includes('CREATE POLICY "Publico visualiza orcamentos" ON public.orcamentos FOR SELECT TO public'),
+    `[FALHA] ${file} concede acesso direto vulnerável em public.orcamentos para anon/public!`
+  );
+
+  // 13.3 RPCs de Ciclo de Vida e Segurança
+  console.log(`  🔎 13.3 ${file}: RPCs de ciclo de vida, expiração e aprovação...`);
+  const rpcsEtapa3 = [
+    'criar_ou_atualizar_orcamento_admin',
+    'alterar_status_orcamento_admin',
+    'obter_orcamento_publico',
+    'aprovar_orcamento_publico',
+    'expirar_orcamentos',
+    'converter_orcamento_em_pedido_admin',
+    'registrar_comunicacao_orcamento_admin',
+    'buscar_orcamentos_admin'
+  ];
+
+  for (const rpc of rpcsEtapa3) {
+    assert.ok(
+      content.includes(`CREATE OR REPLACE FUNCTION public.${rpc}`) &&
+      content.includes(`SECURITY DEFINER SET search_path = public, auth;`),
+      `[FALHA] ${file} não define RPC public.${rpc} com SECURITY DEFINER e search_path estrito!`
+    );
+  }
+
+  // 13.4 Obter e Aprovar Orçamento Público
+  console.log(`  🔎 13.4 ${file}: isolamento de obter/aprovar orçamento público...`);
+  const pubIdx = content.lastIndexOf('CREATE OR REPLACE FUNCTION public.obter_orcamento_publico(');
+  const pubBody = content.slice(pubIdx, content.indexOf('$$ LANGUAGE plpgsql', pubIdx));
+  assert.ok(
+    !pubBody.includes('cmv_unitario_snapshot') &&
+    !pubBody.includes('observacoes_internas') &&
+    !pubBody.includes('criado_por') &&
+    pubBody.includes('visualizacoes_count'),
+    `[FALHA] ${file}: obter_orcamento_publico vaza dados sensíveis (CMV, observações internas ou criado_por)!`
+  );
+
+  const aprIdx = content.lastIndexOf('CREATE OR REPLACE FUNCTION public.aprovar_orcamento_publico(');
+  const aprBody = content.slice(aprIdx, content.indexOf('$$ LANGUAGE plpgsql', aprIdx));
+  assert.ok(
+    aprBody.includes("'idempotente', true") &&
+    aprBody.includes("'QUOTE_EXPIRED'") &&
+    aprBody.includes("'QUOTE_NOT_APPROVABLE'") &&
+    aprBody.includes("status = 'aprovado'"),
+    `[FALHA] ${file}: aprovar_orcamento_publico não garante idempotência ou rejeição de expirados!`
+  );
+
+  // 13.5 Expiração com SKIP LOCKED
+  console.log(`  🔎 13.5 ${file}: expirar_orcamentos com FOR UPDATE SKIP LOCKED...`);
+  const expIdx = content.lastIndexOf('CREATE OR REPLACE FUNCTION public.expirar_orcamentos(');
+  const expBody = content.slice(expIdx, content.indexOf('$$ LANGUAGE plpgsql', expIdx));
+  assert.ok(
+    expBody.includes("status = 'enviado' AND validade_ate < NOW()") &&
+    expBody.includes('FOR UPDATE SKIP LOCKED') &&
+    expBody.includes("status = 'expirado'"),
+    `[FALHA] ${file}: expirar_orcamentos não usa SKIP LOCKED ou não filtra status enviado com validade vencida!`
+  );
+
+  // 13.6 Conversão Atômica Delegando ao Núcleo
+  console.log(`  🔎 13.6 ${file}: converter_orcamento_em_pedido_admin com snapshots imutáveis e núcleo...`);
+  const convIdx = content.lastIndexOf('CREATE OR REPLACE FUNCTION public.converter_orcamento_em_pedido_admin(');
+  const convBody = content.slice(convIdx, content.indexOf('$$ LANGUAGE plpgsql', convIdx));
+  assert.ok(
+    convBody.includes("'QUOTE_NOT_CONVERTIBLE'") &&
+    convBody.includes("'CONVERSION_WINDOW_EXPIRED'") &&
+    convBody.includes("status = 'convertido' AND v_orc.pedido_id IS NOT NULL") &&
+    convBody.includes("public.nucleo_criar_encomenda(") &&
+    convBody.includes("oi.preco_unitario_snapshot") &&
+    !convBody.includes("JOIN public.produtos pr ON pr.preco"),
+    `[FALHA] ${file}: conversão de orçamento precisa checar status aprovado, janela pós-aprovação, idempotência e usar snapshots imutáveis delegando ao núcleo!`
+  );
+  console.log(`    ✅ ${file}: Schema e RPCs da Etapa 3 100% auditados.`);
+}
+
+// 13.7 Frontend: Central de Orçamentos, Modais, Proposta Pública e Cron Unificado
+console.log('\n  🔎 13.7 Verificando frontend, documentos e integração do cron...');
+const adminHtmlE3 = fs.readFileSync('admin.html', 'utf-8');
+assert.ok(
+  adminHtmlE3.includes('id="tab-btn-orcamentos"') &&
+  adminHtmlE3.includes('id="admin-tab-orcamentos"') &&
+  adminHtmlE3.includes('id="orcamentos-lista-container"') &&
+  adminHtmlE3.includes('id="modal-novo-orcamento"') &&
+  adminHtmlE3.includes('id="modal-converter-orcamento"') &&
+  adminHtmlE3.includes('id="modal-espelho-orcamento"') &&
+  adminHtmlE3.includes('js/admin-orcamentos.js'),
+  '[FALHA] admin.html não contém a aba Orçamentos ou seus modais integrados!'
+);
+
+const adminOrcJs = fs.readFileSync('js/admin-orcamentos.js', 'utf-8');
+assert.ok(
+  adminOrcJs.includes('carregarOrcamentosAdmin') &&
+  adminOrcJs.includes('submeterOrcamentoAdmin') &&
+  adminOrcJs.includes('submeterConversaoOrcamento') &&
+  adminOrcJs.includes('abrirEspelhoOrcamento') &&
+  adminOrcJs.includes('compartilharWhatsAppOrcamento') &&
+  adminOrcJs.includes('copiarLinkPublicoOrcamento'),
+  '[FALHA] js/admin-orcamentos.js não implementa os métodos esperados da gestão de orçamentos!'
+);
+
+const adminJsE3 = fs.readFileSync('js/admin.js', 'utf-8');
+assert.ok(
+  adminJsE3.includes("'tab-btn-orcamentos'") &&
+  adminJsE3.includes("'orcamentos'") &&
+  adminJsE3.includes('carregarOrcamentosAdmin'),
+  '[FALHA] js/admin.js não inclui aba orçamentos nas abas permitidas do operador!'
+);
+
+const orcHtml = fs.readFileSync('orcamento.html', 'utf-8');
+const orcPubJs = fs.readFileSync('js/orcamento-publico.js', 'utf-8');
+assert.ok(
+  orcHtml.includes('id="orcamento-conteudo"') &&
+  orcHtml.includes('id="btn-aprovar-orcamento"') &&
+  orcPubJs.includes('obter_orcamento_publico') &&
+  orcPubJs.includes('aprovar_orcamento_publico') &&
+  orcPubJs.includes('aprovarPropostaPublica'),
+  '[FALHA] orcamento.html ou js/orcamento-publico.js não implementam a visualização e aprovação pública!'
+);
+
+const cronExpireE3 = fs.readFileSync('functions/api/cron/expire-orders.js', 'utf-8');
+assert.ok(
+  cronExpireE3.includes('expirar_pedidos_e_holds') &&
+  cronExpireE3.includes('expirar_orcamentos'),
+  '[FALHA] expire-orders.js não invoca ambas as RPCs unificadas (pedidos e orçamentos)!'
+);
+
+const cssE3 = fs.readFileSync('css/style.css', 'utf-8');
+assert.ok(
+  cssE3.includes('@media print') &&
+  cssE3.includes('#modal-espelho-orcamento') &&
+  cssE3.includes('.folha-impressao'),
+  '[FALHA] css/style.css não contém regras de impressão @media print para espelho de orçamento!'
+);
+console.log('    ✅ Frontend, documentos e cron unificado da Etapa 3 validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–13 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+
 
 
 

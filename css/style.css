@@ -1971,3 +1971,52 @@ select:focus {
   border-color: #b91c1c;
   color: #fff;
 }
+
+/* ==========================================================================
+   Etapa 3: Orçamentos, Espelho Comercial & Ficha de Bancada (@media print)
+   ========================================================================== */
+.folha-impressao {
+  background: #ffffff;
+  color: #0f172a;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  line-height: 1.5;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .modal-overlay {
+    position: static !important;
+    background: none !important;
+    padding: 0 !important;
+  }
+  .modal-content {
+    box-shadow: none !important;
+    border: none !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+  #modal-espelho-orcamento,
+  #modal-espelho-orcamento .folha-impressao,
+  #modal-espelho-orcamento .folha-impressao * {
+    visibility: visible;
+  }
+  #modal-espelho-orcamento {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+  .no-print, .close-modal {
+    display: none !important;
+  }
+  @page {
+    margin: 15mm;
+    size: A4 portrait;
+  }
+}
+
