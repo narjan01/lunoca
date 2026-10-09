@@ -1,0 +1,22 @@
+{
+  "name": "lunoca",
+  "version": "3.1.0",
+  "private": true,
+  "description": "Lunoca Doceria - Confectionery OS (loja + operação) sobre Supabase e Cloudflare Pages",
+  "type": "module",
+  "scripts": {
+    "build:sql": "node scripts/build-sql.mjs",
+    "check:sql": "node scripts/build-sql.mjs --check",
+    "test": "npm run check:sql && npm run test:structural && npm run test:integration",
+    "test:structural": "node test-hardening.js",
+    "test:integration": "node --test tests/integration/*.test.mjs",
+    "lint:syntax": "node -c js/admin-operacao.js && node -c js/admin.js && node -c js/admin-loader.js && node -c js/pedidos.js && node -c js/financeiro.js && node -c test-hardening.js && node --check functions/api/cron/expire-orders.js"
+  },
+  "devDependencies": {
+    "embedded-postgres": "^18.4.0-beta.17",
+    "pg": "^8.23.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

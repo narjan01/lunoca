@@ -15,7 +15,7 @@ function carregarScriptDinamico(src) {
       return resolve();
     }
     const script = document.createElement('script');
-    script.src = src + '?v=3.0.0';
+    script.src = src + '?v=3.1.0';
     script.async = false;
     script.onload = () => resolve();
     script.onerror = (e) => reject(new Error(`Falha ao carregar módulo administrativo: ${src}`));

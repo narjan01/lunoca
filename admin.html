@@ -170,6 +170,7 @@
               <button class="filtro-pill-btn" data-filtro="em_producao" onclick="filtrarCentralEncomendas('em_producao')">Em Produção</button>
               <button class="filtro-pill-btn" data-filtro="prontos" onclick="filtrarCentralEncomendas('prontos')">Prontos</button>
               <button class="filtro-pill-btn" data-filtro="concluidos" onclick="filtrarCentralEncomendas('concluidos')">Concluídos</button>
+              <button class="filtro-pill-btn filtro-pill-alerta" data-filtro="revisao" onclick="filtrarCentralEncomendas('revisao')"><i class="fa-solid fa-circle-exclamation"></i> Em Revisão</button>
             </div>
           </div>
 
@@ -664,7 +665,8 @@
         <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:10px;">
           <div class="form-group">
             <label style="font-size:12px; font-weight:600;">Sinal Mínimo (R$)</label>
-            <input type="number" step="0.01" id="nova-enc-sinal-minimo" value="0.00" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:13px;">
+            <input type="number" step="0.01" id="nova-enc-sinal-minimo" value="" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:13px;">
+            <small id="nova-enc-sinal-hint" style="display:block; font-size:10px; color:#64748b; margin-top:3px;"></small>
           </div>
           <div class="form-group">
             <label style="font-size:12px; font-weight:600;">Valor Pago Agora (R$)</label>
@@ -685,6 +687,10 @@
             <input type="checkbox" id="nova-enc-confirmar-sem-sinal" style="width:16px; height:16px;">
             <span><strong>Apenas Admin:</strong> Confirmar encomenda imediatamente sem exigência de sinal</span>
           </label>
+          <div class="form-group" style="margin-top:8px; margin-bottom:0;">
+            <label style="font-size:12px; font-weight:600;">Justificativa do sinal (obrigatória ao reduzir/dispensar — Admin)</label>
+            <input type="text" id="nova-enc-motivo-sinal" placeholder="Ex: Cliente recorrente; sinal reduzido por acordo" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:13px;">
+          </div>
         </div>
       </div>
 
@@ -779,6 +785,53 @@
     </div>
   </div>
 
+  <!-- Modal: Resolver Revisão Financeira (Etapa 2 - Fechamento) -->
+  <div id="modal-resolver-revisao" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center; padding:15px; box-sizing:border-box;">
+    <div class="modal-content" style="background:#fff; border-radius:16px; padding:24px; max-width:520px; width:100%; box-shadow:0 20px 40px rgba(0,0,0,0.2); position:relative;">
+      <span class="close-modal" role="button" aria-label="Fechar janela" onclick="fecharModalResolverRevisao()">&times;</span>
+      <h3 style="margin-top:0; color:var(--text-dark); font-size:17px; display:flex; align-items:center; gap:8px;">
+        <i class="fa-solid fa-gavel" style="color:#b91c1c;"></i> Resolver Revisão Financeira
+      </h3>
+      <input type="hidden" id="rev-pedido-id">
+      <div id="rev-resumo" style="background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:10px 14px; font-size:12px; color:#7f1d1d; margin-bottom:14px; line-height:1.5;"></div>
+
+      <div class="form-group" style="margin-bottom:12px;">
+        <label style="font-size:12px; font-weight:600;">Decisão *</label>
+        <select id="rev-acao" onchange="onAcaoRevisaoChange()" style="width:100%; padding:9px 12px; border-radius:8px; border:1px solid #cbd5e1; font-size:13px;">
+          <option value="ESTENDER_HOLD">Estender prazo (revalida vaga e recria reserva de estoque)</option>
+          <option value="CONFIRMAR_COM_OVERRIDE">Confirmar com encaixe extraordinário (override de capacidade)</option>
+          <option value="ESTORNAR_E_CANCELAR">Estornar pagamentos e cancelar</option>
+          <option value="CANCELAR">Cancelar retendo o valor pago</option>
+        </select>
+        <div id="rev-hint" style="font-size:11px; color:#64748b; margin-top:6px; line-height:1.4;"></div>
+      </div>
+
+      <div class="form-group" id="rev-grupo-prazo" style="margin-bottom:12px;">
+        <label style="font-size:12px; font-weight:600;">Novo prazo de confirmação *</label>
+        <input type="datetime-local" id="rev-novo-prazo" style="width:100%; padding:9px 12px; border-radius:8px; border:1px solid #cbd5e1; font-size:13px;">
+      </div>
+
+      <div class="form-group" id="rev-grupo-destino" style="margin-bottom:12px; display:none; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:10px 12px;">
+        <label style="font-size:12px; font-weight:600; display:flex; align-items:flex-start; gap:8px; cursor:pointer;">
+          <input type="checkbox" id="rev-destino-retencao" style="margin-top:2px;">
+          <span>Confirmo a <strong>retenção do valor pago</strong> conforme política de cancelamento (sem estorno). Crédito em loja será suportado em etapa futura.</span>
+        </label>
+      </div>
+
+      <div class="form-group" style="margin-bottom:16px;">
+        <label style="font-size:12px; font-weight:600;">Justificativa (auditável) *</label>
+        <textarea id="rev-motivo" rows="2" placeholder="Ex: Cliente confirmou por WhatsApp que pagará o restante até amanhã" required style="width:100%; padding:8px 12px; border-radius:8px; border:1px solid #cbd5e1; font-size:13px;"></textarea>
+      </div>
+
+      <div style="display:flex; gap:10px; justify-content:flex-end;">
+        <button onclick="fecharModalResolverRevisao()" class="btn-outline" style="padding:9px 16px; border-radius:8px;">Voltar</button>
+        <button id="btn-submeter-revisao" onclick="submeterResolucaoRevisao()" class="btn-primary" style="padding:9px 20px; border-radius:8px; background:#b91c1c; color:#fff; border:none; font-weight:700; cursor:pointer;">
+          <i class="fa-solid fa-check"></i> Aplicar Decisão
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Scripts Administrativos Completos -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/supabase.js?v=3.0.0"></script>
@@ -789,8 +842,8 @@
   <script src="js/estoque.js?v=3.0.0"></script>
   <script src="js/fichatecnica.js?v=3.0.0"></script>
   <script src="js/financeiro.js?v=3.0.0"></script>
-  <script src="js/admin.js?v=3.0.0"></script>
-  <script src="js/admin-operacao.js?v=3.0.0"></script>
+  <script src="js/admin.js?v=3.1.0"></script>
+  <script src="js/admin-operacao.js?v=3.1.0"></script>
 
   <script>
     async function inicializarAdminStandalone() {

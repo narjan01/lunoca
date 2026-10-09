@@ -274,27 +274,59 @@ for (const file of fase3SqlFiles) {
   console.log('    ✅ RPC liberar_pedidos_expirados blindada para service_role.');
 }
 
-// 5.7 Endpoint Cloudflare de expiração (/api/cron/expire-orders)
+// 5.7 Endpoint Cloudflare de expiração (/api/cron/expire-orders) - pipeline único
 console.log('\n  🔎 Verificando endpoint de cron /api/cron/expire-orders...');
 const expireContent = fs.readFileSync('functions/api/cron/expire-orders.js', 'utf-8');
 assert.ok(
-  expireContent.includes('liberar_pedidos_expirados'),
-  '[FALHA] expire-orders.js não invoca liberar_pedidos_expirados!'
+  expireContent.includes('rpc/expirar_pedidos_e_holds'),
+  '[FALHA] expire-orders.js não invoca a RPC unificada expirar_pedidos_e_holds!'
 );
 assert.ok(
-  expireContent.includes('SUPABASE_SERVICE_ROLE_KEY'),
-  '[FALHA] expire-orders.js não valida chave de serviço!'
+  !expireContent.includes('rpc/liberar_pedidos_expirados'),
+  '[FALHA] expire-orders.js ainda invoca o pipeline legado liberar_pedidos_expirados (deveria haver UMA autoridade de expiração)!'
 );
-console.log('    ✅ Endpoint /api/cron/expire-orders verificado.');
+assert.ok(
+  expireContent.includes('SUPABASE_SERVICE_ROLE_KEY') && expireContent.includes('CRON_SECRET'),
+  '[FALHA] expire-orders.js não valida chave de serviço e CRON_SECRET!'
+);
+assert.ok(
+  !expireContent.includes("searchParams.get('secret')"),
+  '[FALHA] expire-orders.js não pode aceitar o segredo via query string!'
+);
+console.log('    ✅ Endpoint /api/cron/expire-orders aponta para o pipeline único e exige CRON_SECRET.');
 
 // 5.8 Teste dinâmico de fail-closed de /api/cron/expire-orders
-const { onRequestGet: getExpire } = await import('./functions/api/cron/expire-orders.js');
-const expireRes = await getExpire({
-  request: new Request('https://lunocadoceria.com.br/api/cron/expire-orders'),
-  env: { SUPABASE_URL: 'https://test.supabase.co', SUPABASE_SERVICE_ROLE_KEY: undefined }
+const { onRequestGet: getExpire, onRequestPost: postExpire } = await import('./functions/api/cron/expire-orders.js');
+const CRON_OK = 'segredo-de-teste-com-mais-de-16-chars';
+
+// (a) Sem CRON_SECRET configurado => 503 (rota desabilitada)
+let expireRes = await getExpire({
+  request: new Request('https://lunocadoceria.com.br/api/cron/expire-orders', { headers: { Authorization: 'Bearer qualquer' } }),
+  env: { SUPABASE_URL: 'https://test.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'x' }
+});
+assert.strictEqual(expireRes.status, 503, 'Sem CRON_SECRET deve responder 503 (fail-closed)');
+
+// (b) CRON_SECRET configurado, Bearer errado => 401
+expireRes = await getExpire({
+  request: new Request('https://lunocadoceria.com.br/api/cron/expire-orders', { headers: { Authorization: 'Bearer errado' } }),
+  env: { CRON_SECRET: CRON_OK, SUPABASE_URL: 'https://test.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'x' }
+});
+assert.strictEqual(expireRes.status, 401, 'Bearer inválido deve responder 401');
+
+// (c) Segredo via query string => 400 mesmo se correto
+expireRes = await getExpire({
+  request: new Request(`https://lunocadoceria.com.br/api/cron/expire-orders?secret=${CRON_OK}`),
+  env: { CRON_SECRET: CRON_OK, SUPABASE_URL: 'https://test.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'x' }
+});
+assert.strictEqual(expireRes.status, 400, 'Segredo via query string deve ser rejeitado');
+
+// (d) Bearer correto, mas SERVICE_ROLE_KEY ausente => 500
+expireRes = await postExpire({
+  request: new Request('https://lunocadoceria.com.br/api/cron/expire-orders', { method: 'POST', headers: { Authorization: `Bearer ${CRON_OK}` } }),
+  env: { CRON_SECRET: CRON_OK, SUPABASE_URL: 'https://test.supabase.co', SUPABASE_SERVICE_ROLE_KEY: undefined }
 });
 assert.strictEqual(expireRes.status, 500, 'Deveria retornar 500 se SERVICE_ROLE_KEY for ausente');
-console.log('    ✅ /api/cron/expire-orders falha fechado (500) com secrets ausentes.');
+console.log('    ✅ /api/cron/expire-orders falha fechado: 503 sem CRON_SECRET, 401 Bearer inválido, 400 query string, 500 sem service key.');
 
 // 5.9 Validações de frontend de estoque
 console.log('\n  🔎 Verificando frontend para proteção de estoque...');
@@ -1536,7 +1568,195 @@ assert.ok(
 );
 console.log('    ✅ Frontend: admin.html, admin-operacao.js, admin.js, admin-loader.js e style.css totalmente integrados.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–11 foram aprovadas.');
+// --------------------------------------------------------------------------
+// FASE 11 (continuação): ETAPA 2 - FECHAMENTO DEFINITIVO & CONCORRÊNCIA COMPLETA
+// --------------------------------------------------------------------------
+console.log('\n🧩 FASE 11.13–11.18: Fechamento da Etapa 2 (reserva por item, expiração única, revisão financeira)...');
+const sqlFilesEtapa2Fechamento = [
+  'supabase/migrations/011_etapa2_fechamento_concorrencia.sql',
+  'sql/schema.sql',
+  'sql/install.sql'
+];
+
+for (const file of sqlFilesEtapa2Fechamento) {
+  const content = fs.readFileSync(file, 'utf-8');
+
+  // 11.13 Reserva de estoque por item (Opção A) e liberação idempotente guardada pela flag
+  console.log(`\n  🔎 11.13 ${file}: reserva por item e liberação idempotente...`);
+  assert.ok(
+    content.includes('ADD COLUMN IF NOT EXISTS reserva_estoque_ativa BOOLEAN NOT NULL DEFAULT false') &&
+    content.includes('CREATE OR REPLACE FUNCTION public.reservar_estoque_itens_pedido') &&
+    content.includes('CREATE OR REPLACE FUNCTION public.liberar_estoque_itens_pedido') &&
+    content.includes('AND pi.reserva_estoque_ativa = true') &&
+    content.includes('uq_estoque_mov_item_evento'),
+    `[FALHA] ${file} não implementa reserva por item com flag e idempotência estrutural!`
+  );
+  // criar_encomenda_admin reserva estoque (fail-closed) e o cancelamento libera via trigger único
+  assert.ok(
+    content.includes("v_reserva := public.reservar_estoque_itens_pedido(") &&
+    content.includes('trg_pedidos_libera_reserva_ao_cancelar') &&
+    content.includes('trg_estoque_mov_encerra_reserva'),
+    `[FALHA] ${file}: criar_encomenda_admin não reserva estoque ou o cancelamento não libera via trigger!`
+  );
+  console.log('    ✅ Opção A implementada: flag por item, helpers canônicos, trigger de cancelamento.');
+
+  // 11.14 Pipeline único de expiração + pagamento tardio com revalidação dupla + lock do pedido primeiro
+  console.log(`  🔎 11.14 ${file}: pipeline único de expiração e revalidação dupla...`);
+  assert.ok(
+    content.includes('CREATE OR REPLACE FUNCTION public.expirar_pedidos_e_holds') &&
+    content.includes('FOR UPDATE OF p SKIP LOCKED') &&
+    content.includes("'delegado_para', 'expirar_pedidos_e_holds'") &&
+    content.includes('requer_revisao_financeira = true,'),
+    `[FALHA] ${file} não implementa expirar_pedidos_e_holds unificada com SKIP LOCKED e revisão financeira!`
+  );
+  assert.ok(
+    content.includes('bloqueado_por_overbooking_tardio') &&
+    content.includes("'Pagamento tardio aceito após revalidação atômica com sucesso de capacidade e estoque'") &&
+    content.includes('v_cap := public.travar_capacidade_data(v_ped.data_entrega);'),
+    `[FALHA] ${file}: recalcular_financeiro_pedido não revalida capacidade E estoque no pagamento tardio!`
+  );
+  // Ordem global: o trigger financeiro trava o pedido ANTES de capacidade/produtos
+  const trgIdx = content.lastIndexOf('CREATE OR REPLACE FUNCTION public.recalcular_financeiro_pedido()');
+  const trgBody = content.slice(trgIdx, content.indexOf('$$ LANGUAGE plpgsql', trgIdx));
+  assert.ok(
+    trgBody.indexOf('FOR UPDATE;') < trgBody.indexOf('travar_capacidade_data'),
+    `[FALHA] ${file}: lock do pedido deve preceder o lock de capacidade no trigger financeiro!`
+  );
+  console.log('    ✅ Expiração única, SKIP LOCKED, revalidação dupla e ordem de locks pedido -> capacidade -> produtos.');
+
+  // 11.15 RPC resolver_revisao_encomenda_admin (admin-only, 4 ações, sem override de estoque, estorno canônico)
+  console.log(`  🔎 11.15 ${file}: resolver_revisao_encomenda_admin...`);
+  const resIdx = content.lastIndexOf('CREATE OR REPLACE FUNCTION public.resolver_revisao_encomenda_admin');
+  assert.ok(resIdx > -1, `[FALHA] ${file} não contém resolver_revisao_encomenda_admin!`);
+  const resBody = content.slice(resIdx, content.indexOf('$$ LANGUAGE plpgsql', resIdx));
+  assert.ok(
+    resBody.includes('IF NOT public.is_admin() THEN') &&
+    resBody.includes("'ESTENDER_HOLD', 'CONFIRMAR_COM_OVERRIDE', 'ESTORNAR_E_CANCELAR', 'CANCELAR'") &&
+    resBody.includes("'Override de estoque não é permitido.") &&
+    resBody.includes('public.estornar_pagamento_pedido(v_pag.id') &&
+    resBody.includes("'RETENCAO_CANCELAMENTO'"),
+    `[FALHA] ${file}: resolver_revisao_encomenda_admin não cumpre as regras (admin, 4 ações, sem override de estoque, estorno canônico, retenção)!`
+  );
+  console.log('    ✅ Resolução administrativa: admin-only, override só de capacidade, estorno canônico, retenção explícita.');
+
+  // 11.16 Timezone e capacidade dinâmicos via configuracoes_operacao
+  console.log(`  🔎 11.16 ${file}: configuracoes_operacao e timezone dinâmico...`);
+  assert.ok(
+    content.includes('CREATE TABLE IF NOT EXISTS public.configuracoes_operacao') &&
+    content.includes("timezone TEXT NOT NULL DEFAULT 'America/Fortaleza'") &&
+    content.includes('CREATE OR REPLACE FUNCTION public.obter_config_operacao()') &&
+    content.includes('AT TIME ZONE v_cfg.timezone') &&
+    content.includes('AT TIME ZONE v_tz'),
+    `[FALHA] ${file} não parametriza timezone/holds via configuracoes_operacao!`
+  );
+  console.log('    ✅ Timezone, hold e capacidade padrão lidos de configuracoes_operacao.');
+
+  // 11.17 Regra estrita de entrega imediata
+  console.log(`  🔎 11.17 ${file}: entrega imediata exige sinal integral...`);
+  assert.ok(
+    content.includes("'IMMEDIATE_CONFIRMATION_REQUIRED'") &&
+    content.includes('IF v_confirmacao_expires_at <= NOW() THEN') &&
+    content.includes('make_interval(hours => v_cfg.antecedencia_confirmacao_horas)'),
+    `[FALHA] ${file} não aplica a regra de entrega imediata com antecedência configurável!`
+  );
+  console.log('    ✅ IMMEDIATE_CONFIRMATION_REQUIRED aplicado.');
+
+  // 11.18 Hardening atualizar_meus_dados_cliente + hotfix criar_pedido
+  console.log(`  🔎 11.18 ${file}: atualizar_meus_dados_cliente e hotfix criar_pedido...`);
+  const cliIdx = content.lastIndexOf('CREATE OR REPLACE FUNCTION public.atualizar_meus_dados_cliente');
+  assert.ok(cliIdx > -1, `[FALHA] ${file} não contém atualizar_meus_dados_cliente!`);
+  const cliTail = content.slice(cliIdx, content.indexOf('REVOKE ALL ON FUNCTION public.atualizar_meus_dados_cliente', cliIdx));
+  assert.ok(
+    cliTail.includes("'PHONE_ALREADY_IN_USE'") &&
+    cliTail.includes('SECURITY DEFINER SET search_path = public;') &&
+    !cliTail.includes('search_path = public, auth'),
+    `[FALHA] ${file}: atualizar_meus_dados_cliente precisa de search_path estrito (sem auth) e PHONE_ALREADY_IN_USE!`
+  );
+  // O alias ambíguo "value" que quebrava o checkout da loja não pode voltar na versão final de criar_pedido
+  const cpIdx = content.lastIndexOf('CREATE OR REPLACE FUNCTION public.criar_pedido(');
+  const cpBody = content.slice(cpIdx, content.indexOf('$$ LANGUAGE plpgsql', cpIdx));
+  assert.ok(
+    !cpBody.includes("ELSE '[]'::jsonb END) value") && cpBody.includes('AS opt(value)'),
+    `[FALHA] ${file}: criar_pedido ainda contém o alias ambíguo "value" (checkout da loja quebrado)!`
+  );
+  console.log('    ✅ atualizar_meus_dados_cliente endurecida e hotfix de criar_pedido presente.');
+
+  // 11.20 Revisão 2: governança do sinal, reserva agregada, snapshots na loja, locks ordenados, hold pós-estorno
+  console.log(`  🔎 11.20 ${file}: bloqueios da revisão 2 (sinal, reserva agregada, snapshots, locks, hold)...`);
+  const encIdx = content.lastIndexOf('CREATE OR REPLACE FUNCTION public.criar_encomenda_admin(');
+  const encBody = content.slice(encIdx, content.indexOf('$$ LANGUAGE plpgsql', encIdx));
+  assert.ok(
+    encBody.includes('v_sinal_padrao := ROUND(v_total * (COALESCE(v_cfg.sinal_percentual_padrao, 50.00) / 100.0), 2);') &&
+    encBody.includes("'SIGNAL_REDUCTION_REQUIRES_REASON'") &&
+    encBody.includes('v_sinal_min := GREATEST(v_sinal_padrao, COALESCE(p_sinal_minimo, 0.00));') &&
+    !encBody.includes('v_sinal_min := GREATEST(0.00, COALESCE(p_sinal_minimo, 0.00));'),
+    `[FALHA] ${file}: criar_encomenda_admin ainda aceita sinal mínimo arbitrário do operador (bypass de governança)!`
+  );
+  const resvIdx = content.lastIndexOf('CREATE OR REPLACE FUNCTION public.reservar_estoque_itens_pedido(');
+  const resvBody = content.slice(resvIdx, content.indexOf('$$ LANGUAGE plpgsql', resvIdx));
+  assert.ok(
+    resvBody.includes('SUM(pi.quantidade)::INT AS quantidade') && resvBody.includes('GROUP BY pi.produto_id'),
+    `[FALHA] ${file}: reservar_estoque_itens_pedido não valida a quantidade AGREGADA por produto!`
+  );
+  assert.ok(
+    cpBody.includes('PERFORM 1 FROM public.produtos WHERE id = ANY(v_produto_ids) ORDER BY id FOR UPDATE;') &&
+    cpBody.includes('v_reserva := public.reservar_estoque_itens_pedido(') &&
+    cpBody.includes('pontos_producao_snapshot') &&
+    cpBody.includes('INSERT INTO public.pedido_item_opcoes (pedido_item_id, produto_opcao_id, tipo, opcao_nome, preco_adicional, pontos_producao_adicionais_snapshot)') &&
+    cpBody.includes('make_interval(mins => GREATEST(1, COALESCE(v_cfg.hold_pix_loja_minutos, 30)))') &&
+    cpBody.includes('WITH ORDINALITY') &&
+    !cpBody.includes("INTERVAL '30 minutes'"),
+    `[FALHA] ${file}: criar_pedido precisa travar produtos em id ASC numa consulta, usar o helper de reserva, gravar snapshots de pontos/produto_opcao_id, hold configurável e preservar linhas!`
+  );
+  assert.ok(
+    content.includes('DROP TRIGGER IF EXISTS trg_pedido_itens_marca_reserva_loja ON public.pedido_itens;') &&
+    !content.includes('CREATE TRIGGER trg_pedido_itens_marca_reserva_loja'),
+    `[FALHA] ${file}: trigger legado de marcação de reserva da loja não pode coexistir com o helper!`
+  );
+  assert.ok(
+    trgBody.includes('v_novo_expires_at := LEAST(NOW() + make_interval(hours => v_cfg.hold_horas_padrao), v_limite_hold);') &&
+    trgBody.includes('IF v_novo_expires_at <= NOW() THEN'),
+    `[FALHA] ${file}: hold pós-estorno deve ser MIN(agora + padrão, entrega - antecedência) e cair em revisão sem prazo viável!`
+  );
+  console.log('    ✅ Governança do sinal, reserva agregada, snapshots/locks/hold da loja e hold pós-estorno.');
+}
+
+// 11.19 Frontend: modal de revisão financeira e filtro
+console.log('\n  🔎 11.19 Verificando frontend da revisão financeira...');
+const adminHtmlFechamento = fs.readFileSync('admin.html', 'utf-8');
+const adminOperacaoFechamento = fs.readFileSync('js/admin-operacao.js', 'utf-8');
+assert.ok(
+  adminHtmlFechamento.includes('id="modal-resolver-revisao"') &&
+  adminHtmlFechamento.includes('data-filtro="revisao"') &&
+  adminOperacaoFechamento.includes("supabaseClient.rpc('resolver_revisao_encomenda_admin'") &&
+  adminOperacaoFechamento.includes("case 'revisao':") &&
+  adminOperacaoFechamento.includes('badge-revisao-financeira') &&
+  adminOperacaoFechamento.includes("payload.p_destino_valor = 'RETENCAO_CANCELAMENTO'"),
+  '[FALHA] Frontend não integra a resolução de revisão financeira!'
+);
+console.log('    ✅ Modal, filtro "Em Revisão", badge e chamada da RPC presentes.');
+
+// --------------------------------------------------------------------------
+// FASE 12: FONTE CANÔNICA DE SQL (migrations) E PARIDADE DOS ARQUIVOS GERADOS
+// --------------------------------------------------------------------------
+console.log('\n🧩 FASE 12: Paridade sql/install.sql e sql/schema.sql com baseline + migrations...');
+{
+  const { execFileSync } = await import('node:child_process');
+  try {
+    execFileSync(process.execPath, ['scripts/build-sql.mjs', '--check'], { stdio: 'pipe' });
+  } catch (e) {
+    assert.fail('[FALHA] sql/install.sql ou sql/schema.sql desatualizados. Rode: npm run build:sql');
+  }
+  const installGen = fs.readFileSync('sql/install.sql', 'utf-8');
+  const schemaGen = fs.readFileSync('sql/schema.sql', 'utf-8');
+  assert.strictEqual(installGen, schemaGen, '[FALHA] sql/schema.sql deve ser idêntico a sql/install.sql (gerados)');
+  assert.ok(installGen.includes('>>> MIGRATION 011_etapa2_fechamento_concorrencia.sql'), '[FALHA] install.sql não inclui a migration 011');
+  assert.ok(installGen.includes('baixar_estoque_pedido_batch'), '[FALHA] install.sql perdeu baixar_estoque_pedido_batch');
+}
+console.log('    ✅ Arquivos gerados em paridade com a fonte canônica (migrations).');
+console.log('    ℹ️  A execução COMPLETA de sql/install.sql num PostgreSQL vazio (zero erros) + reaplicação idempotente é provada em npm run test:integration (before() + teste R2-1).');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–12 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
 
 
 
