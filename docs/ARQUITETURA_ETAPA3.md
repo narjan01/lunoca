@@ -108,6 +108,7 @@ Todas as 6 tabelas de orçamentos possuem Row Level Security (RLS) habilitado:
 2. **Janela Operacional**: A conversão deve ocorrer antes de `janela_conversao_limite`. Se ultrapassada, o sistema exige revalidação (`CONVERSION_WINDOW_EXPIRED`).
 3. **Reserva Imediata**: A conversão invoca `nucleo_criar_encomenda()`, garantindo que capacidade e estoque sejam alocados no instante exato da conversão.
 4. **Imutabilidade**: Se o preço de um insumo subiu após a emissão do orçamento, o pedido gerado honra integralmente o preço cotado constante nos snapshots do orçamento.
+5. **Fluxo Financeiro & Contábil no DRE**: Quando um sinal é informado na conversão, o pagamento é registrado com comprovante e método em `pedido_pagamentos`, disparando o trigger `recalcular_financeiro_pedido()` para atualização do saldo e status, e gravando com idempotência estrutural o lançamento de receita (`evento = 'recebimento'`) no DRE (`financeiro_lancamentos`). Em caso de estorno futuro, o fluxo compensatório já encontra a contrapartida contábil exata.
 
 ---
 
