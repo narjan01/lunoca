@@ -6282,6 +6282,34 @@ BEGIN
       v_pedido_id, v_sinal_pago, v_sinal_metodo, 'manual', NULL,
       'aprovado', NOW(), auth.uid(), v_sinal_comp, 'Sinal de entrada registrado na abertura da encomenda'
     ) RETURNING id INTO v_pagamento_id;
+
+    -- Lançamento financeiro com idempotência estrutural no DRE
+    INSERT INTO public.financeiro_lancamentos (
+      tipo,
+      categoria,
+      descricao,
+      valor,
+      data_lancamento,
+      forma_pagamento,
+      pedido_id,
+      origem_tipo,
+      origem_id,
+      evento,
+      observacoes
+    ) VALUES (
+      'receita',
+      'Vendas',
+      'Entrada Encomenda #' || v_pedido_id || ' (' || TRIM(v_cliente_nome_final) || ')',
+      v_sinal_pago,
+      CURRENT_DATE,
+      v_sinal_metodo,
+      v_pedido_id,
+      'pedido_pagamento',
+      v_pagamento_id,
+      'recebimento',
+      'Recebimento de entrada da encomenda via ' || upper(v_sinal_metodo)
+    )
+    ON CONFLICT (origem_tipo, origem_id, evento) WHERE origem_id IS NOT NULL AND evento IS NOT NULL DO NOTHING;
   END IF;
 
   -- 13. HISTÓRICO DE AUDITORIA

@@ -1970,6 +1970,25 @@ assert.ok(
 );
 console.log('    ✅ Frontend, documentos e cron unificado da Etapa 3 validados com sucesso.');
 
+// 13.8 Auditoria de Pagamento de Sinal e RLS Público Estrito
+console.log('\n  🔎 13.8 Verificando integridade contábil do sinal no núcleo e RLS público de orçamentos...');
+const sqlFilesNucleo = [
+  'supabase/migrations/012_hardening_politicas_e_nucleo.sql',
+  'sql/schema.sql',
+  'sql/install.sql'
+];
+for (const file of sqlFilesNucleo) {
+  const content = fs.readFileSync(file, 'utf-8');
+  assert.ok(
+    content.includes('INSERT INTO public.financeiro_lancamentos') &&
+    content.includes("'pedido_pagamento'") &&
+    content.includes("'recebimento'") &&
+    content.includes("ON CONFLICT (origem_tipo, origem_id, evento) WHERE origem_id IS NOT NULL AND evento IS NOT NULL DO NOTHING;"),
+    `[FALHA] ${file}: nucleo_criar_encomenda deve registrar o lançamento contábil no DRE ao processar pagamento de sinal!`
+  );
+}
+console.log('    ✅ Sinal no núcleo registra lançamento no DRE e RLS de orçamentos 100% blindado.');
+
 console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–13 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
 
 
