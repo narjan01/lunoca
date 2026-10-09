@@ -208,6 +208,7 @@ async function enviarPedido() {
         let pedidoId = null;
         let totalFinal = 0;
         let checkoutToken = null;
+        let expiresAt = null;
 
         try {
             const taxaAplicada = typeof obterTaxaEntrega === 'function' ? obterTaxaEntrega() : 0;
@@ -231,11 +232,12 @@ async function enviarPedido() {
                 pedidoId = rpcRes.pedido_id;
                 totalFinal = parseFloat(rpcRes.total);
                 checkoutToken = rpcRes.checkout_token || null;
-                if (checkoutToken) {
-                    try {
-                        localStorage.setItem('lunoca_checkout_token_' + pedidoId, checkoutToken);
-                    } catch (_) {}
-                }
+                // Prazo de pagamento: ÚNICA fonte da verdade é expires_at do servidor (hold_pix_loja_minutos)
+                expiresAt = rpcRes.expires_at || null;
+                try {
+                    if (checkoutToken) localStorage.setItem('lunoca_checkout_token_' + pedidoId, checkoutToken);
+                    if (expiresAt) localStorage.setItem('lunoca_checkout_expires_' + pedidoId, expiresAt);
+                } catch (_) {}
             } else if (rpcRes && rpcRes.error) {
                 throw new Error(rpcRes.error);
             } else {
@@ -270,7 +272,7 @@ async function enviarPedido() {
 
         // Iniciar fluxo de pagamento Mercado Pago (PIX com QR Code ou Cartão)
         if (typeof iniciarPagamentoMercadoPago === 'function') {
-            await iniciarPagamentoMercadoPago(pedidoId, totalFinal, itensParaMP, formaPagamento, clienteDados, checkoutToken);
+            await iniciarPagamentoMercadoPago(pedidoId, totalFinal, itensParaMP, formaPagamento, clienteDados, checkoutToken, expiresAt);
         } else {
             alert("Pedido Criado com Sucesso! A Lunoca agradece a preferência.");
             mostrarTela('menu-section');
@@ -790,19 +792,45 @@ async function reabrirPixPedido(pedidoId, totalRaw) {
         };
 
         const token = (typeof localStorage !== 'undefined' ? localStorage.getItem('lunoca_checkout_token_' + pedidoId) : null) || null;
+
+        // Prazo: pergunta ao servidor (autoridade); cai para o valor salvo no checkout; nunca assume minutos fixos
+        let expiresAt = null;
+        let statusServidor = null;
+        try {
+            if (typeof supabaseClient !== 'undefined') {
+                const { data: ped } = await supabaseClient
+                    .from('pedidos')
+                    .select('expires_at, status_comercial, cancelado_por_expiracao')
+                    .eq('id', pedidoId)
+                    .maybeSingle();
+                if (ped) {
+                    expiresAt = ped.expires_at || null;
+                    statusServidor = ped;
+                }
+            }
+        } catch (_) {}
+        if (!expiresAt) {
+            try { expiresAt = localStorage.getItem('lunoca_checkout_expires_' + pedidoId) || null; } catch (_) {}
+        }
+        if (statusServidor && (statusServidor.status_comercial === 'cancelado' || statusServidor.cancelado_por_expiracao)) {
+            alert('O prazo de pagamento deste pedido expirou e a reserva foi liberada. Faça um novo pedido.');
+            return;
+        }
+
         const orderData = {
             pedidoId: pedidoId,
             total: total,
             items: [],
             forma: 'pix',
             checkoutToken: token,
+            expiresAt: expiresAt,
             cliente: clienteDados
         };
 
         if (window.MercadoPagoPlugin && typeof window.MercadoPagoPlugin.iniciarCheckoutTransparente === 'function') {
             await window.MercadoPagoPlugin.iniciarCheckoutTransparente(orderData);
         } else if (typeof iniciarPagamentoMercadoPago === 'function') {
-            await iniciarPagamentoMercadoPago(pedidoId, total, [], 'pix', clienteDados, token);
+            await iniciarPagamentoMercadoPago(pedidoId, total, [], 'pix', clienteDados, token, expiresAt);
         } else {
             throw new Error('Módulo de pagamento Mercado Pago não encontrado no navegador.');
         }

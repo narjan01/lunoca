@@ -8,6 +8,8 @@
 // 4. Modal de Registro de Pagamento de Saldo
 // 5. Modal de Reagendamento com validação de capacidade
 // 6. Integração WhatsApp 1-Clique
+// 7. Revisão Financeira (holds expirados com pagamento / pagamento tardio sem vaga ou estoque)
+//    -> Modal de resolução administrativa via RPC resolver_revisao_encomenda_admin
 // ==========================================================================
 
 let filtroCentralEncomendasAtual = 'todas';
@@ -62,6 +64,13 @@ async function carregarDashboardHoje() {
             <div class="alerta-operacional aviso" style="margin-bottom:12px; background:#fffbeb; border:1px solid #fde68a; border-left:4px solid #f59e0b; padding:10px 14px; border-radius:8px; font-size:13px; color:#92400e; display:flex; align-items:center; justify-content:space-between;">
               <span><i class="fa-solid fa-triangle-exclamation" style="margin-right:8px;"></i> <strong>Atenção:</strong> Há <strong>${metricas.pendentes_sinal_qtd}</strong> encomenda(s) de hoje aguardando confirmação de sinal!</span>
               <button onclick="filtrarCentralEncomendas('pendente_sinal')" class="btn-outline" style="padding:4px 10px; font-size:11px; border-color:#d97706; color:#b45309;">Ver Pendentes</button>
+            </div>`;
+        }
+        if (metricas.revisao_financeira_qtd > 0) {
+          alertasHtml += `
+            <div class="alerta-operacional urgente" style="margin-bottom:12px; background:#fef2f2; border:1px solid #fecaca; border-left:4px solid #dc2626; padding:10px 14px; border-radius:8px; font-size:13px; color:#991b1b; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+              <span><i class="fa-solid fa-circle-exclamation" style="margin-right:8px;"></i> <strong>Revisão financeira:</strong> <strong>${metricas.revisao_financeira_qtd}</strong> encomenda(s) com valor recebido e prazo/vaga/estoque comprometidos aguardam decisão da administração.</span>
+              <button onclick="filtrarCentralEncomendas('revisao')" class="btn-outline" style="padding:4px 10px; font-size:11px; border-color:#dc2626; color:#b91c1c;">Resolver agora</button>
             </div>`;
         }
         alertContainer.innerHTML = alertasHtml;
@@ -154,6 +163,9 @@ async function carregarCentralEncomendas(filtro = null) {
       case 'concluidos':
         query = query.in('status_comercial', ['concluido', 'confirmado']).in('status_operacional', ['entregue', 'retirado']);
         break;
+      case 'revisao':
+        query = query.eq('requer_revisao_financeira', true).neq('status_comercial', 'cancelado');
+        break;
       default:
         // 'todas'
         break;
@@ -230,6 +242,14 @@ function renderizarCardEncomendaHtml(p, isTimeline = false) {
   const badgeFinanceiro = obterBadgeFinanceiro(p.status_financeiro);
   const badgeOperacional = obterBadgeOperacional(p.status_operacional);
   const badgeEstorno = p.possui_estorno ? '<span class="badge-estorno-alerta" title="Este pedido possui histórico de devolução financeira"><i class="fa-solid fa-rotate-left"></i> Estorno Registrado</span>' : '';
+  const emRevisao = p.requer_revisao_financeira === true && p.status_comercial !== 'cancelado';
+  const badgeRevisao = emRevisao
+    ? `<span class="badge-revisao-financeira" title="${escapeHTML(p.motivo_revisao_financeira || 'Requer decisão administrativa')}"><i class="fa-solid fa-circle-exclamation"></i> ${p.bloqueado_por_overbooking_tardio ? 'Pagamento tardio sem vaga/estoque' : 'Hold expirado c/ pagamento'}</span>`
+    : '';
+  const holdInfo = (!emRevisao && p.status_comercial === 'aguardando_confirmacao' && p.confirmacao_expires_at)
+    ? `<div style="font-size:11px; color:#b45309; margin-top:3px;"><i class="fa-regular fa-hourglass-half"></i> Reserva válida até ${new Date(p.confirmacao_expires_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>`
+    : '';
+  const isAdminAtual = typeof usuarioAtual !== 'undefined' && usuarioAtual && usuarioAtual.nivel === 'admin';
 
   // Canal
   const canalIcon = {
@@ -262,8 +282,10 @@ function renderizarCardEncomendaHtml(p, isTimeline = false) {
           ${badgeFinanceiro}
           ${badgeOperacional}
           ${badgeEstorno}
+          ${badgeRevisao}
         </div>
       </div>
+      ${emRevisao ? `<div style="margin-bottom:10px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:8px 10px; font-size:12px; color:#991b1b;"><i class="fa-solid fa-triangle-exclamation"></i> ${escapeHTML(p.motivo_revisao_financeira || 'Esta encomenda requer decisão administrativa.')}</div>` : ''}
 
       <!-- Corpo com Dados do Cliente e Cesta -->
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; font-size:13px; color:#334155;">
@@ -284,6 +306,7 @@ function renderizarCardEncomendaHtml(p, isTimeline = false) {
               <span>Saldo restante:</span> <strong>R$ ${saldo}</strong>
             </div>
             ${p.sinal_minimo > 0 ? `<div style="font-size:11px; color:#64748b; margin-top:3px; border-top:1px dashed #e2e8f0; padding-top:2px;">Sinal exigido: R$ ${parseFloat(p.sinal_minimo).toFixed(2).replace('.', ',')}</div>` : ''}
+            ${holdInfo}
           </div>
         </div>
       </div>
@@ -299,6 +322,11 @@ function renderizarCardEncomendaHtml(p, isTimeline = false) {
         ${tel ? `
           <button onclick="abrirWhatsAppEncomenda('${p.id}')" class="btn-outline" style="padding:5px 10px; font-size:12px; color:#15803d; border-color:#86efac; border-radius:8px;" title="Conversar no WhatsApp">
             <i class="fa-brands fa-whatsapp"></i> WhatsApp
+          </button>` : ''}
+
+        ${emRevisao && isAdminAtual ? `
+          <button onclick="abrirModalResolverRevisao('${p.id}')" class="btn-outline" style="padding:5px 10px; font-size:12px; color:#b91c1c; border-color:#fca5a5; border-radius:8px; background:#fef2f2;" title="Decidir destino desta encomenda">
+            <i class="fa-solid fa-gavel"></i> Resolver Revisão
           </button>` : ''}
 
         ${parseFloat(p.saldo) > 0 ? `
@@ -363,9 +391,22 @@ function obterRotuloBotaoAvanco(st) {
 // --------------------------------------------------------------------------
 // 4. FLUXO "+ NOVA ENCOMENDA RÁPIDA" (BALCÃO / WHATSAPP / TELEFONE)
 // --------------------------------------------------------------------------
+let configOperacaoCache = null;
+async function carregarConfigOperacao() {
+  if (configOperacaoCache) return configOperacaoCache;
+  try {
+    const { data, error } = await supabaseClient.rpc('obter_config_operacao');
+    if (!error && data) configOperacaoCache = data;
+  } catch (e) {
+    console.warn('[Config Operação] usando padrões:', e);
+  }
+  return configOperacaoCache;
+}
+
 async function abrirModalNovaEncomenda() {
   const modal = document.getElementById('modal-nova-encomenda');
   if (!modal) return;
+  await carregarConfigOperacao();
 
   carrinhoNovaEncomendaItens = [];
   document.getElementById('nova-enc-cliente-busca').value = '';
@@ -380,14 +421,26 @@ async function abrirModalNovaEncomenda() {
   document.getElementById('nova-enc-taxa').value = '0.00';
   document.getElementById('nova-enc-desconto').value = '0.00';
   document.getElementById('nova-enc-motivo-desconto').value = '';
-  document.getElementById('nova-enc-sinal-minimo').value = '0.00';
+  document.getElementById('nova-enc-sinal-minimo').value = '';
   document.getElementById('nova-enc-sinal-valor').value = '0.00';
   document.getElementById('nova-enc-obs-internas').value = '';
+
+  // GOVERNANÇA DO SINAL: operador vê o sinal padrão (somente leitura; o servidor impõe o mínimo);
+  // admin pode editar, mas reduzir abaixo do padrão exige justificativa (validado no servidor).
+  const isAdminNovaEnc = !!(typeof usuarioAtual !== 'undefined' && usuarioAtual && usuarioAtual.nivel === 'admin');
+  const sinalMinEl = document.getElementById('nova-enc-sinal-minimo');
+  if (sinalMinEl) {
+    sinalMinEl.readOnly = !isAdminNovaEnc;
+    sinalMinEl.style.background = isAdminNovaEnc ? '' : '#f1f5f9';
+    sinalMinEl.title = isAdminNovaEnc ? 'Reduzir abaixo do padrão exige justificativa' : 'Sinal mínimo padrão (definido pela operação). Apenas Admin pode reduzir.';
+  }
+  const motivoSinalEl = document.getElementById('nova-enc-motivo-sinal');
+  if (motivoSinalEl) motivoSinalEl.value = '';
   
   const chkSemSinal = document.getElementById('nova-enc-confirmar-sem-sinal');
   if (chkSemSinal) {
     chkSemSinal.checked = false;
-    chkSemSinal.disabled = !(usuarioAtual && usuarioAtual.nivel === 'admin');
+    chkSemSinal.disabled = !isAdminNovaEnc;
   }
 
   // Carrega catálogo de produtos para seleção
@@ -524,6 +577,11 @@ function renderizarItensNovaEncomenda() {
   container.innerHTML = html;
 }
 
+// Admin editou o sinal manualmente: deixa de ser auto-preenchido
+document.addEventListener('input', (e) => {
+  if (e.target && e.target.id === 'nova-enc-sinal-minimo') e.target.dataset.auto = '0';
+});
+
 function calcularTotaisNovaEncomenda() {
   let subtotal = 0;
   carrinhoNovaEncomendaItens.forEach(it => {
@@ -554,11 +612,21 @@ function calcularTotaisNovaEncomenda() {
   if (elSub) elSub.innerText = `R$ ${subtotal.toFixed(2).replace('.', ',')}`;
   if (elTot) elTot.innerText = `R$ ${total.toFixed(2).replace('.', ',')}`;
 
-  // Sugestão automática de 50% para sinal se vazio
+  // Sinal padrão = percentual da operação (fallback 50%). Operador: sempre o padrão; admin: preenchido se vazio.
+  const pct = (typeof configOperacaoCache !== 'undefined' && configOperacaoCache && configOperacaoCache.sinal_percentual_padrao != null)
+    ? parseFloat(configOperacaoCache.sinal_percentual_padrao) : 50;
+  const sinalPadrao = (total * (pct / 100)).toFixed(2);
   const sinalMinInput = document.getElementById('nova-enc-sinal-minimo');
-  if (sinalMinInput && (sinalMinInput.value === '0.00' || sinalMinInput.value === '')) {
-    sinalMinInput.value = (total * 0.50).toFixed(2);
+  if (sinalMinInput) {
+    const isAdminCalc = !!(typeof usuarioAtual !== 'undefined' && usuarioAtual && usuarioAtual.nivel === 'admin');
+    if (!isAdminCalc || sinalMinInput.value === '' || sinalMinInput.dataset.auto === '1') {
+      sinalMinInput.value = sinalPadrao;
+      sinalMinInput.dataset.auto = '1';
+    }
+    sinalMinInput.dataset.padrao = sinalPadrao;
   }
+  const hint = document.getElementById('nova-enc-sinal-hint');
+  if (hint) hint.innerText = `Padrão da operação: ${pct}% = R$ ${sinalPadrao.replace('.', ',')}`;
 }
 
 // Autocomplete de clientes na Nova Encomenda
@@ -615,6 +683,19 @@ async function submeterNovaEncomendaAdmin() {
       throw new Error('Adicione pelo menos um item à encomenda.');
     }
 
+    const isAdminSubmit = !!(typeof usuarioAtual !== 'undefined' && usuarioAtual && usuarioAtual.nivel === 'admin');
+    const sinalMinEl = document.getElementById('nova-enc-sinal-minimo');
+    const chkSemSinalEl = document.getElementById('nova-enc-confirmar-sem-sinal');
+    const motivoSinal = (document.getElementById('nova-enc-motivo-sinal')?.value || '').trim();
+    if (isAdminSubmit) {
+      const padrao = parseFloat(sinalMinEl?.dataset?.padrao || '0');
+      const informado = parseFloat(sinalMinEl?.value || '0');
+      const semSinal = !!(chkSemSinalEl && chkSemSinalEl.checked);
+      if ((semSinal || (informado > 0 && informado < padrao)) && motivoSinal.length < 3) {
+        throw new Error('Informe a justificativa para reduzir/dispensar o sinal mínimo (auditável).');
+      }
+    }
+
     const payload = {
       p_cliente_id: document.getElementById('nova-enc-cliente-id').value || null,
       p_cliente_nome: document.getElementById('nova-enc-cliente-nome').value.trim(),
@@ -629,19 +710,34 @@ async function submeterNovaEncomendaAdmin() {
       p_taxa_entrega: parseFloat(document.getElementById('nova-enc-taxa').value || 0),
       p_desconto: parseFloat(document.getElementById('nova-enc-desconto').value || 0),
       p_motivo_desconto: document.getElementById('nova-enc-motivo-desconto').value.trim() || null,
-      p_sinal_minimo: parseFloat(document.getElementById('nova-enc-sinal-minimo').value || 0),
+      // Operador: não envia sinal mínimo (servidor aplica o padrão). Admin: envia o valor editado.
+      p_sinal_minimo: isAdminSubmit ? (parseFloat(sinalMinEl.value) || null) : null,
       p_sinal_valor: parseFloat(document.getElementById('nova-enc-sinal-valor').value || 0),
       p_sinal_metodo: document.getElementById('nova-enc-sinal-metodo').value,
+      p_forcar_confirmacao_sem_sinal: isAdminSubmit && !!(chkSemSinalEl && chkSemSinalEl.checked),
+      p_motivo_confirmacao_sem_sinal: motivoSinal || null,
       p_observacoes_cliente: document.getElementById('nova-enc-obs-cliente').value.trim() || null,
       p_observacoes_internas: document.getElementById('nova-enc-obs-internas').value.trim() || null
     };
 
     const { data: res, error } = await supabaseClient.rpc('criar_encomenda_admin', payload);
     if (error) throw error;
-    if (!res.success) throw new Error(res.error || 'Erro ao registrar encomenda.');
+    if (!res.success) {
+      let msg = res.error || 'Erro ao registrar encomenda.';
+      if (res.code === 'INSUFFICIENT_STOCK' && res.detalhes && Array.isArray(res.detalhes.faltantes)) {
+        msg += '\n\nItens sem estoque:\n' + res.detalhes.faltantes.map(f => `• ${f.produto}: precisa ${f.necessario}, disponível ${f.disponivel}`).join('\n');
+      }
+      if (res.code === 'SIGNAL_REDUCTION_REQUIRES_REASON') {
+        msg += `\n\nSinal padrão: R$ ${parseFloat(res.sinal_padrao || 0).toFixed(2)}. Preencha a justificativa do sinal.`;
+      }
+      if (res.code === 'IMMEDIATE_CONFIRMATION_REQUIRED') {
+        msg += `\n\nSinal mínimo: R$ ${parseFloat(res.sinal_minimo || 0).toFixed(2)} | Informado: R$ ${parseFloat(res.sinal_pago || 0).toFixed(2)}`;
+      }
+      throw new Error(msg);
+    }
 
     fecharModalNovaEncomenda();
-    mostrarToast(`Encomenda #${res.pedido_id} criada com sucesso!`, 'sucesso', 4000);
+    mostrarToast(`Encomenda #${res.pedido_id} criada com sucesso!` + (res.confirmacao_expires_at ? ` Reserva válida até ${new Date(res.confirmacao_expires_at).toLocaleString('pt-BR')}.` : ''), 'sucesso', 5000);
     
     // Atualiza as telas abertas
     carregarDashboardHoje();
@@ -841,4 +937,127 @@ ${parseFloat(p.saldo) > 0 ? `👉 *Saldo a acertar:* R$ ${saldo}` : '✅ *Status
 Qualquer dúvida estamos à disposição!`;
 
   window.open(`https://wa.me/${telNorm}?text=${encodeURIComponent(texto)}`, '_blank');
+}
+
+// --------------------------------------------------------------------------
+// 7. REVISÃO FINANCEIRA - RESOLUÇÃO ADMINISTRATIVA (resolver_revisao_encomenda_admin)
+// --------------------------------------------------------------------------
+// Ações:
+//   ESTENDER_HOLD          -> novo prazo; revalida capacidade e RECRIA reserva de estoque
+//   CONFIRMAR_COM_OVERRIDE -> admin força CAPACIDADE (nunca estoque inexistente)
+//   ESTORNAR_E_CANCELAR    -> estorna todos os pagamentos (fluxo canônico) e cancela
+//   CANCELAR               -> cancela retendo o valor (RETENCAO_CANCELAMENTO)
+
+function abrirModalResolverRevisao(pedidoId) {
+  if (!(typeof usuarioAtual !== 'undefined' && usuarioAtual && usuarioAtual.nivel === 'admin')) {
+    alert('Apenas administradores podem resolver revisões financeiras.');
+    return;
+  }
+  const p = listaEncomendasCentralCache.find(x => String(x.id) === String(pedidoId));
+  document.getElementById('rev-pedido-id').value = pedidoId;
+  document.getElementById('rev-acao').value = 'ESTENDER_HOLD';
+  document.getElementById('rev-motivo').value = '';
+  document.getElementById('rev-destino-retencao').checked = false;
+
+  const resumo = document.getElementById('rev-resumo');
+  if (resumo) {
+    const pago = parseFloat(p?.valor_pago || 0).toFixed(2).replace('.', ',');
+    const total = parseFloat(p?.total || 0).toFixed(2).replace('.', ',');
+    resumo.innerHTML = `
+      <div><strong>Pedido #${escapeHTML(String(pedidoId))}</strong> • ${escapeHTML(p?.nome_cliente || '')}</div>
+      <div>Pago: <strong>R$ ${pago}</strong> de R$ ${total} • Entrega: ${p?.data_entrega ? p.data_entrega.split('-').reverse().join('/') : '--'}</div>
+      <div style="margin-top:4px; color:#991b1b;">${escapeHTML(p?.motivo_revisao_financeira || 'Requer decisão administrativa.')}</div>`;
+  }
+
+  // Prazo padrão sugerido: +24h
+  const dt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  dt.setSeconds(0, 0);
+  const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  document.getElementById('rev-novo-prazo').value = local;
+
+  onAcaoRevisaoChange();
+  const modal = document.getElementById('modal-resolver-revisao');
+  if (modal) modal.style.display = 'flex';
+}
+
+function fecharModalResolverRevisao() {
+  const modal = document.getElementById('modal-resolver-revisao');
+  if (modal) modal.style.display = 'none';
+}
+
+function onAcaoRevisaoChange() {
+  const acao = document.getElementById('rev-acao').value;
+  document.getElementById('rev-grupo-prazo').style.display = acao === 'ESTENDER_HOLD' ? 'block' : 'none';
+  document.getElementById('rev-grupo-destino').style.display = acao === 'CANCELAR' ? 'block' : 'none';
+  const hint = document.getElementById('rev-hint');
+  const hints = {
+    ESTENDER_HOLD: 'Dá um novo prazo ao cliente. O sistema revalida a capacidade da data e recria a reserva de estoque. Falha se não houver vaga ou estoque.',
+    CONFIRMAR_COM_OVERRIDE: 'Confirma a encomenda mesmo com a capacidade do dia estourada (encaixe extraordinário). Estoque insuficiente NÃO pode ser forçado.',
+    ESTORNAR_E_CANCELAR: 'Estorna todos os pagamentos aprovados (lançamento compensatório no DRE) e cancela a encomenda.',
+    CANCELAR: 'Cancela sem estornar: o valor pago fica retido como receita (política de cancelamento). Crédito em loja será suportado futuramente.'
+  };
+  if (hint) hint.innerText = hints[acao] || '';
+}
+
+async function submeterResolucaoRevisao() {
+  const pedidoId = document.getElementById('rev-pedido-id').value;
+  const acao = document.getElementById('rev-acao').value;
+  const motivo = document.getElementById('rev-motivo').value.trim();
+  const btn = document.getElementById('btn-submeter-revisao');
+
+  if (motivo.length < 5) {
+    alert('Informe uma justificativa com pelo menos 5 caracteres.');
+    return;
+  }
+
+  const payload = { p_pedido_id: parseInt(pedidoId, 10), p_acao: acao, p_motivo: motivo };
+
+  if (acao === 'ESTENDER_HOLD') {
+    const prazo = document.getElementById('rev-novo-prazo').value;
+    if (!prazo) { alert('Informe o novo prazo do hold.'); return; }
+    const dt = new Date(prazo);
+    if (isNaN(dt.getTime()) || dt.getTime() <= Date.now()) { alert('O novo prazo precisa estar no futuro.'); return; }
+    payload.p_novo_expires_at = dt.toISOString();
+  }
+
+  if (acao === 'CANCELAR') {
+    if (!document.getElementById('rev-destino-retencao').checked) {
+      alert('Para cancelar sem estorno, confirme a retenção do valor pago.');
+      return;
+    }
+    payload.p_destino_valor = 'RETENCAO_CANCELAMENTO';
+  }
+
+  if (acao === 'ESTORNAR_E_CANCELAR' && !confirm('Confirmar o estorno de TODOS os pagamentos e o cancelamento desta encomenda?')) return;
+
+  const txtOrig = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processando...'; }
+
+  try {
+    const { data: res, error } = await supabaseClient.rpc('resolver_revisao_encomenda_admin', payload);
+    if (error) throw error;
+    if (!res.success) {
+      let msg = res.error || 'Não foi possível resolver a revisão.';
+      if (res.code === 'INSUFFICIENT_STOCK' && res.detalhes && Array.isArray(res.detalhes.faltantes)) {
+        msg += '\n\nItens sem estoque:\n' + res.detalhes.faltantes.map(f => `• ${f.produto}: precisa ${f.necessario}, disponível ${f.disponivel}`).join('\n');
+      }
+      throw new Error(msg);
+    }
+
+    fecharModalResolverRevisao();
+    const msgs = {
+      ESTENDER_HOLD: `Hold da encomenda #${pedidoId} estendido e reserva recriada.`,
+      CONFIRMAR_COM_OVERRIDE: `Encomenda #${pedidoId} confirmada${res.override_capacidade ? ' com encaixe extraordinário' : ''}.`,
+      ESTORNAR_E_CANCELAR: `Encomenda #${pedidoId} estornada e cancelada (${(res.estornos || []).length} pagamento(s)).`,
+      CANCELAR: `Encomenda #${pedidoId} cancelada com retenção de R$ ${parseFloat(res.valor_retido || 0).toFixed(2).replace('.', ',')}.`
+    };
+    mostrarToast(msgs[acao] || 'Revisão resolvida.', 'sucesso', 5000);
+    carregarDashboardHoje();
+    carregarCentralEncomendas();
+  } catch (err) {
+    console.error('[Resolver Revisão] Falha:', err);
+    alert('Erro: ' + (err.message || err));
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = txtOrig; }
+  }
 }

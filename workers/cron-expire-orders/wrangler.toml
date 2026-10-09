@@ -1,0 +1,22 @@
+# ==========================================================================
+# LUNOCA - Worker Cron: dispara a expiração de pedidos/holds via HTTP
+# ==========================================================================
+# Cloudflare Pages Functions são rotas HTTP e NÃO recebem Cron Triggers.
+# Este Worker mínimo (handler `scheduled`) chama a rota
+#   https://<APP_BASE_URL>/api/cron/expire-orders
+# com `Authorization: Bearer <CRON_SECRET>` a cada 5 minutos.
+#
+# Deploy:
+#   cd workers/cron-expire-orders
+#   npx wrangler secret put CRON_SECRET      # mesmo valor configurado no Pages
+#   npx wrangler deploy
+# ==========================================================================
+name = "lunoca-cron-expire-orders"
+main = "index.js"
+compatibility_date = "2025-01-01"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+APP_BASE_URL = "https://lunocadoceria.com.br"
