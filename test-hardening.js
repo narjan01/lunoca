@@ -1685,12 +1685,16 @@ for (const file of sqlFilesEtapa2Fechamento) {
   console.log(`  🔎 11.20 ${file}: bloqueios da revisão 2 (sinal, reserva agregada, snapshots, locks, hold)...`);
   const encIdx = content.lastIndexOf('CREATE OR REPLACE FUNCTION public.criar_encomenda_admin(');
   const encBody = content.slice(encIdx, content.indexOf('$$ LANGUAGE plpgsql', encIdx));
+  const polIdx = content.lastIndexOf('CREATE OR REPLACE FUNCTION public.politica_sinal(');
+  const polBody = polIdx > -1 ? content.slice(polIdx, content.indexOf('$$ LANGUAGE plpgsql', polIdx)) : '';
+  const targetBody = polIdx > -1 ? polBody : encBody;
   assert.ok(
-    encBody.includes('v_sinal_padrao := ROUND(v_total * (COALESCE(v_cfg.sinal_percentual_padrao, 50.00) / 100.0), 2);') &&
-    encBody.includes("'SIGNAL_REDUCTION_REQUIRES_REASON'") &&
-    encBody.includes('v_sinal_min := GREATEST(v_sinal_padrao, COALESCE(p_sinal_minimo, 0.00));') &&
-    !encBody.includes('v_sinal_min := GREATEST(0.00, COALESCE(p_sinal_minimo, 0.00));'),
-    `[FALHA] ${file}: criar_encomenda_admin ainda aceita sinal mínimo arbitrário do operador (bypass de governança)!`
+    targetBody.includes('v_sinal_padrao := ROUND(v_total * (COALESCE(v_cfg.sinal_percentual_padrao, 50.00) / 100.0), 2);') &&
+    targetBody.includes("'SIGNAL_REDUCTION_REQUIRES_REASON'") &&
+    (targetBody.includes('v_sinal_min := GREATEST(v_sinal_padrao, COALESCE(p_sinal_minimo, 0.00));') ||
+     targetBody.includes('v_sinal_final := GREATEST(v_sinal_padrao, COALESCE(p_sinal_solicitado, 0.00));')) &&
+    !targetBody.includes('v_sinal_min := GREATEST(0.00, COALESCE(p_sinal_minimo, 0.00));'),
+    `[FALHA] ${file}: governança de sinal mínimo ainda aceita sinal arbitrário do operador (bypass de governança)!`
   );
   const resvIdx = content.lastIndexOf('CREATE OR REPLACE FUNCTION public.reservar_estoque_itens_pedido(');
   const resvBody = content.slice(resvIdx, content.indexOf('$$ LANGUAGE plpgsql', resvIdx));

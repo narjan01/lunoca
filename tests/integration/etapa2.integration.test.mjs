@@ -105,8 +105,12 @@ before(async () => {
     connInfo = { connectionString: process.env.DATABASE_URL };
   } else {
     const { default: EmbeddedPostgres } = await import('embedded-postgres');
+    const pgDir = path.join(ROOT, '.pg-integration');
+    if (fs.existsSync(pgDir)) {
+      try { fs.rmSync(pgDir, { recursive: true, force: true }); } catch {}
+    }
     embedded = new EmbeddedPostgres({
-      databaseDir: path.join(ROOT, '.pg-integration'),
+      databaseDir: pgDir,
       user: 'postgres', password: 'postgres', port: PORT, persistent: false,
       onLog: () => {}, onError: () => {},
     });

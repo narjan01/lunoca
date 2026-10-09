@@ -65,7 +65,9 @@ const output = parts.join('\n') + '\n';
 let stale = false;
 for (const out of OUTPUTS) {
   const current = fs.existsSync(out) ? fs.readFileSync(out, 'utf8') : null;
-  if (current !== output) {
+  const currentNorm = current !== null ? current.replace(/\r\n/g, '\n') : null;
+  const outputNorm = output.replace(/\r\n/g, '\n');
+  if (currentNorm !== outputNorm) {
     stale = true;
     if (!check) {
       fs.writeFileSync(out, output);
