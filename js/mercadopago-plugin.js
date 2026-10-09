@@ -113,6 +113,10 @@
         clearInterval(this.pollInterval);
         this.pollInterval = null;
       }
+      if (this.prazoInterval) {
+        clearInterval(this.prazoInterval);
+        this.prazoInterval = null;
+      }
       const modal = document.getElementById('modal-pagamento-mp');
       if (modal) {
         modal.classList.remove('active');
@@ -231,7 +235,8 @@
             qrCode: data.qrCode,
             qrCodeBase64: data.qrCodeBase64,
             ticketUrl: data.ticketUrl,
-            expirationDate: data.expirationDate
+            expirationDate: data.expirationDate,
+            expiresAt: orderData.expiresAt || null
           });
 
           // Iniciar verificação automática em tempo real
@@ -243,7 +248,8 @@
           this.renderFallbackPix(conteudo, {
             pedidoId: orderData.pedidoId,
             total: orderData.total,
-            motivo: motivoFalha
+            motivo: motivoFalha,
+            expiresAt: orderData.expiresAt || null
           });
         }
       } catch (err) {
@@ -251,7 +257,8 @@
         this.renderFallbackPix(conteudo, {
           pedidoId: orderData.pedidoId,
           total: orderData.total,
-          motivo: 'Não foi possível conectar ao gateway no momento. Utilize a chave abaixo para realizar o pagamento.'
+          motivo: 'Não foi possível conectar ao gateway no momento. Utilize a chave abaixo para realizar o pagamento.',
+          expiresAt: orderData.expiresAt || null
         });
       }
     },
@@ -309,6 +316,9 @@
             </div>
           </div>
 
+          <!-- Prazo de pagamento: fonte = expires_at do servidor; o contador é apenas visual -->
+          ${this.renderPrazoBoxHtml(pixInfo.expiresAt)}
+
           <!-- Status do Pagamento em Tempo Real -->
           <div id="mp-pix-status-box" style="padding: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; font-size: 13px; color: #1e40af; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 14px;">
             <i class="fa-solid fa-circle-notch fa-spin" style="color: #0284c7;"></i>
@@ -322,6 +332,101 @@
           </div>
         </div>
       `;
+      this.startPrazoCountdown(pixInfo.expiresAt);
+    },
+
+    // ------------------------------------------------------------------
+    // PRAZO DE PAGAMENTO (expires_at do servidor é a única fonte da verdade)
+    // O contador do navegador é SOMENTE visual: quem decide se o pedido ainda
+    // é válido é o servidor/cron (expirar_pedidos_e_holds). Sem expires_at,
+    // exibimos texto neutro — nunca assumimos um número fixo de minutos.
+    // ------------------------------------------------------------------
+    parseExpiresAt: function (v) {
+      if (!v) return null;
+      const d = new Date(v);
+      return isNaN(d.getTime()) ? null : d;
+    },
+
+    formatarRestante: function (ms) {
+      if (ms < 60000) return 'menos de 1 minuto';
+      const totalMin = Math.floor(ms / 60000);
+      if (totalMin < 60) return `${totalMin} min`;
+      const h = Math.floor(totalMin / 60);
+      const m = totalMin % 60;
+      return m > 0 ? `${h}h ${m}min` : `${h}h`;
+    },
+
+    renderPrazoBoxHtml: function (expiresAt) {
+      const d = this.parseExpiresAt(expiresAt);
+      if (!d) {
+        return `
+          <div id="mp-prazo-box" style="padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 12px; color: #475569; margin-bottom: 10px;">
+            <i class="fa-regular fa-clock"></i> Conclua o pagamento dentro do prazo informado.
+          </div>`;
+      }
+      const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const restante = d.getTime() - Date.now();
+      const expirado = restante <= 0;
+      return `
+        <div id="mp-prazo-box" data-expires-at="${d.toISOString()}" style="padding: 10px 12px; background: ${expirado ? '#fef2f2' : '#fffbeb'}; border: 1px solid ${expirado ? '#fecaca' : '#fde68a'}; border-radius: 12px; font-size: 12px; color: ${expirado ? '#991b1b' : '#92400e'}; margin-bottom: 10px;">
+          <i class="fa-regular fa-clock"></i>
+          <span id="mp-prazo-texto">${expirado
+            ? 'Prazo de pagamento expirado.'
+            : `Conclua o pagamento até <strong>${hora}</strong> &bull; restam <strong id="mp-prazo-restante">${this.formatarRestante(restante)}</strong>`}</span>
+        </div>`;
+    },
+
+    startPrazoCountdown: function (expiresAt) {
+      if (this.prazoInterval) { clearInterval(this.prazoInterval); this.prazoInterval = null; }
+      const d = this.parseExpiresAt(expiresAt);
+      if (!d) return;
+      const tick = () => {
+        const el = document.getElementById('mp-prazo-restante');
+        const restante = d.getTime() - Date.now();
+        if (restante <= 0) {
+          clearInterval(this.prazoInterval);
+          this.prazoInterval = null;
+          // Visualmente expirado; a confirmação definitiva vem do servidor (polling/cron)
+          this.marcarPrazoExpiradoVisual();
+          return;
+        }
+        if (el) el.textContent = this.formatarRestante(restante);
+      };
+      tick();
+      this.prazoInterval = setInterval(tick, 15000);
+    },
+
+    marcarPrazoExpiradoVisual: function () {
+      const box = document.getElementById('mp-prazo-box');
+      if (box) {
+        box.style.background = '#fef2f2';
+        box.style.borderColor = '#fecaca';
+        box.style.color = '#991b1b';
+        const t = document.getElementById('mp-prazo-texto');
+        if (t) t.innerHTML = 'Prazo de pagamento expirado. Verificando com o servidor...';
+      }
+    },
+
+    renderPrazoExpirado: function (info) {
+      if (this.prazoInterval) { clearInterval(this.prazoInterval); this.prazoInterval = null; }
+      if (this.pollInterval) { clearTimeout(this.pollInterval); this.pollInterval = null; }
+      const conteudo = document.getElementById('modal-mp-conteudo');
+      if (!conteudo) return;
+      try { localStorage.removeItem('lunoca_checkout_expires_' + info.pedidoId); } catch (_) {}
+      conteudo.innerHTML = `
+        <div style="text-align: center; padding: 20px 10px;">
+          <div style="display:inline-block; padding: 14px; background: #fef2f2; border-radius: 50%; color: #b91c1c; font-size: 30px; margin-bottom: 12px;">
+            <i class="fa-regular fa-clock"></i>
+          </div>
+          <h3 style="margin: 0 0 8px 0; color: #0f172a; font-size: 19px;">Prazo de pagamento expirado</h3>
+          <p style="font-size: 13px; color: #64748b; margin: 0 0 16px 0; line-height: 1.5;">
+            O pedido #${info.pedidoId} não foi pago dentro do prazo e a reserva dos itens foi liberada.<br>
+            Se você já pagou, o sistema reconhecerá o pagamento automaticamente e nossa equipe entrará em contato.
+          </p>
+          <button onclick="window.MercadoPagoPlugin.closeModal()" style="width: 100%; padding: 12px; background: #0f172a; color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer;">
+            Fazer um novo pedido
+          </button>
+        </div>`;
     },
 
     copyPixCopiaCola: function () {
@@ -726,7 +831,10 @@
     startRealtimePolling: function (paymentId, pedidoId) {
       if (this.pollInterval) clearTimeout(this.pollInterval);
       const startTime = Date.now();
-      const maxTime = 20 * 60 * 1000; // 20 minutos
+      // Janela de polling: até o prazo do servidor (+ 3 min de folga para o cron confirmar a expiração).
+      // Sem expires_at, usa uma janela técnica de 20 min — isso NÃO decide validade do pedido.
+      const expiresDate = this.parseExpiresAt(this.currentOrder?.expiresAt);
+      const maxTime = expiresDate ? Math.max(60000, (expiresDate.getTime() - startTime) + 3 * 60 * 1000) : 20 * 60 * 1000;
       const token = this.currentOrder?.checkoutToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('lunoca_checkout_token_' + pedidoId) : '') || '';
 
       const pollCycle = async () => {
@@ -771,9 +879,15 @@
           if (typeof window.supabaseClient !== 'undefined') {
             const { data: pedido } = await window.supabaseClient
               .from('pedidos')
-              .select('status')
+              .select('status, status_comercial, cancelado_por_expiracao')
               .eq('id', pedidoId)
-              .single();
+              .maybeSingle();
+
+            // Autoridade do servidor: expirado/cancelado pelo cron => tela de prazo expirado
+            if (pedido && (pedido.cancelado_por_expiracao === true || pedido.status_comercial === 'cancelado')) {
+              this.renderPrazoExpirado({ pedidoId: pedidoId });
+              return;
+            }
 
             if (pedido && pedido.status === 'Confirmado') {
               this.renderSucessoAprovado({
@@ -806,6 +920,8 @@
 
     // Tela de Pagamento Aprovado com Sucesso
     renderSucessoAprovado: function (info) {
+      if (this.prazoInterval) { clearInterval(this.prazoInterval); this.prazoInterval = null; }
+      try { localStorage.removeItem('lunoca_checkout_expires_' + info.pedidoId); } catch (_) {}
       this.clearCartAfterPaymentSuccess();
 
       const conteudo = document.getElementById('modal-mp-conteudo');
@@ -899,6 +1015,7 @@
           <h3 style="margin: 0 0 6px 0; color: #0f172a; font-size: 19px;">QR Code indisponível no momento</h3>
           <p style="font-size: 12px; color: #7c2d12; margin: 0 0 14px 0; background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:8px;">${motivoSeguro}</p>
           <p style="font-size: 13px; color: #64748b; margin: 0 0 14px 0;">Pedido #${pedidoId} &bull; Total: <strong>${formattedTotal}</strong></p>
+          ${this.renderPrazoBoxHtml(info.expiresAt)}
 
           <div style="display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;">
             <button onclick="window.MercadoPagoPlugin.switchToPix()" style="flex:1; min-width: 140px; padding: 10px; background: #0284c7; color: #fff; border: none; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer;">

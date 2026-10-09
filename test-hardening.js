@@ -1736,6 +1736,26 @@ assert.ok(
 );
 console.log('    ✅ Modal, filtro "Em Revisão", badge e chamada da RPC presentes.');
 
+// 11.21 Loja: prazo de pagamento vem de expires_at (sem "30 minutos" fixo); contador é visual, servidor decide
+console.log('\n  🔎 11.21 Verificando prazo de pagamento da loja baseado em expires_at...');
+const mpPlugin = fs.readFileSync('js/mercadopago-plugin.js', 'utf-8');
+const pedidosJsLoja = fs.readFileSync('js/pedidos.js', 'utf-8');
+const mpJs = fs.readFileSync('js/mercadopago.js', 'utf-8');
+assert.ok(
+  pedidosJsLoja.includes('expiresAt = rpcRes.expires_at || null;') &&
+  mpJs.includes('expiresAt: expiresAt ||') &&
+  mpPlugin.includes('renderPrazoBoxHtml') &&
+  mpPlugin.includes("'menos de 1 minuto'") &&
+  mpPlugin.includes('Conclua o pagamento dentro do prazo informado.') &&
+  mpPlugin.includes('Prazo de pagamento expirado') &&
+  mpPlugin.includes("pedido.cancelado_por_expiracao === true || pedido.status_comercial === 'cancelado'"),
+  '[FALHA] Loja não usa expires_at como fonte do prazo (ou não trata expiração do servidor)!'
+);
+for (const [f, c] of [['index.html', fs.readFileSync('index.html', 'utf-8')], ['js/mercadopago-plugin.js', mpPlugin], ['js/pedidos.js', pedidosJsLoja], ['js/mercadopago.js', mpJs]]) {
+  assert.ok(!/30\s*min(utos)?/i.test(c), `[FALHA] ${f} ainda contém texto fixo de "30 minutos"!`);
+}
+console.log('    ✅ Prazo da loja derivado de expires_at; sem minutos fixos; expiração confirmada pelo servidor.');
+
 // --------------------------------------------------------------------------
 // FASE 12: FONTE CANÔNICA DE SQL (migrations) E PARIDADE DOS ARQUIVOS GERADOS
 // --------------------------------------------------------------------------

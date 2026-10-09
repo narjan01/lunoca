@@ -114,11 +114,15 @@ Endpoint (fail-closed):
 
 ---
 
-## 7. Artefato de instalação
+## 7. Prazo de pagamento na loja (UI)
+
+`criar_pedido` devolve `expires_at`; o frontend (`js/pedidos.js` → `js/mercadopago.js` → `js/mercadopago-plugin.js`) o usa como **única fonte**: "Conclua o pagamento até HH:MM • restam N min" (contador a cada 15s, "menos de 1 minuto" abaixo de 60s). O contador é **apenas visual**: a expiração real é confirmada pelo servidor (polling lê `cancelado_por_expiracao`/`status_comercial` e troca para "Prazo de pagamento expirado"). Sem `expires_at`, exibe texto neutro — nunca um número fixo de minutos. Ao reabrir um PIX, o prazo é relido do servidor (fallback: valor salvo no checkout).
+
+## 8. Artefato de instalação
 
 `sql/install.sql` (= `sql/schema.sql`) é **executado inteiro, do zero, em um PostgreSQL vazio** no início de `npm run test:integration` e **reexecutado** (junto com a migration 011) no teste `R2-1` — zero erros é condição de aprovação. Todas as `CREATE POLICY` do baseline são precedidas de `DROP POLICY IF EXISTS` para que o artefato seja reaplicável. Para um banco já existente, aplique só as migrations novas.
 
-## 8. Como estender
+## 9. Como estender
 
 1. Crie `supabase/migrations/NNN_*.sql` (idempotente).
 2. `npm run build:sql` (regenera `install.sql`/`schema.sql`).
