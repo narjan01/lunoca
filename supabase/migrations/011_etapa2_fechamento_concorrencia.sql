@@ -213,6 +213,7 @@ DECLARE
   v_reservados INT := 0;
   v_ja_ativos INT := 0;
 BEGIN
+  PERFORM set_config('lunoca.internal_stock_mutation', 'on', true);
   PERFORM 1 FROM public.pedidos WHERE id = p_pedido_id FOR UPDATE;
   IF NOT FOUND THEN
     RETURN json_build_object('success', false, 'code', 'ORDER_NOT_FOUND', 'error', 'Pedido não encontrado.');
@@ -325,6 +326,7 @@ DECLARE
   v_saldo INT;
   v_liberados INT := 0;
 BEGIN
+  PERFORM set_config('lunoca.internal_stock_mutation', 'on', true);
   PERFORM 1 FROM public.pedidos WHERE id = p_pedido_id FOR UPDATE;
   IF NOT FOUND THEN
     RETURN json_build_object('success', false, 'code', 'ORDER_NOT_FOUND', 'error', 'Pedido não encontrado.');

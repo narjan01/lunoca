@@ -24,9 +24,11 @@ const ADMIN_UID = '11111111-1111-1111-1111-111111111111';
 const OPER_UID = '22222222-2222-2222-2222-222222222222';
 const CLIENTE_UID = '33333333-3333-3333-3333-333333333333';
 
+const activeClients = [];
 async function newClient(identity = 'service_role') {
   const c = new pg.Client(connInfo);
   await c.connect();
+  activeClients.push(c);
   await setIdentity(c, identity);
   return c;
 }
@@ -102,18 +104,23 @@ before(async () => {
       (${P_SOB_ENC}, 'Sob Encomenda', 'sem estoque', 50.00, true, false, 0, 0, 1.00)
     ON CONFLICT (id) DO UPDATE SET preco = EXCLUDED.preco, estoque_fisico = EXCLUDED.estoque_fisico, estoque_reservado = EXCLUDED.estoque_reservado;
 
-    INSERT INTO public.produto_opcoes (id, produto_id, nome, preco_adicional, pontos_producao_adicionais, ativo) VALUES
-      (8001, ${P_BOLO}, 'Morango Especial', 15.00, 1.00, true)
+    INSERT INTO public.produto_opcoes (id, produto_id, categoria, nome, preco_adicional, pontos_producao_adicionais, ativo) VALUES
+      (8001, ${P_BOLO}, 'adicional', 'Morango Especial', 15.00, 1.00, true)
     ON CONFLICT (id) DO NOTHING;
 
     UPDATE public.configuracoes_operacao
     SET hold_horas_padrao = 24, antecedencia_confirmacao_horas = 2, capacidade_padrao_pontos = 1000,
         validade_orcamento_horas = 120, antecedencia_minima_orcamento_horas = 2, janela_conversao_horas = 24
     WHERE id = 1;
+
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
   `);
 });
 
 after(async () => {
+  for (const c of activeClients) {
+    try { await c.end(); } catch {}
+  }
   try { await admin?.end(); } catch {}
   if (embedded) {
     try { await embedded.stop(); } catch {}
@@ -125,7 +132,7 @@ after(async () => {
 // --------------------------------------------------------------------------
 test('E3-1: Orçamento criado e enviado NÃO altera estoque_reservado nem capacidade_producao', async () => {
   const c = await newClient(OPER_UID);
-  const dataEv = dataFutura(5);
+  const dataEv = dataFutura(50);
 
   const res = await rpc(c, 'criar_ou_atualizar_orcamento_admin', {
     p_dados: {
@@ -573,18 +580,41 @@ test('E3-15: Nova versão de orçamento tem tabela de autorizações isolada por
 // --------------------------------------------------------------------------
 test('E3-16: Usuário anônimo recebe zero linhas em SELECT direto em orcamentos (RLS)', async () => {
   const cAnon = await newClient('anon');
+  await cAnon.query('SET ROLE anon');
   const { rows } = await cAnon.query('SELECT * FROM public.orcamentos');
   assert.equal(rows.length, 0, 'RLS fail-closed deve bloquear SELECT direto de anônimo');
 });
 
 // --------------------------------------------------------------------------
-// E3-17: Falha fechada em token nulo na aprovação pública
+// E3-17: Rate limiting bloqueia tentativas abusivas e token nulo falha fechado
 // --------------------------------------------------------------------------
-test('E3-17: aprovar_orcamento_publico com token nulo retorna NOT_FOUND', async () => {
+test('E3-17: aprovar_orcamento_publico com token nulo retorna NOT_FOUND e rate limit bloqueia chamadas abusivas', async () => {
   const cAnon = await newClient('anon');
-  const res = await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: null });
-  assert.equal(res.success, false);
-  assert.equal(res.code, 'NOT_FOUND');
+  const resNull = await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: null });
+  assert.equal(resNull.success, false);
+  assert.equal(resNull.code, 'NOT_FOUND');
+
+  // Cria orçamento de teste para disparar rate limit
+  const cAdm = await newClient(ADMIN_UID);
+  const orc = await rpc(cAdm, 'criar_ou_atualizar_orcamento_admin', {
+    p_dados: {
+      cliente_nome: 'Cliente Rate Limit',
+      data_evento: dataFutura(15),
+      status: 'enviado',
+      itens: [{ id: P_DOCE, quantidade: 2 }]
+    }
+  });
+
+  // Dispara múltiplas tentativas de aprovação no mesmo token
+  let bloqueado = false;
+  for (let i = 0; i < 7; i++) {
+    const res = await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico });
+    if (res.code === 'RATE_LIMIT_EXCEEDED') {
+      bloqueado = true;
+      break;
+    }
+  }
+  assert.equal(bloqueado, true, 'Rate limit deve bloquear tentativas abusivas');
 });
 
 // --------------------------------------------------------------------------

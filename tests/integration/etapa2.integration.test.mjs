@@ -39,9 +39,11 @@ const ADMIN_UID = '11111111-1111-1111-1111-111111111111';
 const OPER_UID = '22222222-2222-2222-2222-222222222222';
 const CLIENTE_UID = '33333333-3333-3333-3333-333333333333';
 
+const activeClients = [];
 async function newClient(identity = 'service_role') {
   const c = new pg.Client(connInfo);
   await c.connect();
+  activeClients.push(c);
   await setIdentity(c, identity);
   return c;
 }
@@ -146,6 +148,9 @@ before(async () => {
 });
 
 after(async () => {
+  for (const c of activeClients) {
+    try { await c.end(); } catch {}
+  }
   try { await admin?.end(); } catch {}
   if (embedded) {
     try { await embedded.stop(); } catch {}
@@ -468,10 +473,12 @@ test('CANCELAR com valor pago exige RETENCAO_CANCELAMENTO', async () => {
 // --------------------------------------------------------------------------
 test('Entrega imediata: sem sinal integral => IMMEDIATE_CONFIRMATION_REQUIRED; com sinal => confirmado', async () => {
   // Data/hora "agora + 30min" no fuso configurado
-  const { rows } = await admin.query(`SELECT ((NOW() + INTERVAL '30 minutes') AT TIME ZONE (public.obter_config_operacao()).timezone) AS t`);
-  const t = rows[0].t; // timestamp sem tz, já no fuso local
-  const data = t.toISOString().slice(0, 10);
-  const hora = t.toISOString().slice(11, 16);
+  const { rows } = await admin.query(`
+    SELECT 
+      TO_CHAR((NOW() + INTERVAL '30 minutes') AT TIME ZONE (public.obter_config_operacao()).timezone, 'YYYY-MM-DD') AS data,
+      TO_CHAR((NOW() + INTERVAL '30 minutes') AT TIME ZONE (public.obter_config_operacao()).timezone, 'HH24:MI') AS hora
+  `);
+  const { data, hora } = rows[0];
 
   const c = await newClient(ADMIN_UID);
   const r1 = await rpc(c, 'criar_encomenda_admin', { p_cliente_nome: 'Cliente H', p_canal: 'balcao', p_data_entrega: data, p_hora_entrega: hora, p_itens: JSON.stringify([{ id: P_DOCE, quantidade: 2 }]), p_sinal_minimo: 4, p_motivo_confirmacao_sem_sinal: 'Sinal ajustado (cenário de teste)', p_sinal_valor: 1 });

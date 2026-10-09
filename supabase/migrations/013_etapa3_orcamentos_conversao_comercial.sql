@@ -152,58 +152,94 @@ CREATE INDEX IF NOT EXISTS idx_orcamento_comunicacoes_orcamento_id ON public.orc
 -- 7. SEGURANÇA E POLÍTICAS RLS (FAIL-CLOSED)
 -- --------------------------------------------------------------------------
 ALTER TABLE public.orcamentos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orcamentos FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.orcamento_itens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orcamento_itens FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.orcamento_item_opcoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orcamento_item_opcoes FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.orcamento_autorizacoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orcamento_autorizacoes FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.orcamento_status_historico ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orcamento_status_historico FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.orcamento_comunicacoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orcamento_comunicacoes FORCE ROW LEVEL SECURITY;
 
 -- Equipe (admin e operador) visualiza orçamentos e detalhes
+DROP POLICY IF EXISTS "Equipe visualiza orcamentos" ON public.orcamentos;
 CREATE POLICY "Equipe visualiza orcamentos"
   ON public.orcamentos FOR SELECT TO authenticated
   USING (public.is_admin_or_operator());
 
+DROP POLICY IF EXISTS "Equipe gerencia orcamentos" ON public.orcamentos;
 CREATE POLICY "Equipe gerencia orcamentos"
   ON public.orcamentos FOR ALL TO authenticated
   USING (public.is_admin_or_operator())
   WITH CHECK (public.is_admin_or_operator());
 
+DROP POLICY IF EXISTS "Equipe gerencia orcamento_itens" ON public.orcamento_itens;
 CREATE POLICY "Equipe gerencia orcamento_itens"
   ON public.orcamento_itens FOR ALL TO authenticated
   USING (public.is_admin_or_operator())
   WITH CHECK (public.is_admin_or_operator());
 
+DROP POLICY IF EXISTS "Equipe gerencia orcamento_item_opcoes" ON public.orcamento_item_opcoes;
 CREATE POLICY "Equipe gerencia orcamento_item_opcoes"
   ON public.orcamento_item_opcoes FOR ALL TO authenticated
   USING (public.is_admin_or_operator())
   WITH CHECK (public.is_admin_or_operator());
 
+DROP POLICY IF EXISTS "Equipe visualiza autorizacoes" ON public.orcamento_autorizacoes;
 CREATE POLICY "Equipe visualiza autorizacoes"
   ON public.orcamento_autorizacoes FOR SELECT TO authenticated
   USING (public.is_admin_or_operator());
 
+DROP POLICY IF EXISTS "Admin gerencia autorizacoes" ON public.orcamento_autorizacoes;
 CREATE POLICY "Admin gerencia autorizacoes"
   ON public.orcamento_autorizacoes FOR ALL TO authenticated
   USING (public.is_admin())
   WITH CHECK (public.is_admin());
 
+DROP POLICY IF EXISTS "Equipe gerencia orcamento_status_historico" ON public.orcamento_status_historico;
 CREATE POLICY "Equipe gerencia orcamento_status_historico"
   ON public.orcamento_status_historico FOR ALL TO authenticated
   USING (public.is_admin_or_operator())
   WITH CHECK (public.is_admin_or_operator());
 
+DROP POLICY IF EXISTS "Equipe gerencia orcamento_comunicacoes" ON public.orcamento_comunicacoes;
 CREATE POLICY "Equipe gerencia orcamento_comunicacoes"
   ON public.orcamento_comunicacoes FOR ALL TO authenticated
   USING (public.is_admin_or_operator())
   WITH CHECK (public.is_admin_or_operator());
 
 -- Service role tem acesso irrestrito
+DROP POLICY IF EXISTS "Service role acesso completo orcamentos" ON public.orcamentos;
 CREATE POLICY "Service role acesso completo orcamentos" ON public.orcamentos FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Service role acesso completo orcamento_itens" ON public.orcamento_itens;
 CREATE POLICY "Service role acesso completo orcamento_itens" ON public.orcamento_itens FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Service role acesso completo orcamento_item_opcoes" ON public.orcamento_item_opcoes;
 CREATE POLICY "Service role acesso completo orcamento_item_opcoes" ON public.orcamento_item_opcoes FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Service role acesso completo orcamento_autorizacoes" ON public.orcamento_autorizacoes;
 CREATE POLICY "Service role acesso completo orcamento_autorizacoes" ON public.orcamento_autorizacoes FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Service role acesso completo orcamento_status_historico" ON public.orcamento_status_historico;
 CREATE POLICY "Service role acesso completo orcamento_status_historico" ON public.orcamento_status_historico FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Service role acesso completo orcamento_comunicacoes" ON public.orcamento_comunicacoes;
 CREATE POLICY "Service role acesso completo orcamento_comunicacoes" ON public.orcamento_comunicacoes FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- Tabela e políticas para Rate Limiting na aprovação pública
+CREATE TABLE IF NOT EXISTS public.orcamento_rate_limits (
+  token UUID PRIMARY KEY,
+  tentativas INT NOT NULL DEFAULT 1,
+  bloqueado_ate TIMESTAMPTZ,
+  ultimo_acesso TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE public.orcamento_rate_limits ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Service role rate limits" ON public.orcamento_rate_limits;
+CREATE POLICY "Service role rate limits" ON public.orcamento_rate_limits FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- --------------------------------------------------------------------------
 -- 8. HELPER PARA GERAR NÚMERO DO ORÇAMENTO (ORC-AAAA-XXXX)
@@ -266,7 +302,7 @@ DECLARE
   v_prod RECORD;
   v_pts_prod NUMERIC(6,2);
   v_pts_opt_total NUMERIC(6,2);
-  v_opcao RECORD;
+  v_opcao JSONB;
   v_opcao_nome TEXT;
   v_opt_rec RECORD;
   v_preco_opt NUMERIC(10,2);
@@ -412,7 +448,7 @@ BEGIN
     v_prod_id := v_item.produto_id;
     v_qtd := v_item.quantidade;
 
-    SELECT id, nome, preco, cmv, ativo, pontos_producao
+    SELECT id, nome, preco, ativo, pontos_producao
     INTO v_prod
     FROM public.produtos
     WHERE id = v_prod_id;
@@ -519,7 +555,7 @@ BEGIN
     v_prod_id := v_item.produto_id;
     v_qtd := v_item.quantidade;
 
-    SELECT id, nome, preco, cmv, pontos_producao
+    SELECT id, nome, preco, pontos_producao
     INTO v_prod
     FROM public.produtos
     WHERE id = v_prod_id;
@@ -552,7 +588,7 @@ BEGIN
       cmv_unitario_snapshot, pontos_producao_snapshot, subtotal, observacoes
     ) VALUES (
       v_orc_id, v_prod_id, v_qtd, v_prod.preco,
-      COALESCE(v_prod.cmv, 0.00), v_pts_prod, v_item_subtotal, v_item.observacoes
+      0.00, v_pts_prod, v_item_subtotal, v_item.observacoes
     ) RETURNING id INTO v_item_id;
 
     IF v_item.opcoes IS NOT NULL AND jsonb_typeof(v_item.opcoes) = 'array' THEN
@@ -751,7 +787,7 @@ BEGIN
       'produto_id', oi.produto_id,
       'produto_nome', pr.nome,
       'produto_descricao', pr.descricao,
-      'produto_imagem_url', pr.imagem_url,
+      'produto_imagem_url', pr.img_url,
       'quantidade', oi.quantidade,
       'preco_unitario', oi.preco_unitario_snapshot,
       'subtotal', oi.subtotal,
@@ -816,6 +852,28 @@ DECLARE
 BEGIN
   IF p_token IS NULL THEN
     RETURN jsonb_build_object('success', false, 'code', 'NOT_FOUND', 'error', 'Orçamento não encontrado.');
+  END IF;
+
+  -- Rate limit: máximo 5 tentativas em 1 minuto
+  INSERT INTO public.orcamento_rate_limits (token, tentativas, ultimo_acesso)
+  VALUES (p_token, 1, NOW())
+  ON CONFLICT (token) DO UPDATE
+    SET tentativas = CASE
+          WHEN orcamento_rate_limits.ultimo_acesso < NOW() - INTERVAL '1 minute' THEN 1
+          ELSE orcamento_rate_limits.tentativas + 1
+        END,
+        bloqueado_ate = CASE
+          WHEN orcamento_rate_limits.ultimo_acesso >= NOW() - INTERVAL '1 minute' AND orcamento_rate_limits.tentativas + 1 > 5
+          THEN NOW() + INTERVAL '5 minutes'
+          ELSE orcamento_rate_limits.bloqueado_ate
+        END,
+        ultimo_acesso = NOW();
+
+  IF EXISTS (
+    SELECT 1 FROM public.orcamento_rate_limits
+    WHERE token = p_token AND bloqueado_ate IS NOT NULL AND bloqueado_ate > NOW()
+  ) THEN
+    RETURN jsonb_build_object('success', false, 'code', 'RATE_LIMIT_EXCEEDED', 'error', 'Muitas tentativas de aprovação. Tente novamente mais tarde.');
   END IF;
 
   SELECT * INTO v_orc FROM public.orcamentos WHERE token_publico = p_token FOR UPDATE;

@@ -37,7 +37,7 @@ Este documento formaliza as **decisões arquiteturais vinculantes** da Etapa 3 (
    - `status TEXT CHECK (status IN ('rascunho', 'enviado', 'aprovado', 'convertido', 'recusado', 'cancelado', 'expirado'))`
    - `token_publico UUID NOT NULL UNIQUE DEFAULT gen_random_uuid()`
    - `validade_ate TIMESTAMPTZ NOT NULL`, `janela_conversao_limite TIMESTAMPTZ`
-   - `cliente_aceite_em TIMESTAMPTZ`, `cliente_observacoes TEXT`, `termos_aceitos BOOLEAN`
+   - `aprovado_em TIMESTAMPTZ`, `cliente_observacoes TEXT`, `termos_aceitos BOOLEAN`
    - `pedido_id UUID UNIQUE REFERENCES pedidos(id)`
    - `origem_canal TEXT`, `notas_internas TEXT`, `criado_por UUID`, `atualizado_por UUID`
 

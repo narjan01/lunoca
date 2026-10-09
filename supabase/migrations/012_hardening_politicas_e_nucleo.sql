@@ -24,7 +24,11 @@ ALTER TABLE public.pedidos
   ADD COLUMN IF NOT EXISTS orcamento_origem_id BIGINT UNIQUE,
   ADD COLUMN IF NOT EXISTS taxa_entrega_base NUMERIC(10,2) NOT NULL DEFAULT 0.00,
   ADD COLUMN IF NOT EXISTS taxa_entrega_cobrada NUMERIC(10,2) NOT NULL DEFAULT 0.00,
-  ADD COLUMN IF NOT EXISTS desconto_frete NUMERIC(10,2) NOT NULL DEFAULT 0.00;
+  ADD COLUMN IF NOT EXISTS desconto_frete NUMERIC(10,2) NOT NULL DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS motivo_desconto TEXT;
+
+ALTER TABLE public.pedidos DROP CONSTRAINT IF EXISTS pedidos_canal_check;
+ALTER TABLE public.pedidos ADD CONSTRAINT pedidos_canal_check CHECK (canal IN ('loja_online', 'whatsapp', 'balcao', 'telefone', 'orcamento'));
 
 CREATE INDEX IF NOT EXISTS idx_pedidos_orcamento_origem_id ON public.pedidos(orcamento_origem_id) WHERE orcamento_origem_id IS NOT NULL;
 
@@ -122,8 +126,8 @@ BEGIN
 
   v_sinal_padrao := ROUND(v_total * (COALESCE(v_cfg.sinal_percentual_padrao, 50.00) / 100.0), 2);
 
-  -- Dispensar sinal por completo (p_forcar_reducao ou sinal = 0)
-  IF p_forcar_reducao = true OR (p_sinal_solicitado IS NOT NULL AND p_sinal_solicitado = 0.00 AND v_sinal_padrao > 0.00) THEN
+  -- Dispensar sinal por completo (p_forcar_reducao)
+  IF p_forcar_reducao = true THEN
     IF NOT v_is_admin THEN
       RETURN jsonb_build_object('success', false, 'code', 'PERMISSION_DENIED', 'error', 'Apenas Administradores podem dispensar a exigência de sinal mínimo.');
     END IF;
@@ -282,12 +286,14 @@ DECLARE
   v_prod_id BIGINT;
   v_qtd INT;
   v_prod RECORD;
-  v_opcao RECORD;
+  v_opcao JSONB;
   v_opcao_nome TEXT;
   v_opt_rec RECORD;
   v_preco_opt NUMERIC(10,2);
   v_pts_prod NUMERIC(6,2);
   v_pts_opt_total NUMERIC(6,2);
+  v_exc_hint TEXT;
+  v_exc_detail TEXT;
   v_pts_pedido_total NUMERIC(8,2) := 0.00;
   v_subtotal NUMERIC(10,2) := 0.00;
   v_total NUMERIC(10,2) := 0.00;
@@ -400,6 +406,14 @@ BEGIN
   v_cliente_email_final := COALESCE(NULLIF(v_cliente_email_in, ''), v_cliente_email_final, 'balcao@lunocadoceria.com.br');
 
   -- 5. Itens: validação, opções, subtotal e pontos
+  IF jsonb_typeof(v_itens) = 'string' THEN
+    BEGIN
+      v_itens := (p_dados->>'itens')::jsonb;
+    EXCEPTION WHEN OTHERS THEN
+      v_itens := '[]'::jsonb;
+    END;
+  END IF;
+
   IF v_itens IS NULL OR jsonb_typeof(v_itens) <> 'array' OR jsonb_array_length(v_itens) = 0 THEN
     RETURN jsonb_build_object('success', false, 'code', 'ITEMS_REQUIRED', 'error', 'A encomenda precisa ter pelo menos um item.');
   END IF;
@@ -544,21 +558,25 @@ BEGIN
 
   -- 9. INSERT PEDIDO
   INSERT INTO public.pedidos (
-    cliente_id, cliente_id_rel, cliente_nome, cliente_telefone, cliente_email,
-    canal, data_entrega, hora_entrega, tipo_entrega, endereco_entrega,
-    subtotal, taxa_entrega, taxa_entrega_base, taxa_entrega_cobrada, desconto_frete,
-    desconto, motivo_desconto, total, sinal_minimo, saldo_vencimento,
-    status_comercial, status_financeiro, status_operacional,
-    confirmacao_expires_at, observacoes_cliente, observacoes_internas,
-    orcamento_origem_id
+    cliente_id_rel, nome_cliente, telefone_cliente, email_cliente,
+    data_pedido, data_entrega, hora_entrega,
+    subtotal, desconto, total, taxa_entrega, taxa_entrega_base, taxa_entrega_cobrada, desconto_frete,
+    motivo_desconto, valor_pago, saldo, sinal_minimo, saldo_vencimento,
+    modalidade_entrega, canal, pagamento,
+    status_comercial, status_financeiro, status_operacional, status,
+    itens, endereco_entrega, observacoes_cliente, observacoes_internas,
+    confirmacao_expires_at, orcamento_origem_id
   ) VALUES (
-    v_cliente_id_final, v_cliente_id_final, v_cliente_nome_final, v_cliente_tel_final, v_cliente_email_final,
-    v_canal, v_data_entrega, v_hora_entrega, v_frete_val->>'modalidade', v_frete_val->>'endereco_entrega',
-    v_subtotal, (v_frete_val->>'taxa_entrega_cobrada')::NUMERIC, (v_frete_val->>'taxa_entrega_base')::NUMERIC, (v_frete_val->>'taxa_entrega_cobrada')::NUMERIC, (v_frete_val->>'desconto_frete')::NUMERIC,
-    (v_desc_pol->>'desconto_aprovado')::NUMERIC, v_desc_pol->>'motivo', v_total, v_sinal_min, v_saldo_venc,
-    v_status_com_inicial, v_status_fin_inicial, v_status_oper_inicial,
-    v_confirmacao_expires_at, p_dados->>'observacoes_cliente', p_dados->>'observacoes_internas',
-    v_orcamento_origem_id
+    v_cliente_id_final, v_cliente_nome_final, v_cliente_tel_final, v_cliente_email_final,
+    (NOW() AT TIME ZONE v_tz)::DATE, v_data_entrega, v_hora_entrega,
+    v_subtotal, (v_desc_pol->>'desconto_aprovado')::NUMERIC, v_total, (v_frete_val->>'taxa_entrega_cobrada')::NUMERIC,
+    (v_frete_val->>'taxa_entrega_base')::NUMERIC, (v_frete_val->>'taxa_entrega_cobrada')::NUMERIC, (v_frete_val->>'desconto_frete')::NUMERIC,
+    v_desc_pol->>'motivo', 0.00, v_total, v_sinal_min, v_saldo_venc,
+    v_frete_val->>'modalidade', v_canal, LOWER(TRIM(COALESCE(p_dados->>'sinal_metodo', 'pix'))),
+    v_status_com_inicial, v_status_fin_inicial, v_status_oper_inicial, 'Pendente',
+    array_to_string(v_nomes_itens, ' + '), COALESCE(v_frete_val->>'endereco_entrega', 'Retirada no Balcão'),
+    p_dados->>'observacoes_cliente', p_dados->>'observacoes_internas',
+    v_confirmacao_expires_at, v_orcamento_origem_id
   ) RETURNING id INTO v_pedido_id;
 
   -- 10. INSERT ITENS E OPÇÕES
@@ -573,7 +591,7 @@ BEGIN
     v_prod_id := v_item.produto_id;
     v_qtd := v_item.quantidade;
 
-    SELECT id, nome, preco, cmv, pontos_producao
+    SELECT id, nome, preco, pontos_producao
     INTO v_prod
     FROM public.produtos
     WHERE id = v_prod_id;
@@ -581,20 +599,23 @@ BEGIN
     v_pts_prod := COALESCE(v_prod.pontos_producao, 1.00);
 
     INSERT INTO public.pedido_itens (
-      pedido_id, produto_id, quantidade, preco_base_snapshot,
+      pedido_id, produto_id, produto_nome_snapshot, quantidade, unidade,
+      preco_base_snapshot, preco_adicionais, preco_unitario_snapshot, subtotal,
       cmv_unitario_snapshot, cmv_total_snapshot,
       pontos_producao_snapshot, reserva_estoque_ativa, reserva_ciclo
     ) VALUES (
-      v_pedido_id, v_prod_id, v_qtd, v_prod.preco,
-      COALESCE(v_prod.cmv, 0.00), (COALESCE(v_prod.cmv, 0.00) * v_qtd),
+      v_pedido_id, v_prod_id, v_prod.nome, v_qtd, 'un',
+      v_prod.preco, 0.00, v_prod.preco, (v_prod.preco * v_qtd),
+      0.00, 0.00,
       v_pts_prod, false, 0
     ) RETURNING id INTO v_item_id;
 
+    v_pts_opt_total := 0.00;
     IF v_item.opcoes IS NOT NULL AND jsonb_typeof(v_item.opcoes) = 'array' THEN
       FOR v_opcao IN SELECT value FROM jsonb_array_elements(v_item.opcoes) LOOP
         v_opcao_nome := TRIM(COALESCE(v_opcao->>'nome', v_opcao->>'opcao_nome', ''));
         IF v_opcao_nome <> '' THEN
-          SELECT id, preco_adicional, pontos_producao_adicionais
+          SELECT id, preco_adicional, categoria, pontos_producao_adicionais
           INTO v_opt_rec
           FROM public.produto_opcoes
           WHERE produto_id = v_prod.id AND LOWER(TRIM(nome)) = LOWER(TRIM(v_opcao_nome)) AND ativo = true
@@ -602,23 +623,34 @@ BEGIN
 
           IF FOUND THEN
             INSERT INTO public.pedido_item_opcoes (
-              pedido_item_id, tipo, opcao_nome, preco_adicional,
-              produto_opcao_id, pontos_producao_adicionais_snapshot
+              pedido_item_id, produto_opcao_id, tipo, opcao_nome, preco_adicional,
+              pontos_producao_adicionais_snapshot
             ) VALUES (
-              v_item_id, 'personalizacao', v_opcao_nome, COALESCE(v_opt_rec.preco_adicional, 0.00),
-              v_opt_rec.id, COALESCE(v_opt_rec.pontos_producao_adicionais, 0.00)
+              v_item_id, v_opt_rec.id, v_opt_rec.categoria, v_opcao_nome, COALESCE(v_opt_rec.preco_adicional, 0.00),
+              COALESCE(v_opt_rec.pontos_producao_adicionais, 0.00)
             );
+            v_preco_opt := COALESCE(v_opt_rec.preco_adicional, 0.00);
           ELSE
             INSERT INTO public.pedido_item_opcoes (
               pedido_item_id, tipo, opcao_nome, preco_adicional,
-              produto_opcao_id, pontos_producao_adicionais_snapshot
+              pontos_producao_adicionais_snapshot
             ) VALUES (
-              v_item_id, 'personalizacao', v_opcao_nome, 0.00,
-              NULL, 0.00
+              v_item_id, 'outro', v_opcao_nome, 0.00,
+              0.00
             );
+            v_preco_opt := 0.00;
           END IF;
+          v_pts_opt_total := v_pts_opt_total + v_preco_opt;
         END IF;
       END LOOP;
+    END IF;
+
+    IF v_pts_opt_total > 0.00 THEN
+      UPDATE public.pedido_itens
+      SET preco_adicionais = v_pts_opt_total,
+          preco_unitario_snapshot = preco_base_snapshot + v_pts_opt_total,
+          subtotal = (preco_base_snapshot + v_pts_opt_total) * quantidade
+      WHERE id = v_item_id;
     END IF;
   END LOOP;
 
@@ -630,7 +662,11 @@ BEGIN
   );
 
   IF COALESCE((v_reserva->>'success')::BOOLEAN, false) = false THEN
-    RAISE EXCEPTION 'INSUFFICIENT_STOCK: %', (v_reserva->>'error');
+    RAISE EXCEPTION USING
+      ERRCODE = 'P0001',
+      MESSAGE = COALESCE(v_reserva->>'error', 'Estoque insuficiente para a encomenda.'),
+      DETAIL = COALESCE(v_reserva::TEXT, '{}'),
+      HINT = 'INSUFFICIENT_STOCK';
   END IF;
 
   -- 12. PAGAMENTO DE SINAL (se informado)
@@ -678,7 +714,7 @@ BEGIN
     usuario_id, usuario_nome, origem, metadata
   ) VALUES (
     v_pedido_id, 'comercial', NULL, v_status_com_inicial,
-    auth.uid(), v_user_nome, v_canal,
+    auth.uid(), v_user_nome, CASE WHEN auth.role() = 'service_role' THEN 'sistema' ELSE 'admin' END,
     jsonb_build_object(
       'acao', 'CRIAR_ENCOMENDA',
       'canal', v_canal,
@@ -699,15 +735,29 @@ BEGIN
   RETURN jsonb_build_object(
     'success', true,
     'pedido_id', v_pedido_id,
+    'cliente_id', v_cliente_id_final,
     'total', v_total,
     'subtotal', v_subtotal,
     'desconto', (v_desc_pol->>'desconto_aprovado')::NUMERIC,
     'taxa_entrega', (v_frete_val->>'taxa_entrega_cobrada')::NUMERIC,
     'sinal_minimo', v_sinal_min,
+    'sinal_padrao', (v_sinal_pol->>'sinal_padrao')::NUMERIC,
     'status_comercial', v_status_com_inicial,
+    'status_financeiro', CASE WHEN v_sinal_pago >= v_total THEN 'pago' WHEN v_sinal_pago > 0 THEN 'parcialmente_pago' ELSE 'nao_pago' END,
+    'pontos_carga', v_pts_pedido_total,
     'confirmacao_expires_at', v_confirmacao_expires_at,
-    'reserva', v_reserva
+    'reserva', v_reserva,
+    'reserva_estoque', v_reserva
   );
+EXCEPTION
+  WHEN SQLSTATE 'P0001' THEN
+    GET STACKED DIAGNOSTICS v_exc_hint = PG_EXCEPTION_HINT, v_exc_detail = PG_EXCEPTION_DETAIL;
+    RETURN jsonb_build_object(
+      'success', false,
+      'code', COALESCE(NULLIF(v_exc_hint, ''), 'DOMAIN_ERROR'),
+      'error', SQLERRM,
+      'detalhes', CASE WHEN v_exc_detail ~ '^\{' THEN v_exc_detail::JSONB ELSE NULL END
+    );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
@@ -887,8 +937,8 @@ BEGIN
       v_permitido := true;
 
     ELSIF v_status_antigo = 'aguardando_confirmacao' AND p_novo_status = 'cancelado' THEN
-      -- S3b: Cancelamento com valor pago exige destino do valor
-      IF v_ped.valor_pago > 0.00 THEN
+      -- S3b: Cancelamento com valor pago exige destino do valor (operadores)
+      IF v_ped.valor_pago > 0.00 AND NOT v_is_admin THEN
         IF COALESCE(p_metadata->>'destino_valor', '') <> 'RETENCAO_CANCELAMENTO' AND v_ped.status_financeiro <> 'estornado' THEN
           RETURN json_build_object(
             'success', false,
@@ -909,8 +959,8 @@ BEGIN
         );
       END IF;
 
-      -- S3b: Cancelamento com valor pago exige destino do valor
-      IF v_ped.valor_pago > 0.00 THEN
+      -- S3b: Cancelamento com valor pago exige destino do valor (operadores)
+      IF v_ped.valor_pago > 0.00 AND NOT v_is_admin THEN
         IF COALESCE(p_metadata->>'destino_valor', '') <> 'RETENCAO_CANCELAMENTO' AND v_ped.status_financeiro <> 'estornado' THEN
           RETURN json_build_object(
             'success', false,
@@ -977,3 +1027,33 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
 REVOKE ALL ON FUNCTION public.alterar_status_pedido(BIGINT, TEXT, TEXT, TEXT, JSONB) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.alterar_status_pedido(BIGINT, TEXT, TEXT, TEXT, JSONB) TO authenticated, service_role;
+
+-- --------------------------------------------------------------------------
+-- 8. TRIGGER DE PROTEÇÃO DE ESTOQUE EM PRODUTOS (ANTI-INFLAÇÃO NO CATÁLOGO)
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.fn_proteger_estoque_produtos()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- 1. Mutação de estoque_reservado é estritamente restrita a helpers internos e service_role
+  IF NEW.estoque_reservado IS DISTINCT FROM OLD.estoque_reservado THEN
+    IF current_setting('lunoca.internal_stock_mutation', true) IS DISTINCT FROM 'on' AND auth.role() IS DISTINCT FROM 'service_role' THEN
+      RAISE EXCEPTION 'PERMISSION_DENIED: Modificação direta de estoque_reservado não é permitida. Use os fluxos de reserva/liberação.' USING ERRCODE = '42501';
+    END IF;
+  END IF;
+
+  -- 2. Mutação de estoque_fisico requer privilégio de Administrador, service_role ou helper interno
+  IF NEW.estoque_fisico IS DISTINCT FROM OLD.estoque_fisico THEN
+    IF NOT (public.is_admin() OR auth.role() = 'service_role' OR current_setting('lunoca.internal_stock_mutation', true) = 'on') THEN
+      RAISE EXCEPTION 'PERMISSION_DENIED: Apenas Administradores podem alterar o saldo de estoque físico do produto.' USING ERRCODE = '42501';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+
+DROP TRIGGER IF EXISTS trg_proteger_estoque_produtos ON public.produtos;
+CREATE TRIGGER trg_proteger_estoque_produtos
+  BEFORE UPDATE ON public.produtos
+  FOR EACH ROW
+  EXECUTE FUNCTION public.fn_proteger_estoque_produtos();
