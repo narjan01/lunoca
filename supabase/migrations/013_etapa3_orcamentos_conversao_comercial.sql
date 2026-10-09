@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS public.orcamentos (
   tipo_entrega TEXT NOT NULL DEFAULT 'retirada' CHECK (tipo_entrega IN ('retirada', 'entrega')),
   endereco_entrega TEXT,
   validade_ate TIMESTAMPTZ NOT NULL,
-  status TEXT NOT NULL DEFAULT 'rascunho' CHECK (status IN ('rascunho', 'enviado', 'aprovado', 'recusado', 'expirado', 'convertido')),
+  status TEXT NOT NULL DEFAULT 'rascunho' CHECK (status IN ('rascunho', 'enviado', 'aprovado', 'recusado', 'cancelado', 'expirado', 'convertido')),
   aprovado_em TIMESTAMPTZ,
   janela_conversao_limite TIMESTAMPTZ,
   subtotal NUMERIC(10,2) NOT NULL DEFAULT 0.00,
@@ -667,7 +667,7 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'code', 'QUOTE_ALREADY_CONVERTED', 'error', 'Orçamento convertido não pode ter o status alterado.');
   END IF;
 
-  IF v_novo NOT IN ('enviado', 'recusado', 'rascunho') THEN
+  IF v_novo NOT IN ('enviado', 'recusado', 'cancelado', 'rascunho') THEN
     RETURN jsonb_build_object('success', false, 'code', 'INVALID_STATUS', 'error', 'Status de transição inválido.');
   END IF;
 
@@ -678,6 +678,8 @@ BEGIN
     v_evento := 'ENVIADO';
   ELSIF v_novo = 'recusado' THEN
     v_evento := 'RECUSADO';
+  ELSIF v_novo = 'cancelado' THEN
+    v_evento := 'CANCELADO';
   ELSE
     v_evento := 'REVISADO';
   END IF;

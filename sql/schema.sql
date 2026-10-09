@@ -5728,9 +5728,9 @@ BEGIN
     );
   END IF;
 
-  -- Administrador aplicando desconto exige justificativa
-  IF v_is_admin AND v_desc > 0.00 AND (v_motivo IS NULL OR length(v_motivo) < 3) THEN
-    RETURN jsonb_build_object('success', false, 'code', 'DISCOUNT_REASON_REQUIRED', 'error', 'Por favor, informe a justificativa do desconto concedido.');
+  -- Justificativa auditável obrigatória para QUALQUER desconto > 0 (operador ou admin) (D3)
+  IF v_desc > 0.00 AND (v_motivo IS NULL OR length(v_motivo) < 3) THEN
+    RETURN jsonb_build_object('success', false, 'code', 'DISCOUNT_REASON_REQUIRED', 'error', 'Por favor, informe a justificativa do desconto concedido (mínimo 3 caracteres).');
   END IF;
 
   RETURN jsonb_build_object(
@@ -5861,6 +5861,15 @@ BEGIN
     v_desc_frete := GREATEST(0.00, COALESCE(p_desconto_frete, 0.00));
     IF v_desc_frete > v_taxa_base THEN
       v_desc_frete := v_taxa_base;
+    END IF;
+
+    -- Governança de frete: desconto requer motivo; frete 100% grátis requer perfil Admin
+    IF v_desc_frete > 0.00 AND (p_motivo_frete IS NULL OR length(trim(p_motivo_frete)) < 3) THEN
+      RETURN jsonb_build_object('success', false, 'code', 'SHIPPING_DISCOUNT_REASON_REQUIRED', 'error', 'Informe a justificativa do desconto de frete (mínimo 3 caracteres).');
+    END IF;
+
+    IF v_desc_frete >= v_taxa_base AND v_taxa_base > 0.00 AND NOT public.is_admin() THEN
+      RETURN jsonb_build_object('success', false, 'code', 'OPERATOR_FREE_SHIPPING_NOT_ALLOWED', 'error', 'Operadores não podem conceder frete 100% grátis. Ação restrita a Administradores.');
     END IF;
 
     v_taxa_cobrada := GREATEST(0.00, v_taxa_base - v_desc_frete);
@@ -6424,6 +6433,200 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 REVOKE ALL ON FUNCTION public.criar_encomenda_admin FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.criar_encomenda_admin TO authenticated, service_role;
 
+-- --------------------------------------------------------------------------
+-- 7. HARDENING DE ALTERAR_STATUS_PEDIDO (FECHAMENTO DE BRECHAS S3 / S3b)
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.alterar_status_pedido(
+  p_pedido_id BIGINT,
+  p_dimensao TEXT,
+  p_novo_status TEXT,
+  p_motivo TEXT DEFAULT NULL,
+  p_metadata JSONB DEFAULT '{}'::JSONB
+)
+RETURNS JSON AS $$
+DECLARE
+  v_ped RECORD;
+  v_status_antigo TEXT;
+  v_permitido BOOLEAN := false;
+  v_user_nome TEXT;
+  v_is_admin BOOLEAN := public.is_admin();
+  v_is_equipe BOOLEAN := public.is_admin_or_operator();
+  v_motivo TEXT := NULLIF(TRIM(COALESCE(p_motivo, '')), '');
+BEGIN
+  IF NOT v_is_equipe THEN
+    RETURN json_build_object('success', false, 'error', 'Permissão negada. Apenas administradores ou operadores podem alterar status.');
+  END IF;
+
+  IF p_pedido_id IS NULL THEN
+    RETURN json_build_object('success', false, 'error', 'ID do pedido obrigatório.');
+  END IF;
+
+  SELECT * INTO v_ped FROM public.pedidos WHERE id = p_pedido_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN json_build_object('success', false, 'error', 'Pedido não encontrado.');
+  END IF;
+
+  SELECT nome INTO v_user_nome FROM public.profiles WHERE id = auth.uid();
+  IF v_user_nome IS NULL THEN
+    v_user_nome := CASE WHEN auth.role() = 'service_role' THEN 'Sistema / service_role' ELSE 'Equipe' END;
+  END IF;
+
+  IF p_dimensao = 'operacional' THEN
+    v_status_antigo := v_ped.status_operacional;
+
+    IF p_novo_status NOT IN ('aguardando_producao', 'em_producao', 'pronto', 'saiu_para_entrega', 'entregue', 'retirado', 'cancelado') THEN
+      RETURN json_build_object('success', false, 'error', 'Status operacional inválido: ' || p_novo_status);
+    END IF;
+
+    -- Matriz de transições operacionais
+    IF v_status_antigo = p_novo_status THEN
+      v_permitido := true;
+    ELSIF v_status_antigo = 'aguardando_producao' AND p_novo_status IN ('em_producao', 'cancelado') THEN
+      v_permitido := true;
+    ELSIF v_status_antigo = 'em_producao' AND p_novo_status IN ('pronto', 'cancelado') THEN
+      v_permitido := true;
+    ELSIF v_status_antigo = 'pronto' AND p_novo_status IN ('saiu_para_entrega', 'entregue', 'retirado', 'cancelado') THEN
+      v_permitido := true;
+    ELSIF v_status_antigo = 'saiu_para_entrega' AND p_novo_status IN ('entregue', 'pronto', 'cancelado') THEN
+      v_permitido := true;
+    ELSIF v_is_admin THEN
+      v_permitido := true;
+    END IF;
+
+    IF NOT v_permitido THEN
+      RETURN json_build_object(
+        'success', false,
+        'error', 'Transição operacional não permitida de "' || v_status_antigo || '" para "' || p_novo_status || '".'
+      );
+    END IF;
+
+    UPDATE public.pedidos
+    SET 
+      status_operacional = p_novo_status,
+      updated_at = NOW()
+    WHERE id = p_pedido_id;
+
+  ELSIF p_dimensao = 'comercial' THEN
+    v_status_antigo := v_ped.status_comercial;
+
+    IF p_novo_status NOT IN ('aguardando_confirmacao', 'confirmado', 'cancelado', 'concluido') THEN
+      RETURN json_build_object('success', false, 'error', 'Status comercial inválido: ' || p_novo_status);
+    END IF;
+
+    IF v_status_antigo = p_novo_status THEN
+      v_permitido := true;
+    ELSIF v_status_antigo = 'aguardando_confirmacao' AND p_novo_status = 'confirmado' THEN
+      -- S3: Bloqueio de confirmação comercial sem sinal por operador
+      IF v_ped.valor_pago < v_ped.sinal_minimo THEN
+        IF NOT v_is_admin THEN
+          RETURN json_build_object(
+            'success', false,
+            'code', 'SIGNAL_REQUIRED',
+            'error', 'Confirmação comercial sem sinal pago integral (R$ ' || v_ped.sinal_minimo || ') requer privilégio de Administrador e justificativa.'
+          );
+        END IF;
+        IF v_motivo IS NULL OR length(v_motivo) < 5 THEN
+          RETURN json_build_object(
+            'success', false,
+            'code', 'REASON_REQUIRED',
+            'error', 'Administrador confirmando sem sinal mínimo deve informar justificativa auditável (mínimo 5 caracteres).'
+          );
+        END IF;
+      END IF;
+      v_permitido := true;
+
+    ELSIF v_status_antigo = 'aguardando_confirmacao' AND p_novo_status = 'cancelado' THEN
+      -- S3b: Cancelamento com valor pago exige destino do valor
+      IF v_ped.valor_pago > 0.00 THEN
+        IF COALESCE(p_metadata->>'destino_valor', '') <> 'RETENCAO_CANCELAMENTO' AND v_ped.status_financeiro <> 'estornado' THEN
+          RETURN json_build_object(
+            'success', false,
+            'code', 'CANCELLATION_REQUIRES_VALUE_DESTINATION',
+            'error', 'Pedido com pagamentos ativos requer estorno prévio ou definição explícita de retenção (destino_valor = RETENCAO_CANCELAMENTO).'
+          );
+        END IF;
+      END IF;
+      v_permitido := true;
+
+    ELSIF v_status_antigo = 'confirmado' AND p_novo_status = 'cancelado' THEN
+      -- Guarda de produção: se produção já iniciou, cancelar exige privilégio de Administrador
+      IF v_ped.status_operacional NOT IN ('aguardando_producao', 'cancelado') AND NOT v_is_admin THEN
+        RETURN json_build_object(
+          'success', false,
+          'code', 'PRODUCTION_ACTIVE_CANCEL_DENIED',
+          'error', 'A produção deste pedido já foi iniciada. Cancelamentos nesta fase requerem autorização de Administrador.'
+        );
+      END IF;
+
+      -- S3b: Cancelamento com valor pago exige destino do valor
+      IF v_ped.valor_pago > 0.00 THEN
+        IF COALESCE(p_metadata->>'destino_valor', '') <> 'RETENCAO_CANCELAMENTO' AND v_ped.status_financeiro <> 'estornado' THEN
+          RETURN json_build_object(
+            'success', false,
+            'code', 'CANCELLATION_REQUIRES_VALUE_DESTINATION',
+            'error', 'Pedido com pagamentos ativos requer estorno prévio ou definição explícita de retenção (destino_valor = RETENCAO_CANCELAMENTO).'
+          );
+        END IF;
+      END IF;
+      v_permitido := true;
+
+    ELSIF v_status_antigo = 'confirmado' AND p_novo_status = 'concluido' THEN
+      v_permitido := true;
+    ELSIF v_is_admin THEN
+      v_permitido := true;
+    END IF;
+
+    IF NOT v_permitido THEN
+      RETURN json_build_object(
+        'success', false,
+        'error', 'Transição comercial não permitida de "' || v_status_antigo || '" para "' || p_novo_status || '".'
+      );
+    END IF;
+
+    UPDATE public.pedidos
+    SET 
+      status_comercial = p_novo_status,
+      updated_at = NOW()
+    WHERE id = p_pedido_id;
+
+  ELSE
+    RETURN json_build_object('success', false, 'error', 'Dimensão de status inválida. Use "operacional" ou "comercial". Para financeiro, registre pagamentos.');
+  END IF;
+
+  -- Gravação auditável do histórico
+  INSERT INTO public.pedido_status_historico (
+    pedido_id,
+    dimensao,
+    status_anterior,
+    status_novo,
+    usuario_id,
+    usuario_nome,
+    origem,
+    metadata
+  ) VALUES (
+    p_pedido_id,
+    p_dimensao,
+    v_status_antigo,
+    p_novo_status,
+    auth.uid(),
+    v_user_nome,
+    'admin',
+    jsonb_build_object('motivo', v_motivo) || COALESCE(p_metadata, '{}'::JSONB)
+  );
+
+  RETURN json_build_object(
+    'success', true,
+    'pedido_id', p_pedido_id,
+    'dimensao', p_dimensao,
+    'status_anterior', v_status_antigo,
+    'status_novo', p_novo_status
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+
+REVOKE ALL ON FUNCTION public.alterar_status_pedido(BIGINT, TEXT, TEXT, TEXT, JSONB) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.alterar_status_pedido(BIGINT, TEXT, TEXT, TEXT, JSONB) TO authenticated, service_role;
+
 
 -- ==========================================================================
 -- >>> MIGRATION 013_etapa3_orcamentos_conversao_comercial.sql
@@ -6465,7 +6668,7 @@ CREATE TABLE IF NOT EXISTS public.orcamentos (
   tipo_entrega TEXT NOT NULL DEFAULT 'retirada' CHECK (tipo_entrega IN ('retirada', 'entrega')),
   endereco_entrega TEXT,
   validade_ate TIMESTAMPTZ NOT NULL,
-  status TEXT NOT NULL DEFAULT 'rascunho' CHECK (status IN ('rascunho', 'enviado', 'aprovado', 'recusado', 'expirado', 'convertido')),
+  status TEXT NOT NULL DEFAULT 'rascunho' CHECK (status IN ('rascunho', 'enviado', 'aprovado', 'recusado', 'cancelado', 'expirado', 'convertido')),
   aprovado_em TIMESTAMPTZ,
   janela_conversao_limite TIMESTAMPTZ,
   subtotal NUMERIC(10,2) NOT NULL DEFAULT 0.00,
@@ -7098,7 +7301,7 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'code', 'QUOTE_ALREADY_CONVERTED', 'error', 'Orçamento convertido não pode ter o status alterado.');
   END IF;
 
-  IF v_novo NOT IN ('enviado', 'recusado', 'rascunho') THEN
+  IF v_novo NOT IN ('enviado', 'recusado', 'cancelado', 'rascunho') THEN
     RETURN jsonb_build_object('success', false, 'code', 'INVALID_STATUS', 'error', 'Status de transição inválido.');
   END IF;
 
@@ -7109,6 +7312,8 @@ BEGIN
     v_evento := 'ENVIADO';
   ELSIF v_novo = 'recusado' THEN
     v_evento := 'RECUSADO';
+  ELSIF v_novo = 'cancelado' THEN
+    v_evento := 'CANCELADO';
   ELSE
     v_evento := 'REVISADO';
   END IF;
