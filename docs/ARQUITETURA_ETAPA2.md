@@ -122,7 +122,11 @@ Endpoint (fail-closed):
 
 `sql/install.sql` (= `sql/schema.sql`) é **executado inteiro, do zero, em um PostgreSQL vazio** no início de `npm run test:integration` e **reexecutado** (junto com a migration 011) no teste `R2-1` — zero erros é condição de aprovação. Todas as `CREATE POLICY` do baseline são precedidas de `DROP POLICY IF EXISTS` para que o artefato seja reaplicável. Para um banco já existente, aplique só as migrations novas.
 
-## 9. Como estender
+## 9. CI/CD Cloudflare — nota de manutenção
+
+O Worker `lunoca` (aplicação principal) é configurado **no dashboard** (Pages Functions + assets); **não** existe nem deve existir `wrangler.toml` na raiz do repositório. Builds de branches não-produção falham com `Missing entry-point` no comando legado `npx wrangler versions upload` — isso é configuração de preview (Branch control / Worker Previews), não código. O Worker do cron vive em `workers/cron-expire-orders/` com sua própria config e deploy explícito; nunca aponte o build `lunoca` para esse diretório.
+
+## 10. Como estender
 
 1. Crie `supabase/migrations/NNN_*.sql` (idempotente).
 2. `npm run build:sql` (regenera `install.sql`/`schema.sql`).
