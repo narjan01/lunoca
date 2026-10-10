@@ -10,7 +10,7 @@
     "test": "npm run check:sql && npm run test:structural && npm run test:integration",
     "test:structural": "node test-hardening.js",
     "test:integration": "node --test tests/integration/*.test.mjs",
-    "lint:syntax": "node -c js/admin-operacao.js && node -c js/admin-orcamentos.js && node -c js/orcamento-publico.js && node -c js/admin.js && node -c js/admin-loader.js && node -c js/pedidos.js && node -c js/financeiro.js && node -c js/produtos.js && node -c js/estoque.js && node -c test-hardening.js && node --check functions/api/cron/expire-orders.js",
+    "lint:syntax": "node -c js/admin-operacao.js && node -c js/admin-orcamentos.js && node -c js/orcamento-publico.js && node -c js/admin.js && node -c js/admin-loader.js && node -c js/pedidos.js && node -c js/financeiro.js && node -c js/produtos.js && node -c js/estoque.js && node -c js/whatsapp-helper.js && node -c test-hardening.js && node --check functions/api/cron/expire-orders.js",
     "db:verify": "node scripts/supabase-verify.mjs",
     "db:upgrade": "node scripts/supabase-upgrade.mjs",
     "db:upgrade:dry": "node scripts/supabase-upgrade.mjs --dry-run",
