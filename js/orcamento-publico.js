@@ -160,7 +160,7 @@ async function aprovarPropostaPublica() {
   const orc = orcamentoPublicoCache;
   const totalFmt = orc ? formatarMoedaReal(orc.total) : '';
 
-  const confirmado = confirm(`Deseja confirmar a aprovação da Proposta Comercial no valor de ${totalFmt}?\n\nApós a aprovação, nossa equipe entrará em contato para agendar o pagamento do sinal e reservar sua data.`);
+  const confirmado = confirm(`Deseja confirmar a aprovação da Proposta Comercial no valor de ${totalFmt}?\n\nApós a aprovação, nossa equipe entrará em contato para os detalhes de pagamento do sinal e conversão da encomenda.`);
   if (!confirmado) return;
 
   const btnAprovar = document.getElementById('btn-aprovar-orcamento');
@@ -170,10 +170,18 @@ async function aprovarPropostaPublica() {
   }
 
   try {
-    const { data, error } = await supabaseClient.rpc('aprovar_orcamento_publico', { p_token: tokenPublicoAtual });
+    const { data, error } = await supabaseClient.rpc('aprovar_orcamento_publico', { 
+      p_token: tokenPublicoAtual,
+      p_versao_esperada: Number(orc?.versao || 1)
+    });
 
     if (error) throw error;
     if (!data || data.success === false) {
+      if (data?.code === 'QUOTE_VERSION_CHANGED') {
+        alert('⚠️ A proposta foi atualizada para uma nova versão. Confira a versão mais recente antes de aprovar.');
+        await inicializarPaginaOrcamentoPublico();
+        return;
+      }
       if (data?.code === 'QUOTE_EXPIRED') {
         throw new Error('Esta proposta expirou e não pode mais ser aprovada.');
       }
