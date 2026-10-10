@@ -1,0 +1,70 @@
+name: Supabase CI & Automated Upgrades
+
+on:
+  push:
+    branches: [main, feat/*]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify-and-test:
+    name: Verificações e Testes Automatizados
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Instalar Dependências
+        run: npm ci || npm install
+
+      - name: Lint de Sintaxe JavaScript
+        run: npm run lint:syntax
+
+      - name: Verificar Paridade de Compilação SQL
+        run: npm run check:sql
+
+      - name: Testes Estruturais e de Hardening
+        run: npm run test:structural
+
+      - name: Testes de Integração PostgreSQL Real (Opção A + Etapa 3)
+        run: npm run test:integration
+
+      - name: Verificação de Conectividade e Saúde do Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co' }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: npm run db:verify || true
+
+  auto-upgrade:
+    name: Upgrade Automático no Banco Supabase
+    needs: verify-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar Dependências
+        run: npm ci || npm install
+
+      - name: Executar Upgrades Pendentes no Supabase
+        if: env.SUPABASE_DB_URL != ''
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co' }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: npm run db:upgrade

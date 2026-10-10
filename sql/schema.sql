@@ -5735,8 +5735,8 @@ BEGIN
   END IF;
 
   -- Justificativa auditável obrigatória para QUALQUER desconto > 0 (operador ou admin) (D3)
-  IF v_desc > 0.00 AND (v_motivo IS NULL OR length(v_motivo) < 3) THEN
-    RETURN jsonb_build_object('success', false, 'code', 'DISCOUNT_REASON_REQUIRED', 'error', 'Por favor, informe a justificativa do desconto concedido (mínimo 3 caracteres).');
+  IF v_desc > 0.00 AND (v_motivo IS NULL OR length(v_motivo) < 5) THEN
+    RETURN jsonb_build_object('success', false, 'code', 'DISCOUNT_REASON_REQUIRED', 'error', 'Por favor, informe a justificativa do desconto concedido (mínimo 5 caracteres).');
   END IF;
 
   RETURN jsonb_build_object(
@@ -5782,8 +5782,8 @@ BEGIN
     IF NOT v_is_admin THEN
       RETURN jsonb_build_object('success', false, 'code', 'PERMISSION_DENIED', 'error', 'Apenas Administradores podem dispensar a exigência de sinal mínimo.');
     END IF;
-    IF v_motivo IS NULL OR length(v_motivo) < 3 THEN
-      RETURN jsonb_build_object('success', false, 'code', 'REASON_REQUIRED', 'error', 'Informe o motivo para autorizar a confirmação da encomenda sem sinal.');
+    IF v_motivo IS NULL OR length(v_motivo) < 5 THEN
+      RETURN jsonb_build_object('success', false, 'code', 'REASON_REQUIRED', 'error', 'Informe o motivo para autorizar a confirmação da encomenda sem sinal (mínimo 5 caracteres).');
     END IF;
     RETURN jsonb_build_object(
       'success', true,
@@ -5797,12 +5797,12 @@ BEGIN
   -- Redução parcial de sinal
   IF v_is_admin THEN
     v_sinal_final := CASE WHEN COALESCE(p_sinal_solicitado, 0.00) <= 0.00 THEN v_sinal_padrao ELSE p_sinal_solicitado END;
-    IF v_sinal_final < v_sinal_padrao AND (v_motivo IS NULL OR length(v_motivo) < 3) THEN
+    IF v_sinal_final < v_sinal_padrao AND (v_motivo IS NULL OR length(v_motivo) < 5) THEN
       RETURN jsonb_build_object(
         'success', false,
         'code', 'SIGNAL_REDUCTION_REQUIRES_REASON',
         'sinal_padrao', v_sinal_padrao,
-        'error', 'Reduzir o sinal mínimo abaixo do padrão (R$ ' || v_sinal_padrao || ', ' || v_cfg.sinal_percentual_padrao || '% do total) exige justificativa.'
+        'error', 'Reduzir o sinal mínimo abaixo do padrão (R$ ' || v_sinal_padrao || ', ' || v_cfg.sinal_percentual_padrao || '% do total) exige justificativa (mínimo 5 caracteres).'
       );
     END IF;
   ELSE
@@ -5870,8 +5870,8 @@ BEGIN
     END IF;
 
     -- Governança de frete: desconto requer motivo; frete 100% grátis requer perfil Admin
-    IF v_desc_frete > 0.00 AND (p_motivo_frete IS NULL OR length(trim(p_motivo_frete)) < 3) THEN
-      RETURN jsonb_build_object('success', false, 'code', 'SHIPPING_DISCOUNT_REASON_REQUIRED', 'error', 'Informe a justificativa do desconto de frete (mínimo 3 caracteres).');
+    IF v_desc_frete > 0.00 AND (p_motivo_frete IS NULL OR length(trim(p_motivo_frete)) < 5) THEN
+      RETURN jsonb_build_object('success', false, 'code', 'SHIPPING_DISCOUNT_REASON_REQUIRED', 'error', 'Informe a justificativa do desconto de frete (mínimo 5 caracteres).');
     END IF;
 
     IF v_desc_frete >= v_taxa_base AND v_taxa_base > 0.00 AND NOT public.is_admin() THEN

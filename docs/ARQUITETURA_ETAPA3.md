@@ -130,11 +130,24 @@ O sistema define duas folhas padronizadas no frontend:
 
 ---
 
-## 6. Verificação e Testes
+---
 
-- **Testes Estruturais (`test-hardening.js`)**:
-  - Fase 13 audita tabelas, constraints de unicidade bidirecional, políticas de RLS fail-closed, integridade das RPCs, sanitização pública e templates de frontend.
-- **Testes de Integração (`tests/integration/etapa3.integration.test.mjs`)**:
-  - 20 cenários cobrindo ciclo de vida, idempotência, segurança pública, conversão transacional, concorrência e integridade referencial.
-- **Compilador SQL (`scripts/build-sql.mjs`)**:
-  - Paridade total entre as migrations versionadas (`supabase/migrations/`) e os scripts de distribuição (`sql/install.sql` e `sql/schema.sql`).
+## 7. Reconciliação Arquitetural e Governança
+
+Esta seção documenta formalmente as decisões arquiteturais adotadas no fechamento da Etapa 3 e o alinhamento com a auditoria de segurança:
+
+### 7.1 Defesa em Profundidade no Rate Limit Público (Edge + Database)
+- **Camada Edge/WAF (Cloudflare Pages)**: Protege a infraestrutura contra ataques volumétricos e scraping automatizado no endpoint público `/orcamento.html`.
+- **Camada Stateful no Banco (`public.orcamento_rate_limits`)**: A RPC `obter_orcamento_publico()` implementa limitação em janela deslizante de 1 minuto diretamente no PostgreSQL (teto de 5 leituras por minuto por token). Tentativas que excedem a janela resultam em bloqueio temporal (`bloqueado_ate = NOW() + INTERVAL '5 minutes'`). Isso assegura resiliência de fail-closed mesmo se a requisição alcançar o banco diretamente ou via ambiente de preview.
+
+### 7.2 Governança de Descontos, Frete e Sinal (D3 / S3 / S3b)
+- **Motivo Obrigatório ($\ge 5$ caracteres)**: As funções `politica_desconto()`, `politica_sinal()` e `validar_modalidade_frete()` exigem justificativa com comprimento mínimo de 5 caracteres para concessão de qualquer desconto financeiro, abatimento de taxa de entrega ou dispensa/redução de sinal padrão.
+- **Hardening In-Place em `alterar_status_pedido()`**:
+  - Em vez de depreciar imediatamente o ramo comercial da RPC genérica em favor de portas isoladas (`cancelar_pedido_equipe()` e `gerenciar_confirmacao_pedido_admin()`), optou-se por **endurecer o ramo comercial diretamente no endpoint existente** para manter compatibilidade com as telas de pedidos e encomendas em produção.
+  - **S3**: Operadores são estritamente impedidos de transitar para `confirmado` se `valor_pago < sinal_minimo`. Apenas administradores podem fazê-lo, exigindo motivo auditável ($\ge 5$ caracteres).
+  - **S3b**: Operadores são estritamente impedidos de transitar para `cancelado` se `valor_pago > 0` sem estorno financeiro prévio ou definição explícita de `destino_valor = RETENCAO_CANCELAMENTO`.
+
+### 7.3 Estoque de Catálogo e Isolamento de Políticas (Seção 3.4)
+- **Proteção Imediata via Trigger (`fn_proteger_estoque_produtos`)**: A Migration 012 implementou barreira no PostgreSQL que impede a mutação de `estoque_reservado` fora de helpers autorizados e bloqueia a alteração de `estoque_fisico` por operadores não-administradores.
+- **Roadmap de Catálogo**: A refatoração completa de `js/produtos.js` (remoção do envio de `estoque_qtd`/`controlar_estoque` na edição de dados cadastrais) e a criação de RPC atômica de movimentação (`ajustar_estoque_admin`) ficam desacopladas para a rodada de modernização de Catálogo e Estoque, evitando quebras na edição operacional atual.
+
