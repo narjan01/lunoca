@@ -4,7 +4,7 @@ node_modules/
 !.env.example
 .DS_Store
 Thumbs.db
-.pg-integration/
+.pg-*
 .system_generated/
 .user_uploaded/
 *.metadata.json

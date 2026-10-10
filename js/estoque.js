@@ -212,24 +212,20 @@ async function ajustarEstoqueRapido(produtoId, delta) {
   atualizarCardsResumoEstoque(produtos);
 
   try {
-    const { error: errUpdate } = await supabaseClient
-      .from('produtos')
-      .update({ estoque_qtd: novaQtd })
-      .eq('id', produtoId);
-
-    if (errUpdate) throw errUpdate;
-
-    // Registra movimentação no histórico
-    await supabaseClient.from('estoque_movimentacoes').insert({
-      produto_id: produtoId,
-      produto_nome: p.nome,
-      tipo: tipo,
-      quantidade: Math.abs(delta),
-      saldo_resultante: novaQtd,
-      motivo: motivo,
-      usuario_nome: (typeof usuarioAtual !== 'undefined' && usuarioAtual?.nome) ? usuarioAtual.nome : 'Administrador'
+    const { data: resRpc, error: errRpc } = await supabaseClient.rpc('ajustar_estoque_operacao', {
+      p_produto_id: produtoId,
+      p_tipo: tipo,
+      p_quantidade: Math.abs(delta),
+      p_novo_saldo_fisico: null,
+      p_motivo: motivo
     });
 
+    if (errRpc) throw errRpc;
+    if (resRpc && !resRpc.success) throw new Error(resRpc.error || 'Falha ao ajustar estoque');
+
+    p.estoque_qtd = resRpc.estoque_qtd_novo;
+    if (displayEl) displayEl.innerText = resRpc.estoque_qtd_novo;
+    atualizarCardsResumoEstoque(produtos);
     carregarMovimentacoesEstoque();
   } catch (err) {
     console.warn('Erro ao atualizar estoque no Supabase:', err.message);
@@ -296,31 +292,22 @@ async function salvarAjusteEstoqueModal() {
   const delta = novaQtd - qtdAntiga;
 
   try {
-    const { error: errUpdate } = await supabaseClient
-      .from('produtos')
-      .update({
-        estoque_qtd: novaQtd,
-        estoque_minimo: novoMinimo,
-        controlar_estoque: controlar
-      })
-      .eq('id', p.id);
+    const rpcTipo = tipoMov === 'ajuste' ? 'contagem' : tipoMov;
+    const rpcQtd = Math.abs(delta);
+    const rpcFisico = (rpcTipo === 'contagem') ? novaQtd : null;
 
-    if (errUpdate) throw errUpdate;
-
-    // Registra movimentação
-    await supabaseClient.from('estoque_movimentacoes').insert({
-      produto_id: p.id,
-      produto_nome: p.nome,
-      tipo: tipoMov,
-      quantidade: Math.abs(delta),
-      saldo_resultante: novaQtd,
-      motivo: motivo,
-      usuario_nome: (typeof usuarioAtual !== 'undefined' && usuarioAtual?.nome) ? usuarioAtual.nome : 'Administrador'
+    const { data: resRpc, error: errRpc } = await supabaseClient.rpc('ajustar_estoque_operacao', {
+      p_produto_id: p.id,
+      p_tipo: rpcTipo,
+      p_quantidade: rpcQtd,
+      p_novo_saldo_fisico: rpcFisico,
+      p_motivo: motivo
     });
 
-    p.estoque_qtd = novaQtd;
-    p.estoque_minimo = novoMinimo;
-    p.controlar_estoque = controlar;
+    if (errRpc) throw errRpc;
+    if (resRpc && !resRpc.success) throw new Error(resRpc.error || 'Falha ao ajustar estoque');
+
+    p.estoque_qtd = resRpc.estoque_qtd_novo;
 
     fecharModalAjusteEstoque();
     atualizarCardsResumoEstoque(produtos);

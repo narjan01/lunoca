@@ -1777,6 +1777,7 @@ console.log('\n🧩 FASE 12: Paridade sql/install.sql e sql/schema.sql com basel
   assert.ok(installGen.includes('>>> MIGRATION 011_etapa2_fechamento_concorrencia.sql'), '[FALHA] install.sql não inclui a migration 011');
   assert.ok(installGen.includes('>>> MIGRATION 012_hardening_politicas_e_nucleo.sql'), '[FALHA] install.sql não inclui a migration 012');
   assert.ok(installGen.includes('>>> MIGRATION 013_etapa3_orcamentos_conversao_comercial.sql'), '[FALHA] install.sql não inclui a migration 013');
+  assert.ok(installGen.includes('>>> MIGRATION 014_governanca_catalogo_estoque_e_portas_dominio.sql'), '[FALHA] install.sql não inclui a migration 014');
   assert.ok(installGen.includes('baixar_estoque_pedido_batch'), '[FALHA] install.sql perdeu baixar_estoque_pedido_batch');
 }
 console.log('    ✅ Arquivos gerados em paridade com a fonte canônica (migrations).');
@@ -1989,7 +1990,87 @@ for (const file of sqlFilesNucleo) {
 }
 console.log('    ✅ Sinal no núcleo registra lançamento no DRE e RLS de orçamentos 100% blindado.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–13 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// --------------------------------------------------------------------------
+// FASE 14: GOVERNANÇA DE CATÁLOGO, ESTOQUE ATÔMICO & PORTAS DE DOMÍNIO (MIGRATION 014)
+// --------------------------------------------------------------------------
+console.log('\n🔒 FASE 14: Governança de Catálogo, Estoque Atômico & Portas de Domínio (014)...');
+
+const sqlFiles014 = [
+  'supabase/migrations/014_governanca_catalogo_estoque_e_portas_dominio.sql',
+  'sql/schema.sql',
+  'sql/install.sql'
+];
+
+for (const file of sqlFiles014) {
+  const content = fs.readFileSync(file, 'utf-8');
+
+  // 14.1 Estoque Atômico via RPC ajustar_estoque_operacao
+  console.log(`  🔎 14.1 ${file}: ajustar_estoque_operacao com lock, auditoria e invariante...`);
+  assert.ok(
+    content.includes('CREATE OR REPLACE FUNCTION public.ajustar_estoque_operacao') &&
+    content.includes('SELECT * INTO v_prod FROM public.produtos WHERE id = p_produto_id FOR UPDATE') &&
+    content.includes('RESERVED_STOCK_CONFLICT') &&
+    content.includes('INSERT INTO public.estoque_movimentacoes') &&
+    content.includes('REVOKE ALL ON FUNCTION public.ajustar_estoque_operacao FROM PUBLIC, anon;') &&
+    content.includes('GRANT EXECUTE ON FUNCTION public.ajustar_estoque_operacao TO authenticated, service_role;'),
+    `[FALHA] ${file}: ajustar_estoque_operacao não implementada com os requisitos de segurança e lock!`
+  );
+
+  // 14.2 RLS Fechado de Catálogo
+  console.log(`  🔎 14.2 ${file}: RLS de produtos e produto_opcoes restrito a Administradores...`);
+  assert.ok(
+    content.includes('CREATE POLICY "Apenas admins atualizam produtos"') &&
+    content.includes('ON public.produtos FOR UPDATE') &&
+    content.includes('USING (public.is_admin())') &&
+    content.includes('CREATE POLICY "Apenas admins gerenciam opções de produtos"') &&
+    content.includes('ON public.produto_opcoes FOR ALL'),
+    `[FALHA] ${file}: RLS de produtos/opções não fecha UPDATE para operadores!`
+  );
+
+  // 14.3 Portas Comerciais Dedicadas
+  console.log(`  🔎 14.3 ${file}: portas comerciais dedicadas cancelar_pedido_equipe e gerenciar_confirmacao_pedido_admin...`);
+  assert.ok(
+    content.includes('CREATE OR REPLACE FUNCTION public.cancelar_pedido_equipe') &&
+    content.includes('CREATE OR REPLACE FUNCTION public.gerenciar_confirmacao_pedido_admin') &&
+    content.includes('PRODUCTION_ACTIVE_CANCEL_DENIED') &&
+    content.includes('CANCELLATION_REQUIRES_VALUE_DESTINATION') &&
+    content.includes('REVOKE ALL ON FUNCTION public.cancelar_pedido_equipe FROM PUBLIC, anon;') &&
+    content.includes('REVOKE ALL ON FUNCTION public.gerenciar_confirmacao_pedido_admin FROM PUBLIC, anon;'),
+    `[FALHA] ${file}: portas comerciais dedicadas não implementadas ou sem proteção de privilégios!`
+  );
+
+  // 14.4 Desconto Dinâmico em configuracoes_operacao
+  console.log(`  🔎 14.4 ${file}: desconto_operador_percentual_max em configuracoes_operacao...`);
+  assert.ok(
+    content.includes('desconto_operador_percentual_max NUMERIC(5,2) NOT NULL DEFAULT 10.00') &&
+    content.includes('COALESCE(v_cfg.desconto_operador_percentual_max, 10.00)'),
+    `[FALHA] ${file}: desconto dinâmico não adicionado a configuracoes_operacao ou politica_desconto!`
+  );
+}
+
+// 14.5 Frontend desacoplado de estoque
+console.log('  🔎 14.5 Verificando frontend: produtos.js sem campos de estoque e estoque.js usando RPC...');
+const prodJs014 = fs.readFileSync('js/produtos.js', 'utf-8');
+const updateBlockMatch = prodJs014.match(/\.from\('produtos'\)\s*\.update\(\{([\s\S]*?)\}\)\s*\.eq\('id', id\)/);
+assert.ok(updateBlockMatch, '[FALHA] Bloco de update de produto em produtos.js não encontrado!');
+const updateBlock = updateBlockMatch[1];
+assert.ok(
+  !updateBlock.includes('estoque_qtd') &&
+  !updateBlock.includes('estoque_minimo') &&
+  !updateBlock.includes('controlar_estoque'),
+  '[FALHA] produtos.js ainda envia campos de estoque no update de catálogo existente!'
+);
+
+const estJs014 = fs.readFileSync('js/estoque.js', 'utf-8');
+assert.ok(
+  estJs014.includes("supabaseClient.rpc('ajustar_estoque_operacao'") &&
+  !estJs014.includes("supabaseClient.from('produtos').update({ estoque_qtd"),
+  '[FALHA] estoque.js não foi migrado para a RPC ajustar_estoque_operacao!'
+);
+console.log('    ✅ Frontend desacoplado de estoque e operando exclusivamente via RPC atômica.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–14 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+
 
 
 

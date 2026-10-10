@@ -399,6 +399,7 @@ async function salvarProdutoAdmin() {
   try {
     let error;
     if (id) {
+      // Edição de Catálogo: não reenvia campos de estoque (evita risco P1 e desativação P3)
       const res = await supabaseClient
         .from('produtos')
         .update({
@@ -406,10 +407,7 @@ async function salvarProdutoAdmin() {
           preco: preco,
           descricao: desc,
           opcoes: opcoes,
-          img_url: img,
-          estoque_qtd: estoqueQtd,
-          estoque_minimo: estoqueMinimo,
-          controlar_estoque: controlarEstoque
+          img_url: img
         })
         .eq('id', id);
       error = res.error;

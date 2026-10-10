@@ -71,6 +71,7 @@ before(async () => {
     embedded = new EmbeddedPostgres({
       databaseDir: pgDir,
       user: 'postgres', password: 'postgres', port: PORT, persistent: false,
+      initdbFlags: ['--encoding=UTF8', '--locale=C'],
       onLog: () => {}, onError: () => {},
     });
     await embedded.initialise();
