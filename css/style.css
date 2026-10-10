@@ -141,7 +141,8 @@ header {
   animation: fadeIn 0.2s ease;
 }
 
-.user-dropdown button { 
+.user-dropdown button,
+.user-dropdown a { 
   background: none; 
   color: var(--text-dark); 
   border-radius: 0; 
@@ -153,20 +154,27 @@ header {
   border-bottom: 1px solid #f0f0f0; 
   width: 100%; 
   justify-content: flex-start;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
 }
 
-.user-dropdown button:last-child { 
+.user-dropdown button:last-child,
+.user-dropdown a:last-child { 
   border-bottom: none; 
   color: #e74c3c; 
 }
 
-.user-dropdown button:hover { 
+.user-dropdown button:hover,
+.user-dropdown a:hover { 
   background: #f9f9f9; 
   color: var(--primary); 
   transform: none; 
 }
 
-.user-dropdown button i { 
+.user-dropdown button i,
+.user-dropdown a i { 
   margin-right: 10px; 
   width: 16px; 
   text-align: center; 

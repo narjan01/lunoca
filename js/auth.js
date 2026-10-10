@@ -11,9 +11,9 @@ function toggleUserMenu() {
     let html = '<button onclick="abrirMinhaConta()"><i class="fa-solid fa-id-card"></i> Minha Conta</button>';
     html += '<button onclick="abrirMeusPedidos()"><i class="fa-solid fa-box-open"></i> Meus Pedidos</button>';
     if (usuarioAtual.nivel === 'admin') {
-      html += '<button onclick="mostrarTela(\'admin-section\')"><i class="fa-solid fa-screwdriver-wrench"></i> Painel Admin</button>';
+      html += '<a href="admin.html"><i class="fa-solid fa-screwdriver-wrench"></i> Painel Admin</a>';
     } else if (usuarioAtual.nivel === 'operador') {
-      html += '<button onclick="mostrarTela(\'admin-section\')"><i class="fa-solid fa-boxes-packing"></i> Painel do Operador</button>';
+      html += '<a href="admin.html"><i class="fa-solid fa-boxes-packing"></i> Painel do Operador</a>';
     }
     html += '<button onclick="fazerLogout()"><i class="fa-solid fa-arrow-right-from-bracket"></i> Sair</button>';
     dropdown.innerHTML = html;
