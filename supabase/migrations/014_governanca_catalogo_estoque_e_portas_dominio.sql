@@ -427,16 +427,18 @@ BEGIN
   WHERE id = p_pedido_id;
 
   -- Registra no histórico auditável
-  INSERT INTO public.pedidos_historico (
-    pedido_id, usuario_id, usuario_nome, status_anterior, status_novo, motivo, metadata
+  INSERT INTO public.pedido_status_historico (
+    pedido_id, dimensao, status_anterior, status_novo, usuario_id, usuario_nome, origem, metadata
   ) VALUES (
     p_pedido_id,
-    auth.uid(),
-    v_user_nome,
+    'comercial',
     v_ped.status_comercial,
     'cancelado',
-    COALESCE(v_motivo, 'Cancelamento via porta dedicada cancelar_pedido_equipe'),
+    auth.uid(),
+    v_user_nome,
+    'admin',
     jsonb_build_object(
+      'motivo', COALESCE(v_motivo, 'Cancelamento via porta dedicada cancelar_pedido_equipe'),
       'porta_dominio', 'cancelar_pedido_equipe',
       'destino_valor', p_destino_valor,
       'status_operacional_anterior', v_ped.status_operacional
@@ -499,16 +501,18 @@ BEGIN
     updated_at = NOW()
   WHERE id = p_pedido_id;
 
-  INSERT INTO public.pedidos_historico (
-    pedido_id, usuario_id, usuario_nome, status_anterior, status_novo, motivo, metadata
+  INSERT INTO public.pedido_status_historico (
+    pedido_id, dimensao, status_anterior, status_novo, usuario_id, usuario_nome, origem, metadata
   ) VALUES (
     p_pedido_id,
-    auth.uid(),
-    v_user_nome,
+    'comercial',
     v_ped.status_comercial,
     'confirmado',
-    v_motivo,
+    auth.uid(),
+    v_user_nome,
+    'admin',
     jsonb_build_object(
+      'motivo', v_motivo,
       'porta_dominio', 'gerenciar_confirmacao_pedido_admin',
       'sinal_minimo', v_ped.sinal_minimo,
       'valor_pago', v_ped.valor_pago
@@ -618,16 +622,17 @@ BEGIN
       updated_at = NOW()
     WHERE id = p_pedido_id;
 
-    INSERT INTO public.pedidos_historico (
-      pedido_id, usuario_id, usuario_nome, status_anterior, status_novo, motivo, metadata
+    INSERT INTO public.pedido_status_historico (
+      pedido_id, dimensao, status_anterior, status_novo, usuario_id, usuario_nome, origem, metadata
     ) VALUES (
       p_pedido_id,
-      auth.uid(),
-      v_user_nome,
+      'operacional',
       v_status_antigo,
       p_novo_status,
-      p_motivo,
-      p_metadata
+      auth.uid(),
+      v_user_nome,
+      'admin',
+      COALESCE(p_metadata, '{}'::jsonb) || jsonb_build_object('motivo', p_motivo)
     );
 
     RETURN json_build_object(
@@ -652,16 +657,17 @@ BEGIN
       updated_at = NOW()
     WHERE id = p_pedido_id;
 
-    INSERT INTO public.pedidos_historico (
-      pedido_id, usuario_id, usuario_nome, status_anterior, status_novo, motivo, metadata
+    INSERT INTO public.pedido_status_historico (
+      pedido_id, dimensao, status_anterior, status_novo, usuario_id, usuario_nome, origem, metadata
     ) VALUES (
       p_pedido_id,
-      auth.uid(),
-      v_user_nome,
+      'comercial',
       v_status_antigo,
       p_novo_status,
-      p_motivo,
-      p_metadata
+      auth.uid(),
+      v_user_nome,
+      'admin',
+      COALESCE(p_metadata, '{}'::jsonb) || jsonb_build_object('motivo', p_motivo)
     );
 
     RETURN json_build_object(

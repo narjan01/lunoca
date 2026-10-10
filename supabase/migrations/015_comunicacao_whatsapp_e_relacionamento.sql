@@ -15,12 +15,12 @@
 -- ==========================================================================
 
 -- --------------------------------------------------------------------------
--- 0. COMPATIBILIDADE DE SESSÃO ADMIN/OPERADOR (POSTGRES / SERVICE ROLE)
+-- 0. COMPATIBILIDADE DE SESSÃO ADMIN/OPERADOR (SERVICE ROLE)
 -- --------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
-  IF current_user IN ('postgres', 'supabase_admin') OR auth.role() = 'service_role' THEN
+  IF auth.role() = 'service_role' THEN
     RETURN true;
   END IF;
 
@@ -36,7 +36,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 CREATE OR REPLACE FUNCTION public.is_admin_or_operator()
 RETURNS BOOLEAN AS $$
 BEGIN
-  IF current_user IN ('postgres', 'supabase_admin') OR auth.role() = 'service_role' THEN
+  IF auth.role() = 'service_role' OR current_user IN ('postgres', 'supabase_admin') THEN
     RETURN true;
   END IF;
 
@@ -258,6 +258,10 @@ DECLARE
   v_hora_formatada TEXT;
   v_validade_formatada TEXT;
 BEGIN
+  IF NOT public.is_admin_or_operator() THEN
+    RETURN jsonb_build_object('success', false, 'code', 'PERMISSION_DENIED', 'error', 'Permissão negada. Apenas equipe autorizada pode gerar previews de comunicação.');
+  END IF;
+
   IF p_tipo IS NULL OR p_tipo NOT IN ('ORCAMENTO_ENVIADO', 'ORCAMENTO_VENCENDO', 'SINAL_CONFIRMADO', 'PEDIDO_PRONTO', 'SAIU_PARA_ENTREGA') THEN
     RETURN jsonb_build_object('success', false, 'code', 'INVALID_TEMPLATE_TYPE', 'error', 'Tipo de template de comunicação inválido.');
   END IF;
@@ -537,6 +541,7 @@ GRANT EXECUTE ON FUNCTION public.registrar_comunicacao_cliente TO authenticated,
 -- --------------------------------------------------------------------------
 -- Substituição consciente da assinatura anterior para evitar overloads ambíguas no PostgREST
 DROP FUNCTION IF EXISTS public.aprovar_orcamento_publico(UUID);
+DROP FUNCTION IF EXISTS public.aprovar_orcamento_publico(UUID, INTEGER);
 
 CREATE OR REPLACE FUNCTION public.aprovar_orcamento_publico(
   p_token UUID,
@@ -652,8 +657,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
-REVOKE ALL ON FUNCTION public.aprovar_orcamento_publico FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.aprovar_orcamento_publico TO anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.aprovar_orcamento_publico(UUID, INTEGER) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.aprovar_orcamento_publico(UUID, INTEGER) TO anon, authenticated, service_role;
 
 -- --------------------------------------------------------------------------
 -- 8. CONSULTA DE LEMBRETES PENDENTES: LISTAR_ORCAMENTOS_PARA_LEMBRETE()

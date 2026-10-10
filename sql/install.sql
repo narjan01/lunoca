@@ -7658,8 +7658,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
-REVOKE ALL ON FUNCTION public.aprovar_orcamento_publico FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.aprovar_orcamento_publico TO anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.aprovar_orcamento_publico(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.aprovar_orcamento_publico(UUID) TO anon, authenticated, service_role;
 
 -- --------------------------------------------------------------------------
 -- 13. RPC EXPIRAÇÃO AUTOMÁTICA EM LOTE (CRON UNIFICADO)
@@ -8432,16 +8432,18 @@ BEGIN
   WHERE id = p_pedido_id;
 
   -- Registra no histórico auditável
-  INSERT INTO public.pedidos_historico (
-    pedido_id, usuario_id, usuario_nome, status_anterior, status_novo, motivo, metadata
+  INSERT INTO public.pedido_status_historico (
+    pedido_id, dimensao, status_anterior, status_novo, usuario_id, usuario_nome, origem, metadata
   ) VALUES (
     p_pedido_id,
-    auth.uid(),
-    v_user_nome,
+    'comercial',
     v_ped.status_comercial,
     'cancelado',
-    COALESCE(v_motivo, 'Cancelamento via porta dedicada cancelar_pedido_equipe'),
+    auth.uid(),
+    v_user_nome,
+    'admin',
     jsonb_build_object(
+      'motivo', COALESCE(v_motivo, 'Cancelamento via porta dedicada cancelar_pedido_equipe'),
       'porta_dominio', 'cancelar_pedido_equipe',
       'destino_valor', p_destino_valor,
       'status_operacional_anterior', v_ped.status_operacional
@@ -8504,16 +8506,18 @@ BEGIN
     updated_at = NOW()
   WHERE id = p_pedido_id;
 
-  INSERT INTO public.pedidos_historico (
-    pedido_id, usuario_id, usuario_nome, status_anterior, status_novo, motivo, metadata
+  INSERT INTO public.pedido_status_historico (
+    pedido_id, dimensao, status_anterior, status_novo, usuario_id, usuario_nome, origem, metadata
   ) VALUES (
     p_pedido_id,
-    auth.uid(),
-    v_user_nome,
+    'comercial',
     v_ped.status_comercial,
     'confirmado',
-    v_motivo,
+    auth.uid(),
+    v_user_nome,
+    'admin',
     jsonb_build_object(
+      'motivo', v_motivo,
       'porta_dominio', 'gerenciar_confirmacao_pedido_admin',
       'sinal_minimo', v_ped.sinal_minimo,
       'valor_pago', v_ped.valor_pago
@@ -8623,16 +8627,17 @@ BEGIN
       updated_at = NOW()
     WHERE id = p_pedido_id;
 
-    INSERT INTO public.pedidos_historico (
-      pedido_id, usuario_id, usuario_nome, status_anterior, status_novo, motivo, metadata
+    INSERT INTO public.pedido_status_historico (
+      pedido_id, dimensao, status_anterior, status_novo, usuario_id, usuario_nome, origem, metadata
     ) VALUES (
       p_pedido_id,
-      auth.uid(),
-      v_user_nome,
+      'operacional',
       v_status_antigo,
       p_novo_status,
-      p_motivo,
-      p_metadata
+      auth.uid(),
+      v_user_nome,
+      'admin',
+      COALESCE(p_metadata, '{}'::jsonb) || jsonb_build_object('motivo', p_motivo)
     );
 
     RETURN json_build_object(
@@ -8657,16 +8662,17 @@ BEGIN
       updated_at = NOW()
     WHERE id = p_pedido_id;
 
-    INSERT INTO public.pedidos_historico (
-      pedido_id, usuario_id, usuario_nome, status_anterior, status_novo, motivo, metadata
+    INSERT INTO public.pedido_status_historico (
+      pedido_id, dimensao, status_anterior, status_novo, usuario_id, usuario_nome, origem, metadata
     ) VALUES (
       p_pedido_id,
-      auth.uid(),
-      v_user_nome,
+      'comercial',
       v_status_antigo,
       p_novo_status,
-      p_motivo,
-      p_metadata
+      auth.uid(),
+      v_user_nome,
+      'admin',
+      COALESCE(p_metadata, '{}'::jsonb) || jsonb_build_object('motivo', p_motivo)
     );
 
     RETURN json_build_object(
@@ -8704,12 +8710,12 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 -- ==========================================================================
 
 -- --------------------------------------------------------------------------
--- 0. COMPATIBILIDADE DE SESSÃO ADMIN/OPERADOR (POSTGRES / SERVICE ROLE)
+-- 0. COMPATIBILIDADE DE SESSÃO ADMIN/OPERADOR (SERVICE ROLE)
 -- --------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
-  IF current_user IN ('postgres', 'supabase_admin') OR auth.role() = 'service_role' THEN
+  IF auth.role() = 'service_role' THEN
     RETURN true;
   END IF;
 
@@ -8725,7 +8731,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 CREATE OR REPLACE FUNCTION public.is_admin_or_operator()
 RETURNS BOOLEAN AS $$
 BEGIN
-  IF current_user IN ('postgres', 'supabase_admin') OR auth.role() = 'service_role' THEN
+  IF auth.role() = 'service_role' OR current_user IN ('postgres', 'supabase_admin') THEN
     RETURN true;
   END IF;
 
@@ -8947,6 +8953,10 @@ DECLARE
   v_hora_formatada TEXT;
   v_validade_formatada TEXT;
 BEGIN
+  IF NOT public.is_admin_or_operator() THEN
+    RETURN jsonb_build_object('success', false, 'code', 'PERMISSION_DENIED', 'error', 'Permissão negada. Apenas equipe autorizada pode gerar previews de comunicação.');
+  END IF;
+
   IF p_tipo IS NULL OR p_tipo NOT IN ('ORCAMENTO_ENVIADO', 'ORCAMENTO_VENCENDO', 'SINAL_CONFIRMADO', 'PEDIDO_PRONTO', 'SAIU_PARA_ENTREGA') THEN
     RETURN jsonb_build_object('success', false, 'code', 'INVALID_TEMPLATE_TYPE', 'error', 'Tipo de template de comunicação inválido.');
   END IF;
@@ -9226,6 +9236,7 @@ GRANT EXECUTE ON FUNCTION public.registrar_comunicacao_cliente TO authenticated,
 -- --------------------------------------------------------------------------
 -- Substituição consciente da assinatura anterior para evitar overloads ambíguas no PostgREST
 DROP FUNCTION IF EXISTS public.aprovar_orcamento_publico(UUID);
+DROP FUNCTION IF EXISTS public.aprovar_orcamento_publico(UUID, INTEGER);
 
 CREATE OR REPLACE FUNCTION public.aprovar_orcamento_publico(
   p_token UUID,
@@ -9341,8 +9352,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
-REVOKE ALL ON FUNCTION public.aprovar_orcamento_publico FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.aprovar_orcamento_publico TO anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.aprovar_orcamento_publico(UUID, INTEGER) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.aprovar_orcamento_publico(UUID, INTEGER) TO anon, authenticated, service_role;
 
 -- --------------------------------------------------------------------------
 -- 8. CONSULTA DE LEMBRETES PENDENTES: LISTAR_ORCAMENTOS_PARA_LEMBRETE()

@@ -305,9 +305,9 @@ test('FB-7: Retry de webhook não duplica mensagem de sinal', async () => {
 test('FB-8: Orçamento vencido não permite aprovação pública (QUOTE_EXPIRED)', async () => {
   const { rows: [orcVencido] } = await admin.query(`
     INSERT INTO public.orcamentos (
-      numero, versao, cliente_nome, cliente_telefone, validade_ate, status, total, token_publico
+      numero, versao, cliente_nome, cliente_telefone, data_evento, validade_ate, status, total, token_publico
     ) VALUES (
-      'ORC-2026-VENCIDO', 1, 'Cliente Vencido', '83991112233', NOW() - INTERVAL '1 hour', 'enviado', 200.00, gen_random_uuid()
+      'ORC-2026-VENCIDO', 1, 'Cliente Vencido', '83991112233', CURRENT_DATE + INTERVAL '5 days', NOW() - INTERVAL '1 hour', 'enviado', 200.00, gen_random_uuid()
     ) RETURNING token_publico;
   `);
 
@@ -327,9 +327,9 @@ test('FB-8: Orçamento vencido não permite aprovação pública (QUOTE_EXPIRED)
 test('FB-9: Versão alterada entre leitura e aprovação pública retorna QUOTE_VERSION_CHANGED', async () => {
   const { rows: [orcMultiVersao] } = await admin.query(`
     INSERT INTO public.orcamentos (
-      numero, versao, cliente_nome, cliente_telefone, validade_ate, status, total, token_publico
+      numero, versao, cliente_nome, cliente_telefone, data_evento, validade_ate, status, total, token_publico
     ) VALUES (
-      'ORC-2026-V2', 2, 'Cliente Revisado', '83991112233', NOW() + INTERVAL '2 days', 'enviado', 350.00, gen_random_uuid()
+      'ORC-2026-V2', 2, 'Cliente Revisado', '83991112233', CURRENT_DATE + INTERVAL '5 days', NOW() + INTERVAL '2 days', 'enviado', 350.00, gen_random_uuid()
     ) RETURNING token_publico;
   `);
 
@@ -388,9 +388,10 @@ test('FB-11: Evento SAIU_PARA_ENTREGA gera template canônico correto com endere
 test('FB-12: Usuário anon não executa RPCs administrativas de comunicação', async () => {
   const anon = await newClient('anon');
 
+  let resPreview = null;
   let erroPreview = false;
   try {
-    await rpc(anon, 'obter_preview_comunicacao', {
+    resPreview = await rpc(anon, 'obter_preview_comunicacao', {
       p_tipo: 'ORCAMENTO_ENVIADO',
       p_orcamento_id: testOrcamentoId,
       p_pedido_id: null
@@ -398,11 +399,12 @@ test('FB-12: Usuário anon não executa RPCs administrativas de comunicação', 
   } catch (err) {
     erroPreview = true;
   }
-  assert.equal(erroPreview, true, 'Anon deve receber erro ao tentar chamar obter_preview_comunicacao');
+  assert.equal(erroPreview || resPreview?.success === false, true, 'Anon deve receber erro ao tentar chamar obter_preview_comunicacao');
 
+  let resRegistrar = null;
   let erroRegistrar = false;
   try {
-    await rpc(anon, 'registrar_comunicacao_cliente', {
+    resRegistrar = await rpc(anon, 'registrar_comunicacao_cliente', {
       p_tipo: 'ORCAMENTO_ENVIADO',
       p_orcamento_id: testOrcamentoId,
       p_pedido_id: null,
@@ -412,7 +414,7 @@ test('FB-12: Usuário anon não executa RPCs administrativas de comunicação', 
   } catch (err) {
     erroRegistrar = true;
   }
-  assert.equal(erroRegistrar, true, 'Anon deve receber erro ao tentar chamar registrar_comunicacao_cliente');
+  assert.equal(erroRegistrar || resRegistrar?.success === false, true, 'Anon deve receber erro ao tentar chamar registrar_comunicacao_cliente');
 });
 
 // --------------------------------------------------------------------------
@@ -442,9 +444,9 @@ test('FB-14: Duas chamadas concorrentes para a mesma chave idempotente -> exatam
   // Cria um novo orçamento para corrida concorrente
   const { rows: [orcCorrida] } = await admin.query(`
     INSERT INTO public.orcamentos (
-      numero, versao, cliente_nome, cliente_telefone, validade_ate, status, total, token_publico
+      numero, versao, cliente_nome, cliente_telefone, data_evento, validade_ate, status, total, token_publico
     ) VALUES (
-      'ORC-CORRIDA-14', 1, 'Cliente Concorrencia', '83999990014', NOW() + INTERVAL '2 days', 'enviado', 500.00, gen_random_uuid()
+      'ORC-CORRIDA-14', 1, 'Cliente Concorrencia', '83999990014', CURRENT_DATE + INTERVAL '5 days', NOW() + INTERVAL '2 days', 'enviado', 500.00, gen_random_uuid()
     ) RETURNING id;
   `);
 

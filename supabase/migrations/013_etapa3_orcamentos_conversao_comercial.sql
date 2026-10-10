@@ -942,8 +942,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
-REVOKE ALL ON FUNCTION public.aprovar_orcamento_publico FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.aprovar_orcamento_publico TO anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.aprovar_orcamento_publico(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.aprovar_orcamento_publico(UUID) TO anon, authenticated, service_role;
 
 -- --------------------------------------------------------------------------
 -- 13. RPC EXPIRAÇÃO AUTOMÁTICA EM LOTE (CRON UNIFICADO)

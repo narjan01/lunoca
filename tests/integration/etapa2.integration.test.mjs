@@ -527,7 +527,13 @@ test('atualizar_meus_dados_cliente: cria, atualiza e bloqueia telefone duplicado
 test('Cancelamento por qualquer caminho (alterar_status_pedido) libera reserva via trigger único', async () => {
   const antes = await reservado(P_BOLO);
   const c = await newClient(ADMIN_UID);
-  const r = await rpc(c, 'alterar_status_pedido', { p_pedido_id: pedidoB, p_dimensao: 'comercial', p_novo_status: 'cancelado', p_motivo: 'Teste de cancelamento' });
+  const r = await rpc(c, 'alterar_status_pedido', {
+    p_pedido_id: pedidoB,
+    p_dimensao: 'comercial',
+    p_novo_status: 'cancelado',
+    p_motivo: 'Teste de cancelamento',
+    p_metadata: JSON.stringify({ destino_valor: 'RETENCAO_CANCELAMENTO' })
+  });
   await c.end();
   assert.equal(r.success, true, JSON.stringify(r));
   assert.equal(await reservado(P_BOLO), antes - 7);
