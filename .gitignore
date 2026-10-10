@@ -5,3 +5,6 @@ node_modules/
 .DS_Store
 Thumbs.db
 .pg-integration/
+.system_generated/
+.user_uploaded/
+*.metadata.json

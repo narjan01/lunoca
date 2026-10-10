@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  
+  <link rel="shortcut icon" href="https://i.ibb.co/nsxb8S8B/logo.jpg" type="image/jpeg">
+  <link rel="icon" href="https://i.ibb.co/nsxb8S8B/logo.jpg" type="image/jpeg">
+
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&family=Great+Vibes&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <style>
+    :root {
+      --primary: #c496f2; 
+      --primary-dark: #a673d9;
+      --secondary: #ffb6c1; 
+      --text-dark: #5c4033; 
+      --text-light: #888;
+      --bg: #fbf9ff; 
+      --white: #ffffff;
+      --shadow: 0 8px 24px rgba(196, 150, 242, 0.15);
+      --radius: 16px;
+    }
+
+    body { font-family: 'Poppins', sans-serif; background-color: var(--bg); color: var(--text-dark); margin: 0; padding: 0; }
+    
+    header {
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      color: var(--white); text-align: center; padding: 15px 15px 10px;
+      position: sticky; top: 0; z-index: 100;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-bottom-left-radius: 20px; border-bottom-right-radius: 20px;
+    }
+    .header-top { display: flex; justify-content: space-between; align-items: center; width: 100%; position: relative;}
+    
+    .header-logo { display: flex; align-items: center; justify-content: center; gap: 10px; font-family: 'Great Vibes', cursive; font-size: 34px; text-shadow: 2px 2px 4px rgba(0,0,0,0.1); margin: 0 auto;}
+    .header-logo img { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 2px solid var(--white); box-shadow: 0 4px 10px rgba(0,0,0,0.15); }
+    
+    .user-menu-btn { background-color: rgba(255,255,255,0.2); color: var(--white); border: 1px solid rgba(255,255,255,0.5); width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; cursor: pointer; transition: 0.3s; backdrop-filter: blur(5px); padding: 0; position: absolute; right: 0; top: 5px;}
+    .user-menu-btn:hover { background-color: var(--white); color: var(--primary); }
+    .user-dropdown { position: absolute; top: 50px; right: 0; background: var(--white); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); width: 180px; display: none; flex-direction: column; overflow: hidden; z-index: 200;}
+    .user-dropdown.show { display: flex; animation: fadeIn 0.2s ease;}
+    .user-dropdown button { background: none; color: var(--text-dark); border-radius: 0; padding: 12px 15px; text-align: left; font-weight: 500; font-size: 13px; box-shadow: none; border-bottom: 1px solid #f0f0f0; width: 100%; justify-content: flex-start;}
+    .user-dropdown button:last-child { border-bottom: none; color: #e74c3c; }
+    .user-dropdown button:hover { background: #f9f9f9; color: var(--primary); transform: none; }
+    .user-dropdown button i { margin-right: 10px; width: 16px; text-align: center; }
+    
+    #user-greeting { font-size: 12px; opacity: 0.9; margin-top: 5px; font-weight: 400; }
+    
+    .container { padding: 20px 15px 100px; max-width: 600px; margin: 0 auto; }
+    .screen { display: none; animation: fadeIn 0.4s ease; }
+    .screen.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    .produto-card, .admin-card, .login-box, .panel-card { 
+      background: var(--white); border-radius: var(--radius); padding: 18px; margin-bottom: 20px; 
+      box-shadow: var(--shadow); display: flex; align-items: center; border: 1px solid rgba(0,0,0,0.03); 
+    }
+    
+    .produto-card { flex-direction: column; align-items: stretch; padding: 0; overflow: hidden; }
+    .produto-header { display: flex; align-items: center; padding: 15px; }
+    .produto-img { width: 90px; height: 90px; object-fit: cover; border-radius: 12px; margin-right: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .produto-info { flex: 1; }
+    .produto-info h3 { margin: 0 0 4px 0; font-size: 18px; color: var(--text-dark); font-weight: 600; }
+    .produto-desc { padding: 0 15px 15px; font-size: 13px; color: var(--text-light); line-height: 1.5; }
+    
+    .produto-footer { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: #fafafa; border-top: 1px solid #f0f0f0; }
+    .preco { font-weight: 600; color: var(--primary-dark); font-size: 16px;}
+    
+    button { background-color: var(--primary); color: var(--white); border: none; padding: 12px 20px; border-radius: 10px; font-weight: 600; font-family: 'Poppins', sans-serif; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 10px rgba(196, 150, 242, 0.3); display: flex; align-items: center; justify-content: center; gap: 8px;}
+    button:hover { background-color: var(--primary-dark); transform: translateY(-2px); }
+    button:active { transform: translateY(0); }
+    .btn-adicionar { padding: 8px 15px; font-size: 13px; border-radius: 20px; }
+    .btn-outline { background-color: transparent; color: var(--primary); border: 2px solid var(--primary); box-shadow: none; }
+    .btn-outline:hover { background-color: var(--primary); color: var(--white); }
+    .btn-danger { background-color: #ff6b6b; box-shadow: 0 4px 10px rgba(255, 107, 107, 0.3); }
+    .btn-danger:hover { background-color: #ff4757; }
+    
+    .form-group { margin-bottom: 15px; width: 100%;}
+    .form-group label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 13px; color: var(--text-dark); }
+    .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 12px 15px; border: 2px solid #eee; border-radius: 10px; box-sizing: border-box; font-family: 'Poppins', sans-serif; font-size: 14px; background-color: #fafafa; transition: border-color 0.3s; }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--primary); outline: none; background-color: var(--white); }
+
+    #btn-ver-carrinho { position: fixed; bottom: 25px; left: 5%; width: 90%; padding: 16px; font-size: 16px; background: var(--text-dark); color: var(--white); border-radius: 30px; box-shadow: 0 10px 25px rgba(92, 64, 51, 0.4); display: none; justify-content: space-between; align-items: center; z-index: 90;}
+    
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 200; display: none; align-items: flex-end; justify-content: center; backdrop-filter: blur(3px); animation: fadeIn 0.3s;}
+    .modal-content { background: var(--white); width: 100%; max-width: 600px; border-top-left-radius: 24px; border-top-right-radius: 24px; padding: 25px 20px; box-sizing: border-box; position: relative; animation: slideUp 0.3s ease-out; max-height: 90vh; overflow-y: auto;}
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .close-modal { position: absolute; top: 15px; right: 20px; font-size: 24px; color: #aaa; cursor: pointer; }
+    
+    .modal-img-container { text-align: center; margin-bottom: 15px; }
+    .modal-img-container img { width: 120px; height: 120px; object-fit: cover; border-radius: 16px; box-shadow: var(--shadow); }
+    .modal-title { font-size: 22px; color: var(--text-dark); margin: 0 0 5px; font-weight: 600; text-align: center; }
+    .modal-price { color: var(--primary-dark); font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 15px; }
+    .modal-desc { font-size: 13px; color: var(--text-light); text-align: center; margin-bottom: 20px; line-height: 1.5; }
+    
+    .variations-box { background: #fafafa; border: 1px solid #eee; border-radius: 12px; padding: 15px; margin-bottom: 20px; }
+    .variations-title { font-weight: 600; font-size: 14px; margin-bottom: 10px; color: var(--text-dark); }
+    .variation-item { display: flex; align-items: center; padding: 8px 0; border-bottom: 1px dashed #ddd; cursor: pointer;}
+    .variation-item:last-child { border-bottom: none; }
+    .variation-item input { margin-right: 10px; width: 18px; height: 18px; accent-color: var(--primary); }
+    
+    .admin-nav { display: flex; gap: 8px; margin-bottom: 25px; overflow-x: auto; padding-bottom: 5px;}
+    .admin-nav button { flex: 1; background-color: #f0f0f0; color: #555; padding: 10px; font-size: 13px; border-radius: 8px; white-space: nowrap; box-shadow: none; border: 1px solid #e0e0e0; justify-content: center;}
+    .admin-nav button.active { background-color: var(--primary); color: var(--white); border-color: var(--primary); }
+    .admin-tab { display: none; animation: fadeIn 0.3s; }
+    .admin-tab.active { display: block; }
+
+    .admin-item-card { background: var(--white); padding: 15px; border-radius: 12px; margin-bottom: 15px; box-shadow: var(--shadow); border-left: 5px solid var(--primary); }
+    .user-list-item { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: var(--white); border-radius: 12px; margin-bottom: 12px; box-shadow: var(--shadow); }
+    
+    .calendar { width: 100%; border-collapse: collapse; background: var(--white); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+    .calendar th { background: var(--primary); color: var(--white); padding: 12px 5px; font-size: 13px; font-weight: 600;}
+    .calendar td { border: 1px solid #f0f0f0; padding: 12px 5px; text-align: center; vertical-align: top; height: 60px; cursor: pointer; transition: 0.2s;}
+    .calendar td.has-order { background-color: #fff0f5; font-weight: bold; color: var(--primary-dark); border-bottom: 2px solid var(--secondary);}
+    
+    .file-upload-wrapper { position: relative; overflow: hidden; display: inline-block; width: 100%; }
+    .file-upload-wrapper input[type=file] { font-size: 100px; position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; height: 100%; }
+    .btn-upload { background-color: #f9f9f9; border: 2px dashed #ccc; color: #666; padding: 15px; text-align: center; border-radius: 10px; display: block; width: 100%; box-sizing: border-box; transition: 0.3s;}
+    .btn-upload:hover { border-color: var(--primary); color: var(--primary); background-color: #fff9ff;}
+    
+    .row-2 { display: flex; gap: 10px; }
+    .row-2 .form-group { flex: 1; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-top">
+      <div style="width: 40px;"></div> 
+      <div class="header-logo" onclick="mostrarTela('menu-section')" style="cursor:pointer;">
+        <img src="https://i.ibb.co/nsxb8S8B/logo.jpg" alt="Logo Lunoca"> 
+        Lunoca
+      </div>
+      
+      <button id="btn-header-auth" class="user-menu-btn" onclick="toggleUserMenu()">
+         <i class="fa-solid fa-user"></i>
+      </button>
+      
+      <div id="user-dropdown" class="user-dropdown"></div>
+    </div>
+    <div id="user-greeting">Bem-vindo(a) à nossa Doceria!</div>
+  </header>
+
+  <div class="container">
+    
+    <div id="login-section" class="screen">
+      <div class="panel-card" style="flex-direction: column;">
+        <h2 id="auth-title" style="color: var(--text-dark); margin-top: 0;"><i class="fa-solid fa-right-to-bracket"></i> Login</h2>
+        <div style="text-align: center; color: #aaa; margin: 15px 0; font-size: 12px; font-weight: 600;">ENTRE COM SEU EMAIL</div>
+        <div id="cadastro-fields" style="display: none; width: 100%;">
+           <div class="form-group"><label>Nome Completo</label><input type="text" id="reg-nome" placeholder="Seu nome"></div>
+        </div>
+        <div class="form-group" style="width: 100%;"><label>Email ou Usuário</label><input type="text" id="auth-email" placeholder="ex: doces@email.com"></div>
+        <div class="form-group" style="width: 100%;"><label>Senha</label><input type="password" id="auth-senha" placeholder="••••••••"></div>
+        <button id="btn-auth-action" style="width: 100%; margin-bottom: 10px;" onclick="processarAutenticacao()">Entrar</button>
+        <button style="width: 100%;" class="btn-outline" onclick="mostrarTela('menu-section')">Voltar ao Cardápio</button>
+        <div style="text-align: center; margin-top: 20px; font-size: 14px; cursor: pointer;" onclick="alternarModoAuth()">
+          Não tem conta? <span style="font-weight: 600; color: var(--primary);">Cadastre-se aqui</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="menu-section" class="screen active">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h2 style="font-size:20px; margin: 0;"><i class="fa-solid fa-cake-candles" style="color:var(--primary)"></i> Doces Disponíveis</h2>
+      </div>
+      <div id="produtos-lista">
+        <div style="text-align:center; padding: 20px; color:#999;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i><br>Carregando delícias...</div>
+      </div>
+    </div>
+
+    <div id="conta-section" class="screen">
+      <h2 style="margin-top:0;"><i class="fa-solid fa-id-card" style="color:var(--primary)"></i> Meu Perfil</h2>
+      <div class="admin-nav" style="margin-bottom: 15px;">
+        <button id="tab-conta-pessoal" class="active" onclick="mudarTabConta('pessoal')">Dados Pessoais</button>
+        <button id="tab-conta-endereco" onclick="mudarTabConta('endereco')">Endereço</button>
+      </div>
+      <div class="panel-card" style="flex-direction: column; align-items: stretch;">
+        <div id="conta-tab-pessoal" class="admin-tab active">
+          <div class="form-group"><label>Nome Completo</label><input type="text" id="perfil-nome"></div>
+          <div class="form-group"><label>Email (Apenas Leitura)</label><input type="text" id="perfil-email" readonly style="background:#eee; color:#888;"></div>
+          <div class="row-2">
+            <div class="form-group"><label>CPF</label><input type="text" id="perfil-cpf" placeholder="000.000.000-00"></div>
+            <div class="form-group"><label>Telefone / WhatsApp</label><input type="text" id="perfil-telefone" placeholder="(11) 90000-0000"></div>
+          </div>
+        </div>
+        <div id="conta-tab-endereco" class="admin-tab">
+          <div class="form-group">
+            <label>CEP <span style="font-weight:normal; color:#888; font-size:11px;">(Busca automática)</span></label>
+            <input type="text" id="perfil-cep" placeholder="00000-000" onblur="buscarCepViaAPI()">
+          </div>
+          <div class="form-group"><label>Rua / Logradouro</label><input type="text" id="perfil-endereco" placeholder="Nome da rua e bairro..."></div>
+          <div class="row-2">
+            <div class="form-group"><label>Número</label><input type="text" id="perfil-numero"></div>
+            <div class="form-group"><label>Complemento</label><input type="text" id="perfil-complemento" placeholder="Apto, Casa 2"></div>
+          </div>
+        </div>
+        <button onclick="salvarPerfilUsuario()" id="btn-salvar-perfil" style="width: 100%; margin-top: 10px;"><i class="fa-solid fa-save"></i> Atualizar Dados</button>
+      </div>
+    </div>
+
+    <div id="checkout-section" class="screen">
+      <h2><i class="fa-solid fa-bag-shopping" style="color:var(--primary)"></i> Seu Pedido</h2>
+      <div class="panel-card" style="flex-direction: column; align-items: stretch;">
+        <h3 style="margin-top:0; border-bottom: 2px dashed #eee; padding-bottom: 10px;">Resumo dos Itens</h3>
+        <div id="itens-carrinho"></div>
+        <h3 style="text-align: right; color: var(--primary-dark); font-size: 20px;">Total: R$ <span id="total-carrinho">0.00</span></h3>
+      </div>
+      <div class="panel-card" style="flex-direction: column; align-items: stretch;">
+        <div class="form-group">
+          <label><i class="fa-regular fa-calendar"></i> Data de Entrega (2 dias úteis)</label>
+          <input type="date" id="data-pedido" required>
+        </div>
+        <div class="form-group">
+          <label><i class="fa-solid fa-location-dot"></i> Endereço de Entrega</label>
+          <textarea id="endereco-checkout" rows="2" placeholder="Preencha na aba 'Minha Conta' para carregar automaticamente ou digite aqui..." required></textarea>
+        </div>
+        <div class="form-group">
+          <label><i class="fa-solid fa-money-bill-wave"></i> Forma de Pagamento</label>
+          <select id="pagamento">
+            <option value="pix">Pix (Chave exibida no final)</option>
+            <option value="cartao">Cartão de Crédito</option>
+          </select>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button class="btn-outline" style="flex: 1;" onclick="mostrarTela('menu-section')">Voltar</button>
+          <button style="flex: 2;" onclick="enviarPedido()"><i class="fa-solid fa-check"></i> Confirmar</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="admin-section" class="screen">
+      <h2 style="margin-top:0;"><i class="fa-solid fa-screwdriver-wrench" style="color:var(--primary)"></i> Painel de Controle</h2>
+      <div class="admin-nav">
+        <button id="tab-btn-pedidos" class="active" onclick="mudarTabAdmin('pedidos')"><i class="fa-solid fa-receipt"></i> Pedidos</button>
+        <button id="tab-btn-calendario" onclick="mudarTabAdmin('calendario')"><i class="fa-regular fa-calendar-days"></i> Calendário</button>
+        <button id="tab-btn-produtos" onclick="mudarTabAdmin('produtos')"><i class="fa-solid fa-box"></i> Produtos</button>
+        <button id="tab-btn-usuarios" onclick="mudarTabAdmin('usuarios')"><i class="fa-solid fa-users"></i> Usuários</button>
+      </div>
+      <div id="admin-tab-pedidos" class="admin-tab active">
+        <button onclick="carregarPedidosAdmin()" style="width: 100%; margin-bottom: 15px;" class="btn-outline"><i class="fa-solid fa-rotate-right"></i> Atualizar Pedidos</button>
+        <div id="lista-pedidos-admin"></div>
+      </div>
+      <div id="admin-tab-calendario" class="admin-tab">
+        <div class="calendar-header">
+          <button class="btn-outline" style="padding: 8px 15px;" onclick="mudarMes(-1)"><i class="fa-solid fa-chevron-left"></i></button>
+          <h3 id="mes-ano-atual" style="margin: 0; font-size: 16px;">Mês Ano</h3>
+          <button class="btn-outline" style="padding: 8px 15px;" onclick="mudarMes(1)"><i class="fa-solid fa-chevron-right"></i></button>
+        </div>
+        <table class="calendar" id="calendario-encomendas">
+          <thead><tr><th>D</th><th>S</th><th>T</th><th>Q</th><th>Q</th><th>S</th><th>S</th></tr></thead>
+          <tbody id="calendario-corpo"></tbody>
+        </table>
+        <div id="detalhes-dia-calendario" style="margin-top: 15px;"></div>
+      </div>
+      <div id="admin-tab-produtos" class="admin-tab">
+        <div class="panel-card" style="flex-direction: column; align-items: stretch;">
+          <h3 style="margin-top:0;"><i class="fa-solid fa-pen-to-square"></i> Gerenciar Produto</h3>
+          <input type="hidden" id="prod-id">
+          <div class="form-group"><label>Nome do Doce</label><input type="text" id="prod-nome"></div>
+          <div class="form-group"><label>Preço (R$)</label><input type="number" step="0.01" id="prod-preco"></div>
+          <div class="form-group">
+            <label>Descrição (Com quebras de linha e Emojis)</label>
+            <textarea id="prod-desc" rows="4" placeholder="Cole aqui sua descrição rica..."></textarea>
+          </div>
+          <div class="form-group">
+            <label>Variações de Sabor <span style="font-weight:normal; color:#888;">(Separe por vírgula)</span></label>
+            <input type="text" id="prod-opcoes" placeholder="Ex: Brigadeiro Branco, Prestígio, Dois Amores">
+          </div>
+          <div class="form-group">
+            <label>Foto do Produto</label>
+            <div class="file-upload-wrapper">
+              <span class="btn-upload" id="lbl-upload"><i class="fa-solid fa-cloud-arrow-up"></i> Escolher foto...</span>
+              <input type="file" id="prod-file" accept="image/*" onchange="prepararUpload(this)">
+            </div>
+            <div id="upload-status" style="font-size: 13px; font-weight: 600; text-align: center; margin-top: 8px;"></div>
+            <input type="hidden" id="prod-img">
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <button onclick="limparFormProduto()" class="btn-outline" style="flex: 1;">Limpar</button>
+            <button onclick="salvarProdutoAdmin()" id="btn-salvar-produto" style="flex: 2;"><i class="fa-solid fa-save"></i> Salvar</button>
+          </div>
+        </div>
+        <h3 style="margin-top: 25px;">Catálogo Atual</h3>
+        <div id="lista-produtos-admin"></div>
+      </div>
+      <div id="admin-tab-usuarios" class="admin-tab">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+          <h3 style="margin:0;"><i class="fa-solid fa-user-shield"></i> Contas</h3>
+        </div>
+        <div id="form-user-admin" class="panel-card" style="display:none; flex-direction: column; align-items: stretch; border: 2px solid var(--primary);">
+           <h3 id="user-form-title" style="margin-top:0;">Editar Usuário</h3>
+           <input type="hidden" id="admin-user-id">
+           <div class="form-group"><label>Nome Completo</label><input type="text" id="admin-user-nome"></div>
+           <div class="form-group">
+             <label>Nível de Acesso</label>
+             <select id="admin-user-nivel"><option value="cliente">Cliente</option><option value="admin">Administrador</option></select>
+           </div>
+           <div style="display: flex; gap: 10px;">
+             <button onclick="fecharFormUsuario()" class="btn-outline" style="flex: 1;">Cancelar</button>
+             <button onclick="salvarFormUsuario()" style="flex: 2;"><i class="fa-solid fa-check"></i> Salvar</button>
+           </div>
+        </div>
+        <button onclick="carregarUsuariosAdmin()" style="width: 100%; margin-bottom: 15px;" class="btn-outline"><i class="fa-solid fa-rotate-right"></i> Atualizar Lista</button>
+        <div id="lista-usuarios-admin"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-produto" class="modal-overlay">
+    <div class="modal-content">
+      <span class="close-modal" onclick="fecharModalProduto()">&times;</span>
+      <div class="modal-img-container"><img id="modal-img" src="" alt="Produto"></div>
+      <h3 class="modal-title" id="modal-nome">Nome</h3>
+      <div class="modal-price" id="modal-preco">R$ 0,00</div>
+      <div class="modal-desc" id="modal-desc">Descrição</div>
+      <div id="modal-opcoes-container" class="variations-box" style="display:none;">
+        <div class="variations-title">Escolha o seu sabor (Obrigatório) <span style="color:red">*</span></div>
+        <div id="modal-opcoes-lista"></div>
+      </div>
+      <button style="width:100%; padding: 15px; font-size: 16px;" onclick="confirmarAdicaoCarrinho()"><i class="fa-solid fa-cart-plus"></i> Adicionar ao Carrinho</button>
+    </div>
+  </div>
+
+  <div id="btn-ver-carrinho" onclick="irParaCheckout()">
+    <span style="font-weight: 600;"><i class="fa-solid fa-cart-shopping"></i> Carrinho (<span id="qtd-carrinho">0</span>)</span>
+    <span style="font-weight: bold; background: var(--white); color: var(--text-dark); padding: 5px 12px; border-radius: 20px;">R$ <span id="valor-btn-carrinho">0.00</span></span>
+  </div>
+
+  <script>
+    const API_URL = "https://script.google.com/macros/s/AKfycbwOgCECPgMIOxuSj0Nb_vIwyNM9w6EUMpyLRl1ySOXunTrnFgt_E6UhKVxqpfKKm3xiRw/exec";
+    
+    window.alert = function(msg) {
+      let aviso = document.createElement('div');
+      aviso.style.position = 'fixed'; aviso.style.bottom = '30px'; aviso.style.left = '50%';
+      aviso.style.transform = 'translateX(-50%)'; aviso.style.background = 'var(--primary-dark)';
+      aviso.style.color = '#fff'; aviso.style.padding = '12px 24px'; aviso.style.borderRadius = '30px';
+      aviso.style.zIndex = '99999'; aviso.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)';
+      aviso.style.fontWeight = '600'; aviso.style.textAlign = 'center';
+      aviso.style.width = '80%'; aviso.style.maxWidth = '400px';
+      aviso.innerHTML = msg; document.body.appendChild(aviso);
+      setTimeout(() => { aviso.style.opacity = '0'; aviso.style.transition = 'opacity 0.4s'; setTimeout(() => aviso.remove(), 400); }, 3000);
+    };
+
+    let produtos = [], carrinho = [], pedidosGlobal = [];
+    let usuarioAtual = { nivel: 'visitante', nome: '' };
+    let modoCadastro = false, dataCalendario = new Date();
+    let produtoSendoVisto = null;
+
+    window.onload = function() {
+      carregarProdutosServidor(); 
+      configurarRegraData();
+      atualizarInterfaceUsuario();
+    };
+
+    function callAPI(acao, payload, buttonId, textCarregando, textOriginal) {
+      if(buttonId) document.getElementById(buttonId).innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ' + textCarregando;
+      let urlLimpa = API_URL.split('?')[0];
+      return fetch(urlLimpa + "?acao=" + acao + "&payload=" + encodeURIComponent(JSON.stringify(payload || {})))
+        .then(res => res.text())
+        .then(text => {
+          if(buttonId) document.getElementById(buttonId).innerHTML = textOriginal;
+          try {
+            let data = JSON.parse(text);
+            if(data && data.erro) { alert(data.erro); throw new Error(data.erro); }
+            return data;
+          } catch(e) { console.error(text); throw new Error("Erro de comunicação."); }
+        })
+        .catch(err => { if(buttonId) document.getElementById(buttonId).innerHTML = textOriginal; });
+    }
+
+    function mostrarTela(telaId) {
+      document.querySelectorAll('.screen').forEach(function(el) { el.classList.remove('active'); });
+      document.getElementById(telaId).classList.add('active');
+      document.getElementById('user-dropdown').classList.remove('show');
+      window.scrollTo(0,0);
+      if(telaId === 'menu-section' && carrinho.length > 0 && usuarioAtual.nivel !== 'admin') { document.getElementById('btn-ver-carrinho').style.display = 'flex'; } else { document.getElementById('btn-ver-carrinho').style.display = 'none'; }
+      if(telaId === 'admin-section') { carregarPedidosAdmin(); renderizarProdutosAdmin(); }
+      if(telaId === 'checkout-section' && usuarioAtual.endereco) {
+         let endCompleto = usuarioAtual.endereco;
+         if(usuarioAtual.numero) endCompleto += ", " + usuarioAtual.numero;
+         if(usuarioAtual.complemento) endCompleto += " - " + usuarioAtual.complemento;
+         if(usuarioAtual.cep) endCompleto += " (CEP: " + usuarioAtual.cep + ")";
+         document.getElementById('endereco-checkout').value = endCompleto;
+      }
+    }
+
+    function toggleUserMenu() {
+      let dropdown = document.getElementById('user-dropdown');
+      if(usuarioAtual.nivel === 'visitante') { mostrarTela('login-section'); return; }
+      if(dropdown.classList.contains('show')) { dropdown.classList.remove('show'); } 
+      else {
+        let html = '<button onclick="abrirMinhaConta()"><i class="fa-solid fa-id-card"></i> Minha Conta</button>';
+        if(usuarioAtual.nivel === 'admin') html += '<button onclick="mostrarTela(\'admin-section\')"><i class="fa-solid fa-screwdriver-wrench"></i> Painel Admin</button>';
+        html += '<button onclick="fazerLogout()"><i class="fa-solid fa-arrow-right-from-bracket"></i> Sair</button>';
+        dropdown.innerHTML = html; dropdown.classList.add('show');
+      }
+    }
+    
+    window.onclick = function(event) {
+      if (!event.target.matches('.user-menu-btn') && !event.target.matches('.fa-user')) {
+        let dropdowns = document.getElementsByClassName("user-dropdown");
+        for (let i = 0; i < dropdowns.length; i++) dropdowns[i].classList.remove('show');
+      }
+    }
+
+    function alternarModoAuth() {
+      modoCadastro = !modoCadastro;
+      document.getElementById('auth-title').innerHTML = modoCadastro ? "<i class='fa-solid fa-user-plus'></i> Criar Conta" : "<i class='fa-solid fa-right-to-bracket'></i> Login";
+      document.getElementById('btn-auth-action').innerText = modoCadastro ? "Concluir Cadastro" : "Entrar";
+      document.getElementById('cadastro-fields').style.display = modoCadastro ? "block" : "none";
+    }
+
+    function processarAutenticacao() {
+      const email = document.getElementById('auth-email').value; const senha = document.getElementById('auth-senha').value;
+      if(!email || !senha) return alert("Preencha email e senha.");
+      if(modoCadastro) {
+        callAPI('cadastro', {nome: document.getElementById('reg-nome').value, email: email, senha: senha}, 'btn-auth-action', 'Aguarde...', 'Concluir Cadastro')
+        .then(res => { if(res && res.msg) { alert(res.msg); if(res.sucesso) alternarModoAuth(); } });
+      } else {
+        callAPI('login', {email: email, senha: senha}, 'btn-auth-action', 'Aguarde...', 'Entrar')
+        .then(user => { if(user) { usuarioAtual = user; atualizarInterfaceUsuario(); mostrarTela('menu-section'); } else alert("Usuário ou senha incorretos."); });
+      }
+    }
+
+    function fazerLogout() { usuarioAtual = { nivel: 'visitante', nome: '' }; carrinho = []; atualizarBotaoCarrinho(); atualizarInterfaceUsuario(); mostrarTela('menu-section'); }
+
+    function atualizarInterfaceUsuario() {
+      const greeting = document.getElementById('user-greeting');
+      if (usuarioAtual.nivel === 'visitante') greeting.innerText = "Acompanhe nossos doces como Visitante"; else greeting.innerText = "Olá, " + usuarioAtual.nome; 
+    }
+
+    function abrirMinhaConta() {
+      document.getElementById('perfil-nome').value = usuarioAtual.nome || ""; document.getElementById('perfil-email').value = usuarioAtual.email || "";
+      document.getElementById('perfil-cpf').value = usuarioAtual.cpf || ""; document.getElementById('perfil-telefone').value = usuarioAtual.telefone || "";
+      document.getElementById('perfil-cep').value = usuarioAtual.cep || ""; document.getElementById('perfil-endereco').value = usuarioAtual.endereco || "";
+      document.getElementById('perfil-numero').value = usuarioAtual.numero || ""; document.getElementById('perfil-complemento').value = usuarioAtual.complemento || "";
+      mostrarTela('conta-section');
+    }
+
+    function mudarTabConta(tab) {
+      document.getElementById('tab-conta-pessoal').classList.remove('active'); document.getElementById('tab-conta-endereco').classList.remove('active');
+      document.getElementById('conta-tab-pessoal').classList.remove('active'); document.getElementById('conta-tab-endereco').classList.remove('active');
+      document.getElementById('tab-conta-' + tab).classList.add('active'); document.getElementById('conta-tab-' + tab).classList.add('active');
+    }
+
+    function buscarCepViaAPI() {
+      let cep = document.getElementById('perfil-cep').value.replace(/\D/g, '');
+      if (cep.length === 8) {
+        document.getElementById('perfil-endereco').value = "Buscando endereço...";
+        fetch('https://viacep.com.br/ws/' + cep + '/json/')
+          .then(res => res.json())
+          .then(data => { if (!data.erro) { document.getElementById('perfil-endereco').value = data.logradouro + ", " + data.bairro + ", " + data.localidade + " - " + data.uf; document.getElementById('perfil-numero').focus(); } else { document.getElementById('perfil-endereco').value = ""; alert("CEP não encontrado."); } })
+          .catch(err => { document.getElementById('perfil-endereco').value = ""; });
+      }
+    }
+
+    function salvarPerfilUsuario() {
+      let obj = { email: usuarioAtual.email, nome: document.getElementById('perfil-nome').value, cpf: document.getElementById('perfil-cpf').value, telefone: document.getElementById('perfil-telefone').value, cep: document.getElementById('perfil-cep').value, endereco: document.getElementById('perfil-endereco').value, numero: document.getElementById('perfil-numero').value, complemento: document.getElementById('perfil-complemento').value };
+      callAPI('atualizarPerfil', obj, 'btn-salvar-perfil', 'Salvando...', '<i class="fa-solid fa-save"></i> Atualizar Dados').then(res => { if(res && res.sucesso) { Object.assign(usuarioAtual, obj); atualizarInterfaceUsuario(); alert("Perfil atualizado com sucesso!"); } else alert(res ? res.msg : "Erro ao atualizar"); });
+    }
+
+    function carregarProdutosServidor() {
+      callAPI('getProdutos').then(dados => { produtos = dados || []; renderizarProdutosApp(); if(usuarioAtual.nivel === 'admin') renderizarProdutosAdmin(); });
+    }
+
+    function renderizarProdutosApp() {
+      const defaultImg = 'https://via.placeholder.com/150/fbf9ff/c496f2?text=Doce'; let html = '';
+      for(let i = 0; i < produtos.length; i++) {
+        let p = produtos[i]; let imagemUrl = p.img ? p.img : defaultImg; let descFormatada = p.desc ? p.desc.replace(/\n/g, '<br>') : '';
+        html += '<div class="produto-card"><div class="produto-header"><img src="' + imagemUrl + '" class="produto-img" alt="' + p.nome + '"><div class="produto-info"><h3>' + p.nome + '</h3></div></div><div class="produto-desc">' + descFormatada + '</div><div class="produto-footer"><div class="preco">R$ ' + parseFloat(p.preco).toFixed(2) + '</div><button class="btn-adicionar" onclick="abrirModalProduto(\'' + p.id + '\')"><i class="fa-solid fa-plus"></i></button></div></div>';
+      }
+      if(html === '') { html = "<p style='text-align:center;'>Cardápio em atualização.</p>"; }
+      document.getElementById('produtos-lista').innerHTML = html;
+    }
+
+    function abrirModalProduto(id) {
+      if(usuarioAtual.nivel === 'visitante') { alert("Acesse ou crie uma conta para fazer o seu pedido!"); return mostrarTela('login-section'); }
+      let p = produtos.filter(function(prod) { return prod.id == id; })[0]; if(!p) return;
+      produtoSendoVisto = p; 
+      document.getElementById('modal-img').src = p.img || 'https://via.placeholder.com/150/fbf9ff/c496f2?text=Doce'; document.getElementById('modal-nome').innerText = p.nome; document.getElementById('modal-preco').innerText = "R$ " + parseFloat(p.preco).toFixed(2); document.getElementById('modal-desc').innerHTML = p.desc ? p.desc.replace(/\n/g, '<br>') : ''; 
+      let containerOpcoes = document.getElementById('modal-opcoes-container'); let listaOpcoes = document.getElementById('modal-opcoes-lista');
+      if(p.opcoes && p.opcoes.trim() !== "") {
+         containerOpcoes.style.display = 'block'; let arrayOpcoes = p.opcoes.split(','); let htmlOpcoes = '';
+         for(let i=0; i < arrayOpcoes.length; i++){
+            let opcaoTexto = arrayOpcoes[i].trim(); htmlOpcoes += '<label class="variation-item"><input type="radio" name="sabor_escolhido" value="' + opcaoTexto + '">' + opcaoTexto + '</label>';
+         }
+         listaOpcoes.innerHTML = htmlOpcoes;
+      } else { containerOpcoes.style.display = 'none'; }
+      document.getElementById('modal-produto').style.display = 'flex';
+    }
+    
+    function fecharModalProduto() { document.getElementById('modal-produto').style.display = 'none'; produtoSendoVisto = null; }
+
+    function confirmarAdicaoCarrinho() {
+       if(!produtoSendoVisto) return;
+       let itemCarrinho = Object.assign({}, produtoSendoVisto);
+       if(itemCarrinho.opcoes && itemCarrinho.opcoes.trim() !== "") {
+          let selecionado = document.querySelector('input[name="sabor_escolhido"]:checked');
+          if(!selecionado) { alert("Por favor, escolha um sabor para continuar."); return; }
+          itemCarrinho.nome = itemCarrinho.nome + " (" + selecionado.value + ")";
+       }
+       carrinho.push(itemCarrinho); atualizarBotaoCarrinho(); fecharModalProduto(); document.getElementById('btn-ver-carrinho').style.display = 'flex';
+    }
+
+    function atualizarBotaoCarrinho() {
+      let total = 0; for(let i=0; i < carrinho.length; i++){ total += parseFloat(carrinho[i].preco); }
+      document.getElementById('qtd-carrinho').innerText = carrinho.length; document.getElementById('valor-btn-carrinho').innerText = total.toFixed(2); document.getElementById('total-carrinho').innerText = total.toFixed(2);
+    }
+
+    function irParaCheckout() {
+      if(carrinho.length === 0) return; mostrarTela('checkout-section'); let html = '';
+      for(let i=0; i < carrinho.length; i++){
+        let item = carrinho[i]; html += '<p style="font-size:14px; margin:8px 0; border-bottom: 1px solid #f0f0f0; padding-bottom: 5px;"><i class="fa-solid fa-angle-right" style="color:var(--primary); font-size:10px;"></i> ' + item.nome + '<strong style="float:right;">R$ ' + parseFloat(item.preco).toFixed(2) + '</strong></p>';
+      }
+      document.getElementById('itens-carrinho').innerHTML = html;
+    }
+
+    function configurarRegraData() { let d = new Date(); d.setDate(d.getDate() + 2); document.getElementById('data-pedido').min = d.toISOString().split('T')[0]; }
+
+    function enviarPedido() {
+      let data = document.getElementById('data-pedido').value; let end = document.getElementById('endereco-checkout').value;
+      if(!data || !end) return alert("Preencha a data e verifique o endereço de entrega!");
+      let total = 0; let nomesItens = [];
+      for(let i=0; i < carrinho.length; i++){ total += parseFloat(carrinho[i].preco); nomesItens.push(carrinho[i].nome); }
+      let obj = { data_pedido: new Date().toISOString().split('T')[0], data_entrega: data, cliente: usuarioAtual.email, nome: usuarioAtual.nome, total: total, pagamento: document.getElementById('pagamento').value, status: 'Pendente', itens: nomesItens.join(' + ') };
+      callAPI('salvarPedido', obj).then(res => { alert("🎉 Pedido Confirmado! A Lunoca agradece a preferência."); carrinho = []; atualizarBotaoCarrinho(); mostrarTela('menu-section'); });
+    }
+
+    function mudarTabAdmin(tab) {
+      document.querySelectorAll('.admin-nav button').forEach(function(b) { b.classList.remove('active'); }); document.querySelectorAll('.admin-tab').forEach(function(t) { t.classList.remove('active'); });
+      document.getElementById('tab-btn-' + tab).classList.add('active'); document.getElementById('admin-tab-' + tab).classList.add('active');
+      if(tab === 'calendario') renderizarCalendario(); if(tab === 'usuarios') carregarUsuariosAdmin();
+    }
+
+    function carregarPedidosAdmin() {
+      document.getElementById('lista-pedidos-admin').innerHTML = "<p style='text-align:center;'><i class='fa-solid fa-spinner fa-spin'></i> Buscando...</p>";
+      callAPI('getPedidos').then(pedidos => {
+        if(!pedidos) pedidos = []; pedidosGlobal = pedidos;
+        if(pedidos.length === 0) return document.getElementById('lista-pedidos-admin').innerHTML = "Nenhum pedido encontrado.";
+        let html = '';
+        for(let i = 0; i < pedidos.length; i++){
+           let p = pedidos[i]; let dtaStr = p.data_entrega ? p.data_entrega.split('-').reverse().join('/') : "Data Indefinida";
+           html += '<div class="admin-item-card"><h4 style="margin:0; color:var(--primary); font-size: 16px;"><i class="fa-regular fa-calendar-check"></i> Entrega: ' + dtaStr + '</h4><div style="margin-top: 10px; font-size:13px; color: #555;"><p style="margin:4px 0;"><strong>Cliente:</strong> ' + p.nome + '</p><p style="margin:4px 0;"><strong>Contato:</strong> ' + p.cliente + '</p><p style="margin:4px 0;"><strong>Valor:</strong> R$ ' + p.total + ' | <strong>Tipo:</strong> ' + p.pagamento.toUpperCase() + '</p><p style="margin:8px 0 0 0; padding:8px; background:#f9f9f9; border-radius:6px; border:1px solid #eee;"><strong>Cesta:</strong> ' + p.itens + '</p></div></div>';
+        }
+        document.getElementById('lista-pedidos-admin').innerHTML = html;
+      });
+    }
+
+    function renderizarProdutosAdmin() {
+      let html = '';
+      for(let i=0; i<produtos.length; i++){
+         let p = produtos[i]; html += '<div class="user-list-item"><div><strong style="color:var(--text-dark);">' + p.nome + '</strong><br><span style="font-size:13px; color:var(--primary); font-weight:600;">R$ ' + parseFloat(p.preco).toFixed(2) + '</span></div><button class="btn-outline" onclick="editarProduto(\'' + p.id + '\')" style="padding:6px 12px; font-size:12px;"><i class="fa-solid fa-pen"></i> Editar</button></div>';
+      }
+      document.getElementById('lista-produtos-admin').innerHTML = html;
+    }
+
+    function editarProduto(id) {
+      let p = produtos.filter(function(prod) { return prod.id == id; })[0]; if(!p) return;
+      document.getElementById('prod-id').value = p.id; document.getElementById('prod-nome').value = p.nome; document.getElementById('prod-preco').value = p.preco; document.getElementById('prod-desc').value = p.desc; document.getElementById('prod-opcoes').value = p.opcoes || ""; document.getElementById('prod-img').value = p.img || ""; document.getElementById('lbl-upload').innerHTML = "<i class='fa-solid fa-image'></i> Foto Selecionada"; document.getElementById('upload-status').innerText = ""; window.scrollTo(0,0);
+    }
+    
+    function limparFormProduto() {
+      let ids = ['prod-id','prod-nome','prod-preco','prod-desc','prod-opcoes','prod-img'];
+      for(let i=0; i<ids.length; i++) document.getElementById(ids[i]).value = "";
+      document.getElementById('lbl-upload').innerHTML = "<i class='fa-solid fa-cloud-arrow-up'></i> Escolher foto..."; document.getElementById('upload-status').innerText = ""; document.getElementById('prod-file').value = "";
+    }
+
+    function prepararUpload(input) {
+      if (input.files && input.files[0]) {
+        var file = input.files[0]; document.getElementById('lbl-upload').innerHTML = "<i class='fa-solid fa-spinner fa-spin'></i> Processando..."; document.getElementById('upload-status').innerText = "Enviando para o ImgBB..."; document.getElementById('btn-salvar-produto').disabled = true;
+        const IMGBB_API_KEY = '97dfa8989e6adbbc6faebb4b505686fe'; 
+        let formData = new FormData(); formData.append("image", file);
+        fetch("https://api.imgbb.com/1/upload?key=" + IMGBB_API_KEY, { method: "POST", body: formData })
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+          if (data.success) { document.getElementById('upload-status').innerText = "✅ Foto hospedada!"; document.getElementById('upload-status').style.color = "green"; document.getElementById('lbl-upload').innerHTML = "<i class='fa-solid fa-check'></i> " + file.name; document.getElementById('prod-img').value = data.data.url; document.getElementById('btn-salvar-produto').disabled = false; } else throw new Error("Falha na API.");
+        }).catch(function(error) { document.getElementById('upload-status').innerText = "❌ Erro ao enviar."; document.getElementById('upload-status').style.color = "red"; document.getElementById('btn-salvar-produto').disabled = false; });
+      }
+    }
+
+    function salvarProdutoAdmin() {
+      let id = document.getElementById('prod-id').value; let nome = document.getElementById('prod-nome').value; let preco = document.getElementById('prod-preco').value; let desc = document.getElementById('prod-desc').value; let opcoes = document.getElementById('prod-opcoes').value; let img = document.getElementById('prod-img').value;
+      if(!nome || !preco) return alert("Preencha Nome e Preço.");
+      let pObj = { id: id || new Date().getTime(), nome: nome, preco: preco, desc: desc, opcoes: opcoes, img: img };
+      callAPI('salvarProduto', pObj, 'btn-salvar-produto', 'Salvando...', '<i class="fa-solid fa-save"></i> Salvar').then(() => { alert("✅ Produto atualizado!"); limparFormProduto(); carregarProdutosServidor(); });
+    }
+
+    function mudarMes(delta) { dataCalendario.setMonth(dataCalendario.getMonth() + delta); renderizarCalendario(); }
+    function renderizarCalendario() {
+      if(!pedidosGlobal) pedidosGlobal = [];
+      let ano = dataCalendario.getFullYear(); let mes = dataCalendario.getMonth(); const mesesStr = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+      document.getElementById('mes-ano-atual').innerText = mesesStr[mes] + " " + ano;
+      let primeiroDia = new Date(ano, mes, 1).getDay(); let diasNoMes = new Date(ano, mes + 1, 0).getDate();
+      let html = '<tr>'; let diaAtual = 1;
+      for (let i = 0; i < 9; i++) {
+        for (let j = 0; j < 7; j++) {
+          if ((i === 0 && j < primeiroDia) || diaAtual > diasNoMes) { html += '<td></td>'; } else {
+            let dataFormatada = ano + "-" + String(mes+1).padStart(2,'0') + "-" + String(diaAtual).padStart(2,'0'); let pedidosDoDia = pedidosGlobal.filter(function(p) { return p.data_entrega === dataFormatada; });
+            let classe = pedidosDoDia.length > 0 ? 'has-order' : ''; html += '<td class="' + classe + '" onclick="mostrarPedidosDia(\'' + dataFormatada + '\')">' + diaAtual + (pedidosDoDia.length > 0 ? '<br><i class="fa-solid fa-gift" style="font-size:10px;"></i>' : '') + '</td>'; diaAtual++;
+          }
+        } html += '</tr>'; if (diaAtual > diasNoMes) break;
+      }
+      document.getElementById('calendario-corpo').innerHTML = html;
+    }
+
+    function mostrarPedidosDia(data) {
+      if(!pedidosGlobal) pedidosGlobal = []; let pedidosDoDia = pedidosGlobal.filter(function(p) { return p.data_entrega === data; }); let div = document.getElementById('detalhes-dia-calendario');
+      if(pedidosDoDia.length === 0) return div.innerHTML = "<p style='text-align:center; color:#999;'>Nenhuma entrega para este dia.</p>";
+      let html = '<h4 style="margin-top:0; color:var(--primary);"><i class="fa-solid fa-list"></i> Entregas de ' + data.split('-').reverse().join('/') + '</h4>';
+      for(let i=0; i < pedidosDoDia.length; i++){
+          let p = pedidosDoDia[i]; html += '<div style="background:#fbf9ff; padding:12px; border-left: 4px solid var(--primary); margin-bottom:8px; border-radius:6px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);"><p style="margin:0; font-size:14px; font-weight:600;">' + p.nome + '</p><p style="margin:4px 0 0 0; font-size:12px; color:#666;"><i class="fa-solid fa-box"></i> ' + p.itens + '</p></div>';
+      } div.innerHTML = html;
+    }
+
+    function carregarUsuariosAdmin() {
+      document.getElementById('lista-usuarios-admin').innerHTML = "<p style='text-align:center;'><i class='fa-solid fa-spinner fa-spin'></i> Buscando Contas...</p>";
+      callAPI('getUsuarios').then(lista => {
+        if(!lista || lista.length === 0) return document.getElementById('lista-usuarios-admin').innerHTML = "Nenhum usuário.";
+        let html = '';
+        for(let i = 0; i < lista.length; i++) {
+           let u = lista[i]; let actions = u.email === usuarioAtual.email ? '<span style="font-size:11px; color:#aaa; font-weight:600;">VOCÊ</span>' : '<button class="btn-outline" style="padding:6px 10px; font-size:12px; margin-right:5px;" onclick="prepararEdicaoUsuario(\'' + u.email + '\', \'' + u.nome + '\', \'' + u.nivel + '\')"><i class="fa-solid fa-pen"></i></button><button class="btn-danger" style="padding:6px 10px; font-size:12px;" onclick="excluirUser(\'' + u.email + '\')"><i class="fa-solid fa-trash"></i></button>';
+           html += '<div class="user-list-item"><div><strong style="color:var(--text-dark);">' + u.nome + '</strong> ' + (u.nivel === 'admin' ? '<i class="fa-solid fa-crown" style="color:#f1c40f;"></i>' : '') + '<br><span style="font-size:12px; color:#777;">' + u.email + '</span></div><div>' + actions + '</div></div>';
+        } document.getElementById('lista-usuarios-admin').innerHTML = html;
+      });
+    }
+
+    function abrirFormNovoUsuario() {
+      document.getElementById('form-user-admin').style.display = 'flex';
+      let ids = ['admin-user-original-email','admin-user-nome','admin-user-email','admin-user-senha'];
+      for(let i=0; i<ids.length; i++) document.getElementById(ids[i]).value = ''; window.scrollTo(0, document.getElementById('form-user-admin').offsetTop - 50);
+    }
+
+    function prepararEdicaoUsuario(email, nome, nivel) {
+      document.getElementById('form-user-admin').style.display = 'flex';
+      document.getElementById('admin-user-original-email').value = email; document.getElementById('admin-user-email').value = email; document.getElementById('admin-user-nome').value = nome;
+      document.getElementById('admin-user-senha').value = ''; document.getElementById('admin-user-nivel').value = nivel; window.scrollTo(0, document.getElementById('form-user-admin').offsetTop - 50);
+    }
+
+    function fecharFormUsuario() { document.getElementById('form-user-admin').style.display = 'none'; }
+
+    function salvarFormUsuario() {
+      let originalEmail = document.getElementById('admin-user-original-email').value;
+      let obj = { nome: document.getElementById('admin-user-nome').value, email: document.getElementById('admin-user-email').value, senha: document.getElementById('admin-user-senha').value, nivel: document.getElementById('admin-user-nivel').value };
+      if(!obj.nome || !obj.email) return alert("Nome e Email são obrigatórios.");
+      callAPI('salvarUsuarioAdmin', {originalEmail: originalEmail, obj: obj}).then(res => { alert(res.msg); if(res.sucesso) { fecharFormUsuario(); carregarUsuariosAdmin(); } });
+    }
+
+    let clickExcluir = null;
+    function excluirUser(email) {
+      if (clickExcluir !== email) { clickExcluir = email; alert("Toque na lixeira novamente para confirmar a exclusão de " + email); return; }
+      clickExcluir = null;
+      document.getElementById('lista-usuarios-admin').innerHTML = "<p style='text-align:center;'><i class='fa-solid fa-spinner fa-spin'></i> Apagando...</p>";
+      callAPI('deletarUsuario', {email: email}).then(() => { alert("Usuário excluído!"); carregarUsuariosAdmin(); });
+    }
+  </script>
+</body>
+</html>
