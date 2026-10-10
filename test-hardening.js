@@ -2067,9 +2067,97 @@ assert.ok(
   !estJs014.includes("supabaseClient.from('produtos').update({ estoque_qtd"),
   '[FALHA] estoque.js não foi migrado para a RPC ajustar_estoque_operacao!'
 );
-console.log('    ✅ Frontend desacoplado de estoque e operando exclusivamente via RPC atômica.');
+// ==========================================================================
+// 15. FASE 15: COMUNICAÇÃO WHATSAPP, AUDITORIA CANÔNICA & VERSÃO (MIGRATION 015)
+// ==========================================================================
+console.log('\n📱 FASE 15: Comunicação WhatsApp, Auditoria Canônica & Versão (015)...');
+const sqlFiles015 = [
+  'supabase/migrations/015_comunicacao_whatsapp_e_relacionamento.sql',
+  'sql/schema.sql',
+  'sql/install.sql'
+];
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–14 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+for (const file of sqlFiles015) {
+  const content = fs.readFileSync(file, 'utf-8');
+
+  // 15.1 Tabela comunicacoes_cliente e constraint XOR
+  console.log(`  🔎 15.1 ${file}: tabela comunicacoes_cliente e constraint XOR de integridade...`);
+  assert.ok(
+    content.includes('CREATE TABLE IF NOT EXISTS public.comunicacoes_cliente') &&
+    content.includes('CONSTRAINT ck_comunicacao_entidade') &&
+    content.includes('orcamento_id IS NOT NULL AND pedido_id IS NULL') &&
+    content.includes('orcamento_id IS NULL AND pedido_id IS NOT NULL') &&
+    content.includes('chave_idempotencia TEXT NOT NULL UNIQUE'),
+    `[FALHA] ${file}: tabela comunicacoes_cliente ou constraint XOR não implementada!`
+  );
+
+  // 15.2 Normalizador E.164 e Renderer Canônico
+  console.log(`  🔎 15.2 ${file}: normalizar_telefone_e164 e obter_preview_comunicacao...`);
+  assert.ok(
+    content.includes('CREATE OR REPLACE FUNCTION public.normalizar_telefone_e164') &&
+    content.includes('CREATE OR REPLACE FUNCTION public.obter_preview_comunicacao') &&
+    content.includes('INVALID_PHONE') &&
+    content.includes('A aprovação da proposta não reserva estoque ou capacidade') &&
+    content.includes('https://lunocadoceria.com.br/orcamento.html?t='),
+    `[FALHA] ${file}: normalizador ou renderizador canônico obter_preview_comunicacao não implementado!`
+  );
+
+  // 15.3 Registro Auditável e Bloqueio de whatsapp_link como enviado
+  console.log(`  🔎 15.3 ${file}: registrar_comunicacao_cliente com bloqueio de whatsapp_link enviado...`);
+  assert.ok(
+    content.includes('CREATE OR REPLACE FUNCTION public.registrar_comunicacao_cliente') &&
+    content.includes('INVALID_STATUS_FOR_CHANNEL') &&
+    content.includes('REVOKE ALL ON FUNCTION public.registrar_comunicacao_cliente FROM PUBLIC, anon;'),
+    `[FALHA] ${file}: registrar_comunicacao_cliente não implementada ou não bloqueia whatsapp_link como enviado!`
+  );
+
+  // 15.4 Aprovação Pública Vinculada à Versão Esperada
+  console.log(`  🔎 15.4 ${file}: aprovar_orcamento_publico com p_versao_esperada e QUOTE_VERSION_CHANGED...`);
+  assert.ok(
+    content.includes('CREATE OR REPLACE FUNCTION public.aprovar_orcamento_publico') &&
+    content.includes('p_versao_esperada INTEGER') &&
+    content.includes('QUOTE_VERSION_CHANGED'),
+    `[FALHA] ${file}: aprovar_orcamento_publico não vinculada à versão esperada!`
+  );
+
+  // 15.5 Lembretes de Orçamento
+  console.log(`  🔎 15.5 ${file}: listar_orcamentos_para_lembrete...`);
+  assert.ok(
+    content.includes('CREATE OR REPLACE FUNCTION public.listar_orcamentos_para_lembrete') &&
+    content.includes('ORCAMENTO_VENCENDO') &&
+    content.includes('REVOKE ALL ON FUNCTION public.listar_orcamentos_para_lembrete FROM PUBLIC, anon;'),
+    `[FALHA] ${file}: listar_orcamentos_para_lembrete não implementada ou sem revogação de permissão pública!`
+  );
+}
+
+// 15.6 Frontend e Pages Function
+console.log('  🔎 15.6 Verificando frontend e adapter de Pages Functions...');
+const waHelper = fs.readFileSync('js/whatsapp-helper.js', 'utf-8');
+assert.ok(
+  waHelper.includes('export function normalizarTelefoneE164') &&
+  waHelper.includes('export function gerarLinkWhatsApp') &&
+  waHelper.includes('export async function abrirModalComunicacaoWhatsApp'),
+  '[FALHA] js/whatsapp-helper.js não exporta as funções canônicas!'
+);
+
+const orcPubJs015 = fs.readFileSync('js/orcamento-publico.js', 'utf-8');
+assert.ok(
+  orcPubJs015.includes('p_versao_esperada: Number(orc?.versao || 1)') &&
+  orcPubJs015.includes("QUOTE_VERSION_CHANGED"),
+  '[FALHA] js/orcamento-publico.js não envia p_versao_esperada ou não trata QUOTE_VERSION_CHANGED!'
+);
+
+const cfWaSend = fs.readFileSync('functions/api/whatsapp/send.js', 'utf-8');
+assert.ok(
+  cfWaSend.includes('obter_preview_comunicacao') &&
+  cfWaSend.includes('registrar_comunicacao_cliente') &&
+  cfWaSend.includes('verifyAuth'),
+  '[FALHA] functions/api/whatsapp/send.js não consome preview canônico server-side ou não valida auth!'
+);
+console.log('    ✅ Frontend e Pages Function da Frente B 100% auditados.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–15 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+
 
 
 
