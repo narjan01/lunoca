@@ -1,5 +1,10 @@
 // ==========================================================================
-// LUNOCA DOCERIA - Cloudflare Pages Function: Disparo WhatsApp (Seguro & Anti-SSRF)
+// LUNOCA DOCERIA - Cloudflare Pages Function: Disparo WhatsApp (Seguro & Canônico)
+// ==========================================================================
+// 1. Autenticação obrigatória (Admin ou Operador).
+// 2. Não confia em texto/telefone vindo do cliente: invoca obter_preview_comunicacao() no servidor.
+// 3. Fallback wa.me ou adapter Evolution API com secrets seguros do Cloudflare.
+// 4. Registra auditoria com idempotência via registrar_comunicacao_cliente().
 // ==========================================================================
 
 import { getCorsHeaders, handleCorsOptions } from '../_cors.js';
@@ -42,103 +47,186 @@ export async function onRequestPost(context) {
 
   try {
     const body = await request.json();
-    const { 
-      telefone, 
-      mensagem, 
-      provedor = 'evolution', 
-      instanciaNome: customNome,
-      clientToken
-    } = body;
+    const { tipo, orcamento_id, pedido_id } = body;
 
-    if (!telefone || !mensagem) {
+    if (!tipo) {
       return new Response(JSON.stringify({ 
         success: false, 
-        error: 'Telefone e mensagem são obrigatórios.' 
+        error: 'Tipo de template de comunicação é obrigatório.' 
       }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    let foneLimpo = String(telefone).replace(/\D/g, '');
-    if (foneLimpo.length === 10 || foneLimpo.length === 11) {
-      foneLimpo = '55' + foneLimpo;
+    if (!orcamento_id && !pedido_id) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'ID da entidade (orcamento_id ou pedido_id) é obrigatório.' 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
-    // 2. Resolução Segura de Credenciais (Server-Side Environment Variables exclusivamente)
-    const serverApiKey = env.EVOLUTION_API_KEY || env.WHATSAPP_API_KEY || '';
-    const defaultUrl = env.EVOLUTION_API_URL || env.WHATSAPP_API_URL || 'https://lunoca-whatsapp.onrender.com';
-    const serverInstanciaNome = env.EVOLUTION_INSTANCE_NAME || env.WHATSAPP_INSTANCE_NAME || customNome || 'lunoca-whatsapp';
+    // 2. Conexão ao Supabase para obter o preview canônico server-side
+    const supabaseUrl = env.SUPABASE_URL || '';
+    const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || '';
 
-    let targetBaseUrl = defaultUrl;
-    let targetUrl = targetBaseUrl.replace(/\/+$/, '');
-    let reqHeaders = { 'Content-Type': 'application/json' };
-    let reqBody = {};
-
-    if (provedor === 'evolution') {
-      if (serverApiKey) {
-        reqHeaders['apikey'] = serverApiKey.trim();
-        reqHeaders['Authorization'] = `Bearer ${serverApiKey.trim()}`;
-      }
-      
-      if (!targetUrl.includes('/message/sendText')) {
-        targetUrl = targetUrl + `/message/sendText/${encodeURIComponent(serverInstanciaNome.trim())}`;
-      }
-
-      reqBody = {
-        number: foneLimpo,
-        text: mensagem,
-        textMessage: { text: mensagem },
-        options: { delay: 1200, presence: 'composing' }
-      };
-    } else if (provedor === 'z-api') {
-      const zToken = env.WHATSAPP_CLIENT_TOKEN || clientToken || '';
-      if (zToken) reqHeaders['Client-Token'] = zToken.trim();
-      if (!targetUrl.includes('/send-text')) {
-        targetUrl = targetUrl + '/send-text';
-      }
-      reqBody = { phone: foneLimpo, message: mensagem };
-    } else {
-      if (serverApiKey) reqHeaders['Authorization'] = `Bearer ${serverApiKey.trim()}`;
-      reqBody = {
-        phone: foneLimpo,
-        number: foneLimpo,
-        message: mensagem,
-        timestamp: new Date().toISOString()
-      };
+    if (!supabaseUrl || !supabaseKey) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'Configuração do banco de dados ausente no ambiente.' 
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
-    const apiRes = await fetch(targetUrl, {
+    // Chama obter_preview_comunicacao
+    const rpcUrl = `${supabaseUrl.replace(/\/+$/, '')}/rest/v1/rpc/obter_preview_comunicacao`;
+    const rpcRes = await fetch(rpcUrl, {
       method: 'POST',
-      headers: reqHeaders,
-      body: JSON.stringify(reqBody)
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`
+      },
+      body: JSON.stringify({
+        p_tipo: tipo,
+        p_orcamento_id: orcamento_id || null,
+        p_pedido_id: pedido_id || null
+      })
     });
 
-    const resContentType = apiRes.headers.get('content-type') || '';
-    let resData;
-    if (resContentType.includes('application/json')) {
-      resData = await apiRes.json();
-    } else {
-      resData = { rawText: await apiRes.text() };
-    }
-
-    if (!apiRes.ok) {
-      console.warn('[WhatsApp Send] Resposta de erro do gateway:', apiRes.status, resData);
-      return new Response(JSON.stringify({
-        success: false,
-        status: apiRes.status,
-        error: resData.message || resData.error || `Erro HTTP ${apiRes.status} no gateway WhatsApp.`,
-        telefoneFormatado: foneLimpo
+    if (!rpcRes.ok) {
+      const errTxt = await rpcRes.text();
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'Falha ao resolver mensagem canônica: ' + errTxt 
       }), {
         status: 502,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
+    const preview = await rpcRes.json();
+    if (!preview || preview.success !== true) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: preview?.error || 'Não foi possível gerar a mensagem de comunicação.' 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // 3. Provedor de Envio: Evolution API (se configurado) ou Fallback para wa.me
+    const provider = env.WHATSAPP_PROVIDER || 'evolution';
+    const evolutionUrl = env.EVOLUTION_API_URL || env.WHATSAPP_API_URL || '';
+    const evolutionKey = env.EVOLUTION_API_TOKEN || env.EVOLUTION_API_KEY || env.WHATSAPP_CLIENT_TOKEN || '';
+    const evolutionInstance = env.EVOLUTION_INSTANCE || env.EVOLUTION_INSTANCE_NAME || 'lunoca';
+
+    if (provider === 'evolution' && evolutionUrl && evolutionKey) {
+      // Disparo Automatizado via Evolution API
+      let targetUrl = `${evolutionUrl.replace(/\/+$/, '')}/message/sendText/${encodeURIComponent(evolutionInstance)}`;
+
+      if (!isSafeExternalUrl(targetUrl)) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: 'URL do gateway Evolution API inválida ou insegura.' 
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      const evoRes = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': evolutionKey,
+          'Authorization': `Bearer ${evolutionKey}`
+        },
+        body: JSON.stringify({
+          number: preview.telefone,
+          text: preview.mensagem,
+          options: { delay: 1000, presence: 'composing' }
+        })
+      });
+
+      const evoData = await evoRes.json().catch(() => ({}));
+
+      if (evoRes.ok) {
+        // Registra como enviado de forma auditável
+        await fetch(`${supabaseUrl.replace(/\/+$/, '')}/rest/v1/rpc/registrar_comunicacao_cliente`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`
+          },
+          body: JSON.stringify({
+            p_tipo: tipo,
+            p_orcamento_id: orcamento_id || null,
+            p_pedido_id: pedido_id || null,
+            p_canal: 'evolution_api',
+            p_status: 'enviado',
+            p_provider_message_id: evoData?.key?.id || null
+          })
+        });
+
+        return new Response(JSON.stringify({
+          success: true,
+          canal: 'evolution_api',
+          status: 'enviado',
+          destinatario: preview.telefone,
+          data: evoData
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } else {
+        // Registra falha de envio
+        await fetch(`${supabaseUrl.replace(/\/+$/, '')}/rest/v1/rpc/registrar_comunicacao_cliente`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`
+          },
+          body: JSON.stringify({
+            p_tipo: tipo,
+            p_orcamento_id: orcamento_id || null,
+            p_pedido_id: pedido_id || null,
+            p_canal: 'evolution_api',
+            p_status: 'falhou',
+            p_erro: JSON.stringify(evoData)
+          })
+        });
+
+        return new Response(JSON.stringify({
+          success: false,
+          canal: 'evolution_api',
+          status: 'falhou',
+          error: evoData.message || 'Erro ao enviar mensagem via Evolution API.'
+        }), {
+          status: 502,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // 4. Se não houver Evolution configurada, retorna os dados para deep link wa.me
+    const waLink = `https://wa.me/${preview.telefone}?text=${encodeURIComponent(preview.mensagem)}`;
+
     return new Response(JSON.stringify({
       success: true,
-      data: resData,
-      telefoneFormatado: foneLimpo
+      canal: 'whatsapp_link',
+      status: 'gerado',
+      destinatario: preview.telefone,
+      mensagem: preview.mensagem,
+      link_whatsapp: waLink
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
