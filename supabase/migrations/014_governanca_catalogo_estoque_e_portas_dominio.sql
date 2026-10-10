@@ -296,6 +296,8 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
 -- RLS Fechado: Operador perde UPDATE direto em produtos e produto_opcoes
 -- Modificações de dados de catálogo (nome, preço, descrição) são exclusivas de Administradores
+DROP POLICY IF EXISTS "Admins e operadores podem atualizar produtos" ON public.produtos;
+DROP POLICY IF EXISTS "Admins e operadores podem inserir produtos" ON public.produtos;
 DROP POLICY IF EXISTS "Operadores e admins atualizam produtos" ON public.produtos;
 DROP POLICY IF EXISTS "Apenas admins atualizam produtos" ON public.produtos;
 CREATE POLICY "Apenas admins atualizam produtos" 
@@ -315,6 +317,39 @@ CREATE POLICY "Apenas admins gerenciam opções de produtos"
   ON public.produto_opcoes FOR ALL 
   USING (public.is_admin())
   WITH CHECK (public.is_admin());
+
+-- Porta de domínio dedicada para alternar controle de estoque (exclusiva Admin)
+CREATE OR REPLACE FUNCTION public.alterar_controle_estoque_produto(
+  p_produto_id BIGINT,
+  p_controlar BOOLEAN
+)
+RETURNS JSONB AS $$
+DECLARE
+  v_prod RECORD;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RETURN jsonb_build_object('success', false, 'code', 'PERMISSION_DENIED', 'error', 'Apenas Administradores podem alterar o controle de estoque de um produto.');
+  END IF;
+
+  SELECT * INTO v_prod FROM public.produtos WHERE id = p_produto_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'code', 'PRODUCT_NOT_FOUND', 'error', 'Produto não encontrado.');
+  END IF;
+
+  UPDATE public.produtos
+  SET controlar_estoque = p_controlar, updated_at = NOW()
+  WHERE id = p_produto_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'produto_id', p_produto_id,
+    'controlar_estoque', p_controlar
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+
+REVOKE ALL ON FUNCTION public.alterar_controle_estoque_produto FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.alterar_controle_estoque_produto TO authenticated, service_role;
 
 -- --------------------------------------------------------------------------
 -- 4. PORTAS COMERCIAIS DEDICADAS
