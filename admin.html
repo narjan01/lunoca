@@ -1080,23 +1080,168 @@
   <script type="module" src="js/whatsapp-helper.js?v=3.2.0"></script>
 
   <script>
+    function exibirFormularioLoginAdmin() {
+      const guard = document.getElementById('admin-guard-container');
+      const main = document.getElementById('admin-main-content');
+      const badge = document.getElementById('admin-user-badge');
+      if (badge) badge.innerText = 'Autenticação necessária';
+      if (main) main.style.display = 'none';
+      if (!guard) return;
+
+      guard.className = '';
+      guard.style.display = 'block';
+      guard.innerHTML = `
+        <div style="max-width:420px; margin:40px auto; padding:28px 24px; background:#fff; border-radius:16px; border:1px solid #e2e8f0; box-shadow:0 4px 20px rgba(0,0,0,0.06); text-align:center;">
+          <div style="margin-bottom:20px;">
+            <img src="img/logo.jpg" alt="Lunoca" style="width:56px; height:56px; border-radius:50%; object-fit:cover; margin-bottom:8px; border:2px solid var(--primary);">
+            <h2 style="margin:0; font-size:20px; font-weight:800; color:var(--text-dark);">Lunoca Gestão</h2>
+            <p style="margin:4px 0 0; font-size:13px; color:#64748b;">Acesso restrito para Administradores e Operadores</p>
+          </div>
+          <form id="admin-login-form" onsubmit="realizarLoginAdminStandalone(event)" style="text-align:left;">
+            <div class="form-group" style="margin-bottom:14px;">
+              <label style="display:block; font-size:12px; font-weight:700; color:#475569; margin-bottom:4px;">E-mail</label>
+              <input type="email" id="admin-login-email" required placeholder="admin@lunocadoceria.com.br" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:14px; box-sizing:border-box;">
+            </div>
+            <div class="form-group" style="margin-bottom:18px;">
+              <label style="display:block; font-size:12px; font-weight:700; color:#475569; margin-bottom:4px;">Senha</label>
+              <input type="password" id="admin-login-senha" required placeholder="••••••••" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:14px; box-sizing:border-box;">
+            </div>
+            <div id="admin-login-erro" style="display:none; margin-bottom:14px; padding:10px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; color:#991b1b; font-size:13px;"></div>
+            <button type="submit" id="btn-admin-login-submit" class="btn-primary" style="width:100%; padding:12px; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; background:var(--primary); color:#fff; border:none;">
+              <i class="fa-solid fa-right-to-bracket"></i> Entrar no Painel
+            </button>
+          </form>
+          <div style="margin-top:18px; padding-top:14px; border-top:1px solid #f1f5f9;">
+            <a href="index.html" style="font-size:12px; color:#64748b; text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
+              <i class="fa-solid fa-store"></i> Ir para a Loja Virtual
+            </a>
+          </div>
+        </div>
+      `;
+    }
+
+    function exibirAcessoRestrito(email) {
+      const guard = document.getElementById('admin-guard-container');
+      const main = document.getElementById('admin-main-content');
+      const badge = document.getElementById('admin-user-badge');
+      if (badge) badge.innerText = 'Acesso não autorizado';
+      if (main) main.style.display = 'none';
+      if (!guard) return;
+
+      const emailSeguro = typeof escapeHTML === 'function' ? escapeHTML(email || '') : (email || '');
+      guard.className = '';
+      guard.style.display = 'block';
+      guard.innerHTML = `
+        <div style="max-width:440px; margin:40px auto; padding:28px 24px; background:#fff; border-radius:16px; border:1px solid #fecaca; text-align:center; box-shadow:0 4px 20px rgba(0,0,0,0.06);">
+          <i class="fa-solid fa-shield-halved fa-3x" style="color:#ef4444; margin-bottom:14px;"></i>
+          <h2 style="margin:0 0 8px; font-size:18px; color:#991b1b; font-weight:800;">Acesso Não Autorizado</h2>
+          <p style="margin:0 0 16px; font-size:13px; color:#475569; line-height:1.5;">
+            A conta conectada (<strong>${emailSeguro}</strong>) não possui privilégios de Operador ou Administrador da Lunoca.
+          </p>
+          <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+            <button onclick="fazerLogoutAdminStandalone()" class="btn-primary" style="padding:10px 16px; font-size:13px; border-radius:8px; cursor:pointer; background:var(--primary); color:#fff; border:none; font-weight:600;">
+              <i class="fa-solid fa-arrow-right-from-bracket"></i> Conectar com Outra Conta
+            </button>
+            <a href="index.html" class="btn-outline" style="padding:10px 16px; font-size:13px; border-radius:8px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; border:1px solid #cbd5e1; color:#334155;">
+              <i class="fa-solid fa-store"></i> Ver Loja
+            </a>
+          </div>
+        </div>
+      `;
+    }
+
+    function exibirErroCarregamento(msg) {
+      const guard = document.getElementById('admin-guard-container');
+      const main = document.getElementById('admin-main-content');
+      if (main) main.style.display = 'none';
+      if (!guard) return;
+
+      const msgSegura = typeof escapeHTML === 'function' ? escapeHTML(msg || '') : (msg || 'Erro desconhecido');
+      guard.className = '';
+      guard.style.display = 'block';
+      guard.innerHTML = `
+        <div style="max-width:440px; margin:40px auto; padding:28px 24px; background:#fff; border-radius:16px; border:1px solid #fed7aa; text-align:center; box-shadow:0 4px 20px rgba(0,0,0,0.06);">
+          <i class="fa-solid fa-triangle-exclamation fa-3x" style="color:#f59e0b; margin-bottom:14px;"></i>
+          <h2 style="margin:0 0 8px; font-size:18px; color:#9a3412; font-weight:800;">Erro ao Validar Acesso</h2>
+          <p style="margin:0 0 16px; font-size:13px; color:#78350f; line-height:1.5;">${msgSegura}</p>
+          <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+            <button onclick="inicializarAdminStandalone()" class="btn-primary" style="padding:10px 16px; font-size:13px; border-radius:8px; cursor:pointer; background:var(--primary); color:#fff; border:none; font-weight:600;">
+              <i class="fa-solid fa-rotate-right"></i> Tentar Novamente
+            </button>
+            <button onclick="fazerLogoutAdminStandalone()" class="btn-outline" style="padding:10px 16px; font-size:13px; border-radius:8px; cursor:pointer; border:1px solid #cbd5e1; color:#334155;">
+              <i class="fa-solid fa-arrow-right-from-bracket"></i> Fazer Login
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    async function realizarLoginAdminStandalone(e) {
+      e.preventDefault();
+      const emailInput = document.getElementById('admin-login-email');
+      const senhaInput = document.getElementById('admin-login-senha');
+      const btn = document.getElementById('btn-admin-login-submit');
+      const errDiv = document.getElementById('admin-login-erro');
+
+      if (!emailInput || !senhaInput) return;
+      const email = emailInput.value.trim();
+      const senha = senhaInput.value;
+
+      if (!email || !senha) return;
+
+      if (errDiv) errDiv.style.display = 'none';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Autenticando...';
+      }
+
+      try {
+        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password: senha });
+        if (error) throw error;
+        if (data?.user) {
+          await inicializarAdminStandalone();
+        }
+      } catch (err) {
+        console.error('[Admin Login] Falha:', err);
+        if (errDiv) {
+          errDiv.innerText = err.message || 'Falha ao autenticar. Verifique email e senha.';
+          errDiv.style.display = 'block';
+        }
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> Entrar no Painel';
+        }
+      }
+    }
+
     async function inicializarAdminStandalone() {
       const guard = document.getElementById('admin-guard-container');
       const main = document.getElementById('admin-main-content');
       const badge = document.getElementById('admin-user-badge');
 
+      if (guard) {
+        guard.className = 'admin-guard-loading';
+        guard.style.display = 'flex';
+        guard.innerHTML = `
+          <i class="fa-solid fa-spinner fa-spin fa-2x" style="color:var(--primary); margin-bottom:12px;"></i>
+          <p style="font-weight:600; font-size:14px;">Autenticando acesso restrito...</p>
+        `;
+      }
+
       try {
-        const { data: { session } } = await supabaseClient.auth.getSession();
+        const { data: { session }, error: sessionErr } = await supabaseClient.auth.getSession();
+        if (sessionErr) throw sessionErr;
+
         if (!session || !session.user) {
-          window.location.href = 'index.html';
+          exibirFormularioLoginAdmin();
           return;
         }
 
         await carregarPerfilUsuario(session.user);
 
         if (!usuarioAtual || (usuarioAtual.nivel !== 'admin' && usuarioAtual.nivel !== 'operador')) {
-          alert('Acesso negado: sua conta não possui privilégios de operador ou administrador.');
-          window.location.href = 'index.html';
+          exibirAcessoRestrito(session.user.email);
           return;
         }
 
@@ -1104,8 +1249,8 @@
           badge.innerText = `${usuarioAtual.nome} (${usuarioAtual.nivel === 'admin' ? 'Administrador' : 'Operador'})`;
         }
 
-        guard.style.display = 'none';
-        main.style.display = 'block';
+        if (guard) guard.style.display = 'none';
+        if (main) main.style.display = 'block';
 
         if (typeof carregarProdutosServidor === 'function') await carregarProdutosServidor();
         if (typeof configurarAcessoAdminPorNivel === 'function') configurarAcessoAdminPorNivel();
@@ -1118,16 +1263,22 @@
         if (typeof renderizarProdutosAdmin === 'function') renderizarProdutosAdmin();
       } catch (err) {
         console.error('Erro na autorização do painel:', err);
-        alert('Erro ao validar acesso: ' + err.message);
-        window.location.href = 'index.html';
+        exibirErroCarregamento(err.message || 'Erro ao validar acesso');
       }
     }
 
     async function fazerLogoutAdminStandalone() {
-      await supabaseClient.auth.signOut();
-      window.location.href = 'index.html';
+      try {
+        await supabaseClient.auth.signOut();
+      } catch (e) {
+        console.warn('Erro ao deslogar:', e);
+      }
+      usuarioAtual = { nivel: 'visitante', nome: '', email: '', id: null, ativo: false };
+      exibirFormularioLoginAdmin();
     }
 
+    window.realizarLoginAdminStandalone = realizarLoginAdminStandalone;
+    window.fazerLogoutAdminStandalone = fazerLogoutAdminStandalone;
     window.addEventListener('DOMContentLoaded', inicializarAdminStandalone);
   </script>
 </body>
