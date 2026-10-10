@@ -850,3 +850,16 @@ async function reabrirPixPedido(pedidoId, totalRaw) {
 }
 window.reabrirPixPedido = reabrirPixPedido;
 
+/**
+ * Abre modal canônico de WhatsApp para eventos de Pedido/Encomenda
+ */
+async function abrirWhatsAppPedido(id, tipo = 'SINAL_CONFIRMADO') {
+    if (typeof window.abrirModalComunicacaoWhatsApp === 'function') {
+        await window.abrirModalComunicacaoWhatsApp({ tipo, pedidoId: id });
+    } else {
+        alert('Módulo de WhatsApp ainda inicializando. Tente novamente em instantes.');
+    }
+}
+window.abrirWhatsAppPedido = abrirWhatsAppPedido;
+
+

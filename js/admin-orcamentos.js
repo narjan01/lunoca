@@ -841,38 +841,14 @@ function copiarLinkPublicoOrcamento(token) {
 }
 
 /**
- * Envia proposta formatada pelo WhatsApp
+ * Envia proposta formatada pelo WhatsApp utilizando modal canônico e auditoria server-side
  */
-async function compartilharWhatsAppOrcamento(id) {
-  const orc = orcamentosCache.find(o => o.id === id);
-  if (!orc) return;
-
-  const tel = (orc.cliente_telefone || '').replace(/\D/g, '');
-  if (!tel) {
-    alert('Cliente sem telefone cadastrado.');
-    return;
+async function compartilharWhatsAppOrcamento(id, tipo = 'ORCAMENTO_ENVIADO') {
+  if (typeof window.abrirModalComunicacaoWhatsApp === 'function') {
+    await window.abrirModalComunicacaoWhatsApp({ tipo, orcamentoId: id });
+  } else {
+    alert('Módulo de WhatsApp ainda inicializando. Tente novamente em instantes.');
   }
-
-  const link = `${window.location.origin}/orcamento.html?t=${orc.token_publico}`;
-  const totalFmt = formatarMoedaReal(orc.total);
-  const dataFmt = formatarDataSimples(orc.data_evento);
-
-  const msg = `Olá, *${orc.cliente_nome}*! Tudo bem? Aqui é da Lunoca Doceria 🍰\n\nPreparamos com muito carinho a sua proposta comercial (*${orc.numero}*):\n\n📅 *Data do Evento:* ${dataFmt}\n💰 *Valor Total:* ${totalFmt}\n\nVocê pode conferir todos os detalhes dos doces e aprovar sua proposta no link seguro abaixo:\n👉 ${link}\n\nFicamos à disposição para qualquer ajuste!`;
-
-  try {
-    await supabaseClient.rpc('registrar_comunicacao_orcamento_admin', {
-      p_orcamento_id: id,
-      p_canal: 'whatsapp_link',
-      p_tipo: 'envio_proposta',
-      p_destinatario: tel,
-      p_mensagem: msg
-    });
-  } catch (e) {
-    console.warn('[Admin Orçamentos] Falha ao registrar log de comunicação:', e);
-  }
-
-  const urlZap = `https://wa.me/55${tel}?text=${encodeURIComponent(msg)}`;
-  window.open(urlZap, '_blank');
 }
 
 /**
