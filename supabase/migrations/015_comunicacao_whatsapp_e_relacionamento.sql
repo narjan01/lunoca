@@ -540,7 +540,7 @@ DROP FUNCTION IF EXISTS public.aprovar_orcamento_publico(UUID);
 
 CREATE OR REPLACE FUNCTION public.aprovar_orcamento_publico(
   p_token UUID,
-  p_versao_esperada INTEGER
+  p_versao_esperada INTEGER DEFAULT NULL
 )
 RETURNS JSONB AS $$
 DECLARE
