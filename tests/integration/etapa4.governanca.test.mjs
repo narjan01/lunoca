@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { setupEmbeddedPostgres } from './_pg_lifecycle.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -19,6 +20,7 @@ const PORT = 54397;
 let embedded = null;
 let admin; // conexão superuser
 let connInfo;
+let teardownFn = null;
 
 const ADMIN_UID = '11111111-1111-1111-1111-111111111111';
 const OPER_UID = '22222222-2222-2222-2222-222222222222';
@@ -59,29 +61,15 @@ async function rpc(c, fn, params) {
 const P_PROD_TESTE = 9501;
 
 before(async () => {
-  if (process.env.DATABASE_URL) {
-    connInfo = { connectionString: process.env.DATABASE_URL };
-  } else {
-    const { default: EmbeddedPostgres } = await import('embedded-postgres');
-    const pgDir = path.join(ROOT, '.pg-integration-014');
-    if (fs.existsSync(pgDir)) {
-      try { fs.rmSync(pgDir, { recursive: true, force: true }); } catch {}
-    }
-    embedded = new EmbeddedPostgres({
-      databaseDir: pgDir,
-      user: 'postgres',
-      password: 'postgres',
-      port: PORT,
-      persistent: false,
-      initdbFlags: ['--encoding=UTF8', '--locale=C'],
-      onLog: () => {},
-      onError: () => {},
-    });
-    await embedded.initialise();
-    await embedded.start();
-    await embedded.createDatabase('lunoca_test_014');
-    connInfo = { host: 'localhost', port: PORT, user: 'postgres', password: 'postgres', database: 'lunoca_test_014' };
-  }
+  const setup = await setupEmbeddedPostgres({
+    rootDir: ROOT,
+    dirName: '.pg-integration-014',
+    port: PORT,
+    dbName: 'lunoca_test_014'
+  });
+  connInfo = setup.connInfo;
+  embedded = setup.embedded;
+  teardownFn = setup.teardown;
 
   admin = new pg.Client(connInfo);
   await admin.connect();
@@ -133,14 +121,8 @@ before(async () => {
 });
 
 after(async () => {
-  for (const c of activeClients) {
-    try { await c.end(); } catch {}
-  }
-  if (admin) {
-    try { await admin.end(); } catch {}
-  }
-  if (embedded) {
-    try { await embedded.stop(); } catch {}
+  if (teardownFn) {
+    await teardownFn(activeClients, admin);
   }
 });
 
