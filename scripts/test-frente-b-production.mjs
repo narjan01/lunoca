@@ -9,6 +9,11 @@ function assert(condition, message) {
   }
 }
 
+async function adminQuery(sql) {
+  const fullSql = `SET LOCAL "request.jwt.claim.role" = 'service_role';\n${sql}`;
+  return query(fullSql);
+}
+
 async function runTest(name, fn) {
   try {
     process.stdout.write(`⏳ ${name}... `);
@@ -231,7 +236,7 @@ async function main() {
     // FB-7: obter_preview_comunicacao para Orcamento
     // -------------------------------------------------------------
     await runTest('FB-7: obter_preview_comunicacao gera preview canônico de Orçamento (envio e vencendo)', async () => {
-      const rowsEnvio = await query(`
+      const rowsEnvio = await adminQuery(`
         SELECT public.obter_preview_comunicacao('ORCAMENTO_ENVIADO', ${testOrcamentoId}, NULL) AS res;
       `);
       const resEnvio = rowsEnvio[0].res;
@@ -241,7 +246,7 @@ async function main() {
       assert(resEnvio.link_publico.includes(`/orcamento.html?t=${testOrcamentoToken}`), 'Link publico deve conter token canônico');
       assert(resEnvio.mensagem.includes('não reserva estoque ou capacidade'), 'Mensagem de envio deve ter ressalva de não reserva');
 
-      const rowsVenc = await query(`
+      const rowsVenc = await adminQuery(`
         SELECT public.obter_preview_comunicacao('ORCAMENTO_VENCENDO', ${testOrcamentoId}, NULL) AS res;
       `);
       const resVenc = rowsVenc[0].res;
@@ -254,7 +259,7 @@ async function main() {
     // FB-8: obter_preview_comunicacao para Pedidos
     // -------------------------------------------------------------
     await runTest('FB-8: obter_preview_comunicacao gera preview canônico de Pedido (sinal, pronto, entrega)', async () => {
-      const rowsSinal = await query(`
+      const rowsSinal = await adminQuery(`
         SELECT public.obter_preview_comunicacao('SINAL_CONFIRMADO', NULL, ${testPedidoId}) AS res;
       `);
       const resSinal = rowsSinal[0].res;
@@ -262,7 +267,7 @@ async function main() {
       assert(resSinal.chave_idempotencia === `pedido:${testPedidoId}:pagamento:${testPagamentoId}:sinal`, 'Chave de sinal incorreta');
       assert(resSinal.mensagem.includes('150,00') || resSinal.mensagem.includes('150.00'), 'Mensagem de sinal deve conter valor do pagamento');
 
-      const rowsPronto = await query(`
+      const rowsPronto = await adminQuery(`
         SELECT public.obter_preview_comunicacao('PEDIDO_PRONTO', NULL, ${testPedidoId}) AS res;
       `);
       const resPronto = rowsPronto[0].res;
@@ -270,7 +275,7 @@ async function main() {
       assert(resPronto.chave_idempotencia.startsWith(`pedido:${testPedidoId}:historico:`), 'Chave de pronto incorreta');
       assert(resPronto.mensagem.includes('está pronta'), 'Mensagem de pronto incorreta');
 
-      const rowsEntrega = await query(`
+      const rowsEntrega = await adminQuery(`
         SELECT public.obter_preview_comunicacao('SAIU_PARA_ENTREGA', NULL, ${testPedidoId}) AS res;
       `);
       const resEntrega = rowsEntrega[0].res;
@@ -289,7 +294,7 @@ async function main() {
           '${TEST_PREFIX}_inv_phone', 1, 'Invalido', '999', CURRENT_DATE + INTERVAL '3 days', NOW() + INTERVAL '1 day', 'enviado', 100.00, gen_random_uuid()
         ) RETURNING id;
       `);
-      const rows = await query(`
+      const rows = await adminQuery(`
         SELECT public.obter_preview_comunicacao('ORCAMENTO_ENVIADO', ${orcInv[0].id}, NULL) AS res;
       `);
       const res = rows[0].res;
@@ -301,7 +306,7 @@ async function main() {
     // FB-10: whatsapp_link rejeita status enviado
     // -------------------------------------------------------------
     await runTest('FB-10: registrar_comunicacao_cliente rejeita status "enviado" para "whatsapp_link"', async () => {
-      const rows = await query(`
+      const rows = await adminQuery(`
         SELECT public.registrar_comunicacao_cliente(
           'ORCAMENTO_ENVIADO',
           ${testOrcamentoId},
@@ -321,7 +326,7 @@ async function main() {
     // FB-11: Registro legítimo de whatsapp_link e evolution_api
     // -------------------------------------------------------------
     await runTest('FB-11: registrar_comunicacao_cliente aceita link_aberto e atualiza via idempotencia', async () => {
-      const rowsLink = await query(`
+      const rowsLink = await adminQuery(`
         SELECT public.registrar_comunicacao_cliente(
           'ORCAMENTO_ENVIADO',
           ${testOrcamentoId},
@@ -337,7 +342,7 @@ async function main() {
       assert(resLink.status === 'link_aberto', 'Status registrado deve ser link_aberto');
 
       // Teste com evolution_api idempotente
-      const rowsEvo = await query(`
+      const rowsEvo = await adminQuery(`
         SELECT public.registrar_comunicacao_cliente(
           'SINAL_CONFIRMADO',
           NULL,
@@ -405,13 +410,13 @@ async function main() {
       const lembreteOrcId = orcLemb[0].id;
 
       // Consulta de lembretes nas próximas 12 horas
-      const lista1 = await query(`
+      const lista1 = await adminQuery(`
         SELECT * FROM public.listar_orcamentos_para_lembrete(12) WHERE orcamento_id = ${lembreteOrcId};
       `);
       assert(lista1.length === 1, 'Orcamento a vencer deve ser listado para lembrete');
 
       // Registra comunicação de lembrete
-      await query(`
+      await adminQuery(`
         SELECT public.registrar_comunicacao_cliente(
           'ORCAMENTO_VENCENDO',
           ${lembreteOrcId},
@@ -424,7 +429,7 @@ async function main() {
       `);
 
       // Consulta novamente: não deve mais aparecer
-      const lista2 = await query(`
+      const lista2 = await adminQuery(`
         SELECT * FROM public.listar_orcamentos_para_lembrete(12) WHERE orcamento_id = ${lembreteOrcId};
       `);
       assert(lista2.length === 0, 'Orcamento ja lembrado nao deve reaparecer na lista de lembretes');

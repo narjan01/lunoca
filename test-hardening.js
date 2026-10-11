@@ -2156,7 +2156,51 @@ assert.ok(
 );
 console.log('    ✅ Frontend e Pages Function da Frente B 100% auditados.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–15 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// --------------------------------------------------------------------------
+// FASE 16: RECONCILIAÇÃO PÓS-015 & HARDENING DE AUTORIZAÇÃO (016)
+// --------------------------------------------------------------------------
+console.log('\n🛡️ FASE 16: Reconciliação Pós-015 & Hardening de Autorização (016)...');
+
+assert.ok(
+  fs.existsSync('supabase/migrations/016_reconciliacao_pos_015.sql'),
+  '[FALHA] supabase/migrations/016_reconciliacao_pos_015.sql não encontrada!'
+);
+
+const m016 = fs.readFileSync('supabase/migrations/016_reconciliacao_pos_015.sql', 'utf-8');
+const installFinal = fs.readFileSync('sql/install.sql', 'utf-8');
+const schemaFinal = fs.readFileSync('sql/schema.sql', 'utf-8');
+
+console.log('  🔎 16.1 Verificando eliminação de current_user em 016 e nas definições ativas finais...');
+assert.ok(
+  !m016.includes("current_user IN ('postgres', 'supabase_admin')"),
+  "[FALHA CRÍTICA] 016 ainda contém 'current_user IN (\'postgres\', \'supabase_admin\')'!"
+);
+
+for (const [name, content] of [['install.sql', installFinal], ['schema.sql', schemaFinal]]) {
+  const lastDefIdx = content.lastIndexOf('CREATE OR REPLACE FUNCTION public.is_admin_or_operator()');
+  assert.ok(lastDefIdx !== -1, `[FALHA] ${name} não define is_admin_or_operator!`);
+  const activeDef = content.slice(lastDefIdx);
+  assert.ok(
+    !activeDef.includes("current_user IN ('postgres', 'supabase_admin')"),
+    `[FALHA CRÍTICA] ${name}: a definição final ativa de is_admin_or_operator ainda contém current_user!`
+  );
+  assert.ok(
+    activeDef.includes('auth.role() = \'service_role\'') && activeDef.includes('auth.uid() IS NULL'),
+    `[FALHA] ${name}: a definição ativa não é fail-closed baseada em auth.role e auth.uid!`
+  );
+}
+
+console.log('  🔎 16.2 orcamento.html: proteção contra vazamento do bearer token via no-referrer...');
+const orcHtml016 = fs.readFileSync('orcamento.html', 'utf-8');
+assert.ok(
+  orcHtml016.includes('<meta name="referrer" content="no-referrer">'),
+  '[FALHA] orcamento.html não possui a meta tag <meta name="referrer" content="no-referrer">!'
+);
+
+console.log('    ✅ Helpers de autorização limpos e meta tag no-referrer validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–16 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+
 
 
 
