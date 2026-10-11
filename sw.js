@@ -2,11 +2,10 @@
 // LUNOCA DOCERIA - Service Worker para PWA (Progressive Web App)
 // ==========================================================================
 
-const CACHE_NAME = 'lunoca-cache-v3.2.0';
+const CACHE_NAME = 'lunoca-cache-v3.2.1';
 
 const PRECACHE_ASSETS = [
   '/',
-  '/index.html',
   '/css/style.css',
   '/manifest.json',
   '/img/logo.jpg'
@@ -47,6 +46,15 @@ self.addEventListener('fetch', (event) => {
     url.hostname.includes('mercadopago.com') ||
     url.hostname.includes('cloudflareinsights.com')
   ) {
+    return;
+  }
+
+  // Intercepta qualquer requisição direta para /index.html e serve a raiz /
+  // evitando quebras com o redirect 308 do Cloudflare Pages
+  if (url.pathname === '/index.html') {
+    event.respondWith(
+      caches.match('/').then((cached) => cached || fetch('/'))
+    );
     return;
   }
 
