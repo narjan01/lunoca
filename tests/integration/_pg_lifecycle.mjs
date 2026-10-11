@@ -7,6 +7,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import net from 'node:net';
 import { execSync } from 'node:child_process';
 
 function forceKillPid(pid) {
@@ -34,6 +35,24 @@ export function cleanupDir(dirPath) {
   }
 }
 
+export async function getAvailablePort(preferredPort) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.unref();
+    server.on('error', () => {
+      const ephemeral = net.createServer();
+      ephemeral.unref();
+      ephemeral.listen(0, () => {
+        const assigned = ephemeral.address().port;
+        ephemeral.close(() => resolve(assigned));
+      });
+    });
+    server.listen(preferredPort, () => {
+      server.close(() => resolve(preferredPort));
+    });
+  });
+}
+
 export async function setupEmbeddedPostgres({ rootDir, dirName, port, dbName }) {
   if (process.env.DATABASE_URL) {
     return {
@@ -43,6 +62,7 @@ export async function setupEmbeddedPostgres({ rootDir, dirName, port, dbName }) 
     };
   }
 
+  const actualPort = await getAvailablePort(port);
   const { default: EmbeddedPostgres } = await import('embedded-postgres');
   const pgDir = path.join(rootDir, dirName);
 
@@ -53,7 +73,7 @@ export async function setupEmbeddedPostgres({ rootDir, dirName, port, dbName }) 
     databaseDir: pgDir,
     user: 'postgres',
     password: 'postgres',
-    port,
+    port: actualPort,
     persistent: false,
     initdbFlags: ['--encoding=UTF8', '--locale=C'],
     onLog: () => {},
@@ -77,7 +97,7 @@ export async function setupEmbeddedPostgres({ rootDir, dirName, port, dbName }) 
 
   const connInfo = {
     host: 'localhost',
-    port,
+    port: actualPort,
     user: 'postgres',
     password: 'postgres',
     database: dbName,
