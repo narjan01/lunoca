@@ -203,7 +203,7 @@ test('E3-3: aprovar_orcamento_publico transiciona enviado -> aprovado sem criar 
     }
   });
 
-  const resApr = await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico });
+  const resApr = await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico, p_versao_esperada: orc.versao });
   assert.equal(resApr.success, true);
   assert.equal(resApr.status, 'aprovado');
   assert.equal(resApr.idempotente, false);
@@ -230,8 +230,8 @@ test('E3-4: Aprovação pública idempotente: retry retorna success: true com id
     }
   });
 
-  await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico });
-  const resRetry = await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico });
+  await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico, p_versao_esperada: orc.versao });
+  const resRetry = await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico, p_versao_esperada: orc.versao });
 
   assert.equal(resRetry.success, true);
   assert.equal(resRetry.status, 'aprovado');
@@ -281,7 +281,7 @@ test('E3-6: Conversão de orçamento aprovado cria pedido, aloca capacidade e re
   });
 
   const cAnon = await newClient('anon');
-  await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico });
+  await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico, p_versao_esperada: orc.versao });
 
   const resConv = await rpc(cOper, 'converter_orcamento_em_pedido_admin', {
     p_orcamento_id: orc.id,
@@ -317,7 +317,7 @@ test('E3-7: Janela de conversão expirada (> 24h pós-aprovação) bloqueia conv
   });
 
   const cAnon = await newClient('anon');
-  await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico });
+  await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico, p_versao_esperada: orc.versao });
 
   // Força janela de conversão expirada no passado
   await admin.query(`UPDATE public.orcamentos SET janela_conversao_limite = NOW() - INTERVAL '1 hour' WHERE id = $1`, [orc.id]);
@@ -347,7 +347,7 @@ test('E3-8: Chamada repetida de conversão retorna o mesmo pedido_id com idempot
   });
 
   const cAnon = await newClient('anon');
-  await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico });
+  await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico, p_versao_esperada: orc.versao });
 
   const conv1 = await rpc(cAdm, 'converter_orcamento_em_pedido_admin', { p_orcamento_id: orc.id });
   const conv2 = await rpc(cAdm, 'converter_orcamento_em_pedido_admin', { p_orcamento_id: orc.id });
@@ -376,7 +376,7 @@ test('E3-9: Falha de estoque na conversão retorna INSUFFICIENT_STOCK e mantém 
   });
 
   const cAnon = await newClient('anon');
-  await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico });
+  await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico, p_versao_esperada: orc.versao });
 
   let errCapturado = null;
   try {
@@ -417,7 +417,7 @@ test('E3-10: Capacidade diária bloqueada rejeita conversão e mantém orçament
   });
 
   const cAnon = await newClient('anon');
-  await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico });
+  await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico, p_versao_esperada: orc.versao });
 
   const cOper = await newClient(OPER_UID);
   const resConv = await rpc(cOper, 'converter_orcamento_em_pedido_admin', { p_orcamento_id: orc.id });
@@ -445,7 +445,7 @@ test('E3-11: Edição após envio/aprovação gera nova versão (versao + 1) e r
   });
 
   const cAnon = await newClient('anon');
-  await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico });
+  await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico, p_versao_esperada: orc.versao });
 
   // Edita orçamento aprovado
   const orcEdit = await rpc(cAdm, 'criar_ou_atualizar_orcamento_admin', {
@@ -509,7 +509,7 @@ test('E3-13: Aprovação de orçamento vencido retorna QUOTE_EXPIRED', async () 
   await admin.query(`UPDATE public.orcamentos SET validade_ate = NOW() - INTERVAL '1 hour' WHERE id = $1`, [orc.id]);
 
   const cAnon = await newClient('anon');
-  const resApr = await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico });
+  const resApr = await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico, p_versao_esperada: orc.versao });
 
   assert.equal(resApr.success, false);
   assert.equal(resApr.code, 'QUOTE_EXPIRED');
@@ -589,11 +589,15 @@ test('E3-16: Usuário anônimo recebe zero linhas em SELECT direto em orcamentos
 // --------------------------------------------------------------------------
 // E3-17: Rate limiting bloqueia tentativas abusivas e token nulo falha fechado
 // --------------------------------------------------------------------------
-test('E3-17: aprovar_orcamento_publico com token nulo retorna NOT_FOUND e rate limit bloqueia chamadas abusivas', async () => {
+test('E3-17: aprovar_orcamento_publico com token nulo retorna NOT_FOUND, versao nula retorna VERSION_REQUIRED e rate limit bloqueia chamadas abusivas', async () => {
   const cAnon = await newClient('anon');
-  const resNull = await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: null });
+  const resNull = await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: null, p_versao_esperada: 1 });
   assert.equal(resNull.success, false);
   assert.equal(resNull.code, 'NOT_FOUND');
+
+  const resVerNull = await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: '00000000-0000-0000-0000-000000000000', p_versao_esperada: null });
+  assert.equal(resVerNull.success, false);
+  assert.equal(resVerNull.code, 'VERSION_REQUIRED');
 
   // Cria orçamento de teste para disparar rate limit
   const cAdm = await newClient(ADMIN_UID);
@@ -609,7 +613,7 @@ test('E3-17: aprovar_orcamento_publico com token nulo retorna NOT_FOUND e rate l
   // Dispara múltiplas tentativas de aprovação no mesmo token
   let bloqueado = false;
   for (let i = 0; i < 7; i++) {
-    const res = await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico });
+    const res = await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico, p_versao_esperada: orc.versao });
     if (res.code === 'RATE_LIMIT_EXCEEDED') {
       bloqueado = true;
       break;
@@ -670,7 +674,7 @@ test('E3-20: Mutação serializada previne conversão inconsistente', async () =
   });
 
   const cAnon = await newClient('anon');
-  await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico });
+  await rpc(cAnon, 'aprovar_orcamento_publico', { p_token: orc.token_publico, p_versao_esperada: orc.versao });
 
   // Converte normalmente
   const resConv = await rpc(cAdm, 'converter_orcamento_em_pedido_admin', { p_orcamento_id: orc.id });

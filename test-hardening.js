@@ -2170,24 +2170,21 @@ const m016 = fs.readFileSync('supabase/migrations/016_reconciliacao_pos_015.sql'
 const installFinal = fs.readFileSync('sql/install.sql', 'utf-8');
 const schemaFinal = fs.readFileSync('sql/schema.sql', 'utf-8');
 
-console.log('  🔎 16.1 Verificando eliminação de current_user em 016 e nas definições ativas finais...');
-assert.ok(
-  !m016.includes("current_user IN ('postgres', 'supabase_admin')"),
-  "[FALHA CRÍTICA] 016 ainda contém 'current_user IN (\'postgres\', \'supabase_admin\')'!"
-);
-
+console.log('  🔎 16.1 Verificando eliminação de current_user/session_user/current_role em helpers de autorização...');
 for (const [name, content] of [['install.sql', installFinal], ['schema.sql', schemaFinal]]) {
-  const lastDefIdx = content.lastIndexOf('CREATE OR REPLACE FUNCTION public.is_admin_or_operator()');
-  assert.ok(lastDefIdx !== -1, `[FALHA] ${name} não define is_admin_or_operator!`);
-  const activeDef = content.slice(lastDefIdx);
-  assert.ok(
-    !activeDef.includes("current_user IN ('postgres', 'supabase_admin')"),
-    `[FALHA CRÍTICA] ${name}: a definição final ativa de is_admin_or_operator ainda contém current_user!`
-  );
-  assert.ok(
-    activeDef.includes('auth.role() = \'service_role\'') && activeDef.includes('auth.uid() IS NULL'),
-    `[FALHA] ${name}: a definição ativa não é fail-closed baseada em auth.role e auth.uid!`
-  );
+  for (const fnName of ['is_admin()', 'is_admin_or_operator()']) {
+    const lastDefIdx = content.lastIndexOf(`CREATE OR REPLACE FUNCTION public.${fnName}`);
+    assert.ok(lastDefIdx !== -1, `[FALHA] ${name} não define ${fnName}!`);
+    const activeDef = content.slice(lastDefIdx, lastDefIdx + 1200);
+    assert.ok(
+      !activeDef.includes('current_user') && !activeDef.includes('session_user') && !activeDef.includes('current_role'),
+      `[FALHA CRÍTICA] ${name}: helper ${fnName} contém variável de sessão proibida (current_user/session_user/current_role)!`
+    );
+    assert.ok(
+      activeDef.includes("auth.role() = 'service_role'") && activeDef.includes('auth.uid() IS NULL'),
+      `[FALHA] ${name}: ${fnName} não é fail-closed baseada em auth.role e auth.uid!`
+    );
+  }
 }
 
 console.log('  🔎 16.2 orcamento.html: proteção contra vazamento do bearer token via no-referrer...');
@@ -2199,7 +2196,45 @@ assert.ok(
 
 console.log('    ✅ Helpers de autorização limpos e meta tag no-referrer validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–16 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// --------------------------------------------------------------------------
+// FASE 17: APROVAÇÃO DE ORÇAMENTO COM VERSÃO OBRIGATÓRIA (017)
+// --------------------------------------------------------------------------
+console.log('\n🛡️ FASE 17: Aprovação de Orçamento com Versão Obrigatória (017)...');
+
+assert.ok(
+  fs.existsSync('supabase/migrations/017_aprovacao_orcamento_versao_obrigatoria.sql'),
+  '[FALHA] supabase/migrations/017_aprovacao_orcamento_versao_obrigatoria.sql não encontrada!'
+);
+
+const m017 = fs.readFileSync('supabase/migrations/017_aprovacao_orcamento_versao_obrigatoria.sql', 'utf-8');
+
+console.log('  🔎 17.1 Verificando ausência de DEFAULT NULL e guarda VERSION_REQUIRED em 017...');
+assert.ok(
+  !m017.includes('DEFAULT NULL'),
+  '[FALHA] Migration 017 ainda contém DEFAULT NULL em aprovar_orcamento_publico!'
+);
+assert.ok(
+  m017.includes('p_versao_esperada INTEGER') && m017.includes('VERSION_REQUIRED'),
+  '[FALHA] Migration 017 não exige p_versao_esperada INTEGER ou não contém guarda VERSION_REQUIRED!'
+);
+
+for (const [name, content] of [['install.sql', installFinal], ['schema.sql', schemaFinal]]) {
+  const lastDefIdx = content.lastIndexOf('CREATE OR REPLACE FUNCTION public.aprovar_orcamento_publico(');
+  assert.ok(lastDefIdx !== -1, `[FALHA] ${name} não define aprovar_orcamento_publico!`);
+  const activeDef = content.slice(lastDefIdx, lastDefIdx + 1500);
+  assert.ok(
+    !activeDef.includes('DEFAULT NULL'),
+    `[FALHA] ${name}: a definição ativa final de aprovar_orcamento_publico ainda contém DEFAULT NULL!`
+  );
+  assert.ok(
+    activeDef.includes('p_versao_esperada INTEGER') && activeDef.includes('VERSION_REQUIRED'),
+    `[FALHA] ${name}: a definição ativa final não exige versão esperada obrigatória com VERSION_REQUIRED!`
+  );
+}
+console.log('    ✅ Migration 017 e scripts mestre em conformidade com versão estritamente obrigatória.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–17 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+
 
 
 
