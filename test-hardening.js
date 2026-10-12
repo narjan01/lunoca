@@ -2285,7 +2285,62 @@ for (const [name, content] of [['install.sql', installFinal], ['schema.sql', sch
 }
 console.log('    ✅ Migration 018 e scripts mestre validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–18 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// --------------------------------------------------------------------------
+// FASE 19: FRENTE D - CRM & HISTÓRICO 360° DO CLIENTE (019)
+// --------------------------------------------------------------------------
+console.log('\n🛡️ FASE 19: Frente D - CRM & Histórico 360° do Cliente (019)...');
+
+assert.ok(
+  fs.existsSync('supabase/migrations/019_crm_cliente_visao_360.sql'),
+  '[FALHA] supabase/migrations/019_crm_cliente_visao_360.sql não encontrada!'
+);
+
+const m019 = fs.readFileSync('supabase/migrations/019_crm_cliente_visao_360.sql', 'utf-8');
+
+console.log('  🔎 19.1 Verificando estruturas próprias do CRM (notas, tags, preferências)...');
+assert.ok(
+  m019.includes('CREATE TABLE IF NOT EXISTS public.cliente_notas') &&
+  m019.includes('CREATE TABLE IF NOT EXISTS public.cliente_tags') &&
+  m019.includes('CREATE TABLE IF NOT EXISTS public.cliente_preferencias'),
+  '[FALHA] Tabelas de CRM não definidas em 019!'
+);
+assert.ok(
+  m019.includes('REVOKE DELETE ON public.cliente_notas FROM PUBLIC, anon, authenticated;'),
+  '[FALHA] cliente_notas não possui bloqueio de DELETE direto!'
+);
+
+console.log('  🔎 19.2 Verificando RPCs de CRM (busca, visão 360, notas, tags, preferências, perfil próprio)...');
+assert.ok(
+  m019.includes('CREATE OR REPLACE FUNCTION public.buscar_clientes_crm(') &&
+  m019.includes('CREATE OR REPLACE FUNCTION public.obter_cliente_360_admin(') &&
+  m019.includes('CREATE OR REPLACE FUNCTION public.adicionar_nota_cliente(') &&
+  m019.includes('CREATE OR REPLACE FUNCTION public.arquivar_nota_cliente(') &&
+  m019.includes('CREATE OR REPLACE FUNCTION public.adicionar_tag_cliente(') &&
+  m019.includes('CREATE OR REPLACE FUNCTION public.remover_tag_cliente(') &&
+  m019.includes('CREATE OR REPLACE FUNCTION public.definir_preferencia_cliente(') &&
+  m019.includes('CREATE OR REPLACE FUNCTION public.arquivar_preferencia_cliente(') &&
+  m019.includes('CREATE OR REPLACE FUNCTION public.obter_meu_perfil_360('),
+  '[FALHA] Uma ou mais RPCs da Frente D não foram definidas em 019!'
+);
+
+console.log('  🔎 19.3 Verificando grants fail-closed para anon nas RPCs administrativas...');
+assert.ok(
+  m019.includes('REVOKE ALL ON FUNCTION public.buscar_clientes_crm FROM PUBLIC, anon;') &&
+  m019.includes('REVOKE ALL ON FUNCTION public.obter_cliente_360_admin FROM PUBLIC, anon;'),
+  '[FALHA] RPCs de busca e visão 360 não revogam de PUBLIC, anon!'
+);
+
+for (const [name, content] of [['install.sql', installFinal], ['schema.sql', schemaFinal]]) {
+  assert.ok(content.includes('public.cliente_notas'), `[FALHA] ${name} não contém cliente_notas!`);
+  assert.ok(content.includes('public.cliente_tags'), `[FALHA] ${name} não contém cliente_tags!`);
+  assert.ok(content.includes('public.cliente_preferencias'), `[FALHA] ${name} não contém cliente_preferencias!`);
+  assert.ok(content.includes('public.buscar_clientes_crm'), `[FALHA] ${name} não contém buscar_clientes_crm!`);
+  assert.ok(content.includes('public.obter_cliente_360_admin'), `[FALHA] ${name} não contém obter_cliente_360_admin!`);
+  assert.ok(content.includes('public.obter_meu_perfil_360'), `[FALHA] ${name} não contém obter_meu_perfil_360!`);
+}
+console.log('    ✅ Migration 019 e scripts mestre validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–19 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
 
 
 
