@@ -72,6 +72,7 @@
           <button id="tab-btn-hoje" class="active" onclick="mudarTabAdmin('hoje')"><i class="fa-solid fa-sun"></i> Hoje</button>
           <button id="tab-btn-pedidos" onclick="mudarTabAdmin('pedidos')"><i class="fa-solid fa-receipt"></i> Pedidos</button>
           <button id="tab-btn-orcamentos" onclick="mudarTabAdmin('orcamentos')"><i class="fa-solid fa-file-invoice-dollar"></i> Orçamentos</button>
+          <button id="tab-btn-crm" onclick="mudarTabAdmin('crm')"><i class="fa-solid fa-address-book"></i> Clientes & CRM</button>
           <button id="tab-btn-calendario" onclick="mudarTabAdmin('calendario')"><i class="fa-regular fa-calendar-days"></i> Calendário</button>
           <button id="tab-btn-produtos" onclick="mudarTabAdmin('produtos')"><i class="fa-solid fa-box"></i> Produtos</button>
           <button id="tab-btn-estoque" onclick="mudarTabAdmin('estoque')"><i class="fa-solid fa-boxes-stacked"></i> Estoque</button>
@@ -449,6 +450,44 @@
         <div id="admin-tab-whatsapp" class="admin-tab">
           <h3><i class="fa-brands fa-whatsapp" style="color:#25D366;"></i> Conexão WhatsApp</h3>
           <div id="whatsapp-admin-conteudo"></div>
+        </div>
+
+        <!-- ABA 10: CRM & Histórico 360° do Cliente -->
+        <div id="admin-tab-crm" class="admin-tab">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+            <div>
+              <h3 style="margin:0; font-size:18px; color:#1e293b; display:flex; align-items:center; gap:8px;">
+                <i class="fa-solid fa-address-book" style="color:var(--primary);"></i> CRM & Histórico 360° do Cliente
+              </h3>
+              <p style="margin:4px 0 0; font-size:12px; color:#64748b;">
+                Visão unificada de compras, timeline de relacionamento, notas internas, tags operacionais e saldo financeiro
+              </p>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button onclick="carregarCRMAdmin()" class="btn-outline" style="padding:6px 14px; font-size:12px; border-radius:8px;">
+                <i class="fa-solid fa-rotate-right"></i> Atualizar
+              </button>
+            </div>
+          </div>
+
+          <!-- Barra de Busca Rápida de Clientes -->
+          <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:14px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,0.02);">
+            <div style="display:flex; gap:10px; align-items:center;">
+              <div style="position:relative; flex:1;">
+                <i class="fa-solid fa-magnifying-glass" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#94a3b8; font-size:13px;"></i>
+                <input type="text" id="crm-busca-input" placeholder="Buscar por nome, telefone ou e-mail..." onkeyup="onBuscarClienteCRMKeyup(event)" style="width:100%; padding:10px 12px 10px 34px; font-size:13px; border:1px solid #cbd5e1; border-radius:8px; box-sizing:border-box;">
+              </div>
+              <button onclick="executarBuscaCRM()" class="btn-primary" style="padding:10px 18px; font-size:13px; border-radius:8px; display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
+                <i class="fa-solid fa-magnifying-glass"></i> Buscar
+              </button>
+            </div>
+          </div>
+
+          <!-- Resultados da Busca -->
+          <div id="crm-busca-resultados"></div>
+
+          <!-- Ficha 360° do Cliente Selecionado -->
+          <div id="crm-ficha-360-container" style="display:none;"></div>
         </div>
       </div>
     </div>
@@ -1077,6 +1116,7 @@
   <script src="js/admin.js?v=3.1.0"></script>
   <script src="js/admin-operacao.js?v=3.1.0"></script>
   <script src="js/admin-orcamentos.js?v=3.1.0"></script>
+  <script src="js/admin-crm.js?v=3.3.0"></script>
   <script type="module" src="js/whatsapp-helper.js?v=3.2.0"></script>
 
   <script>

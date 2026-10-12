@@ -27,7 +27,8 @@ function configurarAcessoAdminPorNivel() {
         'tab-btn-calendario',
         'tab-btn-produtos',
         'tab-btn-estoque',
-        'tab-btn-fichatecnica'
+        'tab-btn-fichatecnica',
+        'tab-btn-crm'
     ];
 
     const tituloAdmin = document.querySelector('#admin-section h2');
@@ -39,7 +40,7 @@ function configurarAcessoAdminPorNivel() {
             if (btn) btn.style.display = 'none';
         });
 
-        // Garante exibição da rotina diária operacional (Hoje, Pedidos, Orçamentos, Calendário, Catálogo, Estoque)
+        // Garante exibição da rotina diária operacional (Hoje, Pedidos, Orçamentos, Calendário, Catálogo, Estoque, CRM)
         abasOperacionais.forEach(id => {
             const btn = document.getElementById(id);
             if (btn) btn.style.display = 'inline-flex';
@@ -66,7 +67,7 @@ function configurarAcessoAdminPorNivel() {
 
 function mudarTabAdmin(tab) {
     // Bloqueio de segurança no frontend para Operadores
-    const abasPermitidasOperador = ['hoje', 'pedidos', 'orcamentos', 'calendario', 'produtos', 'estoque', 'fichatecnica'];
+    const abasPermitidasOperador = ['hoje', 'pedidos', 'orcamentos', 'calendario', 'produtos', 'estoque', 'fichatecnica', 'crm'];
     if (usuarioAtual && usuarioAtual.nivel === 'operador' && !abasPermitidasOperador.includes(tab)) {
         mostrarToast('Acesso restrito ao Administrador.', 'aviso', 3000);
         return;
@@ -97,6 +98,7 @@ function mudarTabAdmin(tab) {
     if(tab === 'estoque' && typeof carregarEstoqueAdmin === 'function') carregarEstoqueAdmin();
     if(tab === 'fichatecnica' && typeof carregarFichaTecnicaAdmin === 'function') carregarFichaTecnicaAdmin();
     if(tab === 'financeiro' && typeof carregarFinanceiroAdmin === 'function') carregarFinanceiroAdmin();
+    if(tab === 'crm' && typeof carregarCRMAdmin === 'function') carregarCRMAdmin();
 }
 
 // ==========================================================================
