@@ -70,6 +70,7 @@
         <h2 style="margin-top:0;"><i class="fa-solid fa-screwdriver-wrench" style="color:var(--primary)"></i> Painel de Controle</h2>
         <div class="admin-nav">
           <button id="tab-btn-hoje" class="active" onclick="mudarTabAdmin('hoje')"><i class="fa-solid fa-sun"></i> Hoje</button>
+          <button id="tab-btn-dashboard" onclick="mudarTabAdmin('dashboard')"><i class="fa-solid fa-chart-pie"></i> Dashboard & DRE</button>
           <button id="tab-btn-producao" onclick="mudarTabAdmin('producao')"><i class="fa-solid fa-kitchen-set"></i> Produção & Fila</button>
           <button id="tab-btn-pedidos" onclick="mudarTabAdmin('pedidos')"><i class="fa-solid fa-receipt"></i> Pedidos</button>
           <button id="tab-btn-orcamentos" onclick="mudarTabAdmin('orcamentos')"><i class="fa-solid fa-file-invoice-dollar"></i> Orçamentos</button>
@@ -521,8 +522,45 @@
           <!-- Barra de Capacidade do Dia Selecionado -->
           <div id="producao-barra-capacidade"></div>
 
-          <!-- Quadro Kanban de Produção (3 Colunas) -->
-          <div id="producao-kanban-container" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:16px;"></div>
+        </div>
+
+        <!-- ABA 12: Dashboard Gerencial, DRE & Indicadores (Frente F) -->
+        <div id="admin-tab-dashboard" class="admin-tab">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+            <div>
+              <h3 style="margin:0; font-size:18px; color:#1e293b; display:flex; align-items:center; gap:8px;">
+                <i class="fa-solid fa-chart-pie" style="color:var(--primary);"></i> Dashboard Gerencial & DRE Contábil
+              </h3>
+              <p style="margin:4px 0 0; font-size:12px; color:#64748b;">
+                Indicadores em tempo real baseados na Invariante Contábil e livro-razão canônico
+              </p>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <button id="btn-dash-hoje" class="btn-periodo-dash" onclick="mudarPeriodoDashboard('hoje')">Hoje</button>
+              <button id="btn-dash-7dias" class="btn-periodo-dash" onclick="mudarPeriodoDashboard('7dias')">7 Dias</button>
+              <button id="btn-dash-30dias" class="btn-periodo-dash" onclick="mudarPeriodoDashboard('30dias')">30 Dias</button>
+              <button id="btn-dash-mes_atual" class="btn-periodo-dash active" onclick="mudarPeriodoDashboard('mes_atual')">Este Mês</button>
+              <button id="btn-dash-mes_anterior" class="btn-periodo-dash" onclick="mudarPeriodoDashboard('mes_anterior')">Mês Passado</button>
+              <button id="btn-dash-custom" class="btn-periodo-dash" onclick="mudarPeriodoDashboard('custom')">Personalizado</button>
+              <button onclick="carregarDashboardGerencial()" class="btn-outline" style="padding:6px 14px; font-size:12px; border-radius:8px;">
+                <i class="fa-solid fa-rotate-right"></i> Atualizar
+              </button>
+            </div>
+          </div>
+
+          <!-- Filtro de Datas Customizado (oculto por padrão) -->
+          <div id="dash-filtro-datas-custom" style="display:none; align-items:center; gap:10px; margin-bottom:14px; background:#fff; padding:10px 14px; border-radius:10px; border:1px solid #e2e8f0; flex-wrap:wrap;">
+            <label style="font-size:12px; font-weight:600; color:#475569;">De:</label>
+            <input type="date" id="dash-data-inicio" style="padding:4px 8px; border-radius:6px; border:1px solid #cbd5e1; font-size:12px;">
+            <label style="font-size:12px; font-weight:600; color:#475569;">Até:</label>
+            <input type="date" id="dash-data-fim" style="padding:4px 8px; border-radius:6px; border:1px solid #cbd5e1; font-size:12px;">
+            <button onclick="aplicarFiltroDatasCustomDashboard()" class="btn-primary" style="padding:5px 12px; font-size:12px; border-radius:6px;">
+              Filtrar
+            </button>
+          </div>
+
+          <!-- Container Dinâmico do Dashboard -->
+          <div id="dash-conteudo-container"></div>
         </div>
       </div>
     </div>
@@ -1180,6 +1218,7 @@
   <script src="js/admin-orcamentos.js?v=3.1.0"></script>
   <script src="js/admin-crm.js?v=3.3.0"></script>
   <script src="js/admin-agenda.js?v=3.4.0"></script>
+  <script src="js/admin-dashboard.js?v=3.5.0"></script>
   <script type="module" src="js/whatsapp-helper.js?v=3.2.0"></script>
 
   <script>

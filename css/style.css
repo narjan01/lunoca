@@ -734,8 +734,21 @@ button:active {
 /* ==========================================================================
    Estoque & Financeiro Active States
    ========================================================================== */
+.btn-periodo-dash,
+.btn-periodo-fin {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
 .btn-filtro-estoque.active,
 .btn-periodo-fin.active,
+.btn-periodo-dash.active,
 .btn-filtro-extrato.active {
   background: var(--primary) !important;
   color: var(--white) !important;

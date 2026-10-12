@@ -2403,7 +2403,82 @@ for (const [name, content] of [['install.sql', installFinal], ['schema.sql', sch
 }
 console.log('    ✅ Migration 020 e scripts mestre validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–20 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// --------------------------------------------------------------------------
+// FASE 21: Frente F - Dashboard Gerencial, DRE & Indicadores (021)
+// --------------------------------------------------------------------------
+console.log('\n📊 FASE 21: Frente F - Dashboard Gerencial, DRE & Indicadores (021)...');
+
+const m021 = fs.readFileSync('supabase/migrations/021_dashboard_gerencial_indicadores.sql', 'utf-8');
+
+console.log('  🔎 21.1 Verificando helper interno de resolução temporal e timezone...');
+assert.ok(
+  m021.includes('CREATE OR REPLACE FUNCTION public._dashboard_resolver_datas') &&
+  m021.includes("'America/Fortaleza'") &&
+  m021.includes('REVOKE ALL ON FUNCTION public._dashboard_resolver_datas(DATE, DATE) FROM PUBLIC, anon, authenticated;'),
+  '[FALHA] Helper temporal _dashboard_resolver_datas não configurado com timezone America/Fortaleza e revogação total!'
+);
+
+console.log('  🔎 21.2 Verificando RPCs gerenciais e operacionais da Frente F...');
+assert.ok(
+  m021.includes('CREATE OR REPLACE FUNCTION public.obter_indicadores_vendas_admin(') &&
+  m021.includes('CREATE OR REPLACE FUNCTION public.obter_indicadores_financeiros_admin(') &&
+  m021.includes('CREATE OR REPLACE FUNCTION public.obter_indicadores_producao(') &&
+  m021.includes('CREATE OR REPLACE FUNCTION public.obter_indicadores_clientes_admin(') &&
+  m021.includes('CREATE OR REPLACE FUNCTION public.obter_dashboard_operacional(') &&
+  m021.includes('CREATE OR REPLACE FUNCTION public.obter_dashboard_resumo_admin('),
+  '[FALHA] Uma ou mais RPCs analíticas da Frente F não foram definidas em 021!'
+);
+
+console.log('  🔎 21.3 Verificando invariantes contábeis (vendas vs faturamento vs caixa vs crédito)...');
+assert.ok(
+  m021.includes('vendas_confirmadas_quantidade') &&
+  m021.includes('faturamento_realizado') &&
+  m021.includes('entrada_caixa_liquida') &&
+  m021.includes('credito_cliente_utilizado') &&
+  m021.includes('saldo_creditos_fim_periodo') &&
+  m021.includes('saldo_creditos_atual'),
+  '[FALHA] Migration 021 não implementa a separação contábil estrita de faturamento, caixa e crédito!'
+);
+
+console.log('  🔎 21.4 Verificando grants fail-closed para anon nas RPCs analíticas...');
+assert.ok(
+  m021.includes('REVOKE ALL ON FUNCTION public.obter_indicadores_vendas_admin(DATE, DATE) FROM PUBLIC, anon;') &&
+  m021.includes('REVOKE ALL ON FUNCTION public.obter_indicadores_financeiros_admin(DATE, DATE) FROM PUBLIC, anon;') &&
+  m021.includes('REVOKE ALL ON FUNCTION public.obter_indicadores_producao(DATE, DATE) FROM PUBLIC, anon;') &&
+  m021.includes('REVOKE ALL ON FUNCTION public.obter_indicadores_clientes_admin(DATE, DATE) FROM PUBLIC, anon;') &&
+  m021.includes('REVOKE ALL ON FUNCTION public.obter_dashboard_operacional(DATE, DATE) FROM PUBLIC, anon;') &&
+  m021.includes('REVOKE ALL ON FUNCTION public.obter_dashboard_resumo_admin(DATE, DATE) FROM PUBLIC, anon;'),
+  '[FALHA] RPCs analíticas não revogam privilégios de anon e PUBLIC!'
+);
+
+for (const [name, content] of [['install.sql', installFinal], ['schema.sql', schemaFinal]]) {
+  assert.ok(content.includes('public.obter_indicadores_vendas_admin'), `[FALHA] ${name} não contém obter_indicadores_vendas_admin!`);
+  assert.ok(content.includes('public.obter_indicadores_financeiros_admin'), `[FALHA] ${name} não contém obter_indicadores_financeiros_admin!`);
+  assert.ok(content.includes('public.obter_indicadores_producao'), `[FALHA] ${name} não contém obter_indicadores_producao!`);
+  assert.ok(content.includes('public.obter_indicadores_clientes_admin'), `[FALHA] ${name} não contém obter_indicadores_clientes_admin!`);
+  assert.ok(content.includes('public.obter_dashboard_operacional'), `[FALHA] ${name} não contém obter_dashboard_operacional!`);
+  assert.ok(content.includes('public.obter_dashboard_resumo_admin'), `[FALHA] ${name} não contém obter_dashboard_resumo_admin!`);
+}
+
+console.log('  🔎 21.5 Verificando frontend do Dashboard Gerencial & DRE (admin-dashboard.js e admin.html)...');
+const adminHtmlF = fs.readFileSync('admin.html', 'utf-8');
+const adminDashJs = fs.readFileSync('js/admin-dashboard.js', 'utf-8');
+assert.ok(
+  adminHtmlF.includes('id="tab-btn-dashboard"') &&
+  adminHtmlF.includes('id="admin-tab-dashboard"') &&
+  adminHtmlF.includes('js/admin-dashboard.js'),
+  '[FALHA] admin.html não integra a aba Dashboard & DRE!'
+);
+assert.ok(
+  adminDashJs.includes('obter_dashboard_resumo_admin') &&
+  adminDashJs.includes('obter_dashboard_operacional') &&
+  adminDashJs.includes('carregarDashboardGerencial'),
+  '[FALHA] js/admin-dashboard.js não implementa chamadas canônicas do Dashboard!'
+);
+console.log('    ✅ Migration 021, scripts mestre e frontend validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–21 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+
 
 
 

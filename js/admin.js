@@ -22,6 +22,7 @@ function configurarAcessoAdminPorNivel() {
 
     const abasOperacionais = [
         'tab-btn-hoje',
+        'tab-btn-dashboard',
         'tab-btn-producao',
         'tab-btn-pedidos',
         'tab-btn-orcamentos',
@@ -68,7 +69,7 @@ function configurarAcessoAdminPorNivel() {
 
 function mudarTabAdmin(tab) {
     // Bloqueio de segurança no frontend para Operadores
-    const abasPermitidasOperador = ['hoje', 'producao', 'pedidos', 'orcamentos', 'calendario', 'produtos', 'estoque', 'fichatecnica', 'crm'];
+    const abasPermitidasOperador = ['hoje', 'dashboard', 'producao', 'pedidos', 'orcamentos', 'calendario', 'produtos', 'estoque', 'fichatecnica', 'crm'];
     if (usuarioAtual && usuarioAtual.nivel === 'operador' && !abasPermitidasOperador.includes(tab)) {
         mostrarToast('Acesso restrito ao Administrador.', 'aviso', 3000);
         return;
@@ -83,6 +84,7 @@ function mudarTabAdmin(tab) {
     if (targetTab) targetTab.classList.add('active');
     
     if(tab === 'hoje' && typeof carregarDashboardHoje === 'function') carregarDashboardHoje();
+    if(tab === 'dashboard' && typeof carregarDashboardGerencial === 'function') carregarDashboardGerencial();
     if(tab === 'producao' && typeof carregarProducaoAdmin === 'function') carregarProducaoAdmin();
     if(tab === 'pedidos') {
         if (typeof carregarCentralEncomendas === 'function') {
