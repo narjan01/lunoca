@@ -11,14 +11,22 @@ import net from 'node:net';
 import { execSync } from 'node:child_process';
 
 function forceKillPid(pid) {
-  if (!pid) return;
-  try {
-    if (process.platform === 'win32') {
-      execSync(`taskkill /pid ${pid} /f /t`, { stdio: 'ignore' });
-    } else {
-      process.kill(pid, 'SIGKILL');
+  if (process.platform === 'win32') {
+    if (pid) {
+      try {
+        execSync(`taskkill /pid ${pid} /f /t`, { stdio: 'ignore', timeout: 5000 });
+      } catch {}
     }
-  } catch {}
+    // Erradica qualquer processo filho postgres.exe que tenha ficado órfão em estado Suspenso (64 KB)
+    // durante CreateProcess (CREATE_SUSPENDED) no momento do encerramento do postmaster:
+    try {
+      execSync(`taskkill /f /im postgres.exe /fi "MEMUSAGE lt 4096"`, { stdio: 'ignore', timeout: 5000 });
+    } catch {}
+  } else if (pid) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {}
+  }
 }
 
 export function cleanupDir(dirPath) {
@@ -67,6 +75,7 @@ export async function setupEmbeddedPostgres({ rootDir, dirName, port, dbName }) 
   const pgDir = path.join(rootDir, dirName);
 
   // Limpeza de qualquer resíduo prévio
+  forceKillPid(null);
   cleanupDir(pgDir);
 
   const embedded = new EmbeddedPostgres({
@@ -74,8 +83,19 @@ export async function setupEmbeddedPostgres({ rootDir, dirName, port, dbName }) 
     user: 'postgres',
     password: 'postgres',
     port: actualPort,
-    persistent: false,
+    // Usamos persistent: true para impedir que embedded.stop() chame fs.rm() sem retry no Windows
+    // (causando EBUSY no AsyncExitHook); a remoção do diretório é feita com retry por cleanupDir(pgDir)
+    persistent: true,
     initdbFlags: ['--encoding=UTF8', '--locale=C'],
+    // Desativa autovacuum e processos auxiliares desnecessários nos testes para evitar
+    // que o postmaster invoque CreateProcess(CREATE_SUSPENDED) durante o teardown no Windows
+    postgresFlags: [
+      '-c', 'autovacuum=off',
+      '-c', 'max_wal_senders=0',
+      '-c', 'fsync=off',
+      '-c', 'synchronous_commit=off',
+      '-c', 'full_page_writes=off',
+    ],
     onLog: () => {},
     onError: () => {},
   });
@@ -84,6 +104,8 @@ export async function setupEmbeddedPostgres({ rootDir, dirName, port, dbName }) 
   const emergencyKill = () => {
     if (embedded?.process?.pid) {
       forceKillPid(embedded.process.pid);
+    } else {
+      forceKillPid(null);
     }
   };
 
@@ -93,6 +115,13 @@ export async function setupEmbeddedPostgres({ rootDir, dirName, port, dbName }) 
 
   await embedded.initialise();
   await embedded.start();
+
+  // Drena stdout do processo filho para evitar bloqueio de buffer de pipe no Windows
+  if (embedded.process?.stdout) {
+    embedded.process.stdout.on('data', () => {});
+    embedded.process.stdout.resume();
+  }
+
   await embedded.createDatabase(dbName);
 
   const connInfo = {
@@ -126,35 +155,36 @@ export async function setupEmbeddedPostgres({ rootDir, dirName, port, dbName }) 
       await closeClient(adminClient);
     }
 
-    // 4. Encerra EmbeddedPostgres com timeout fail-safe
+    // 4. Encerra EmbeddedPostgres com destruição explícita de stdio pipes e kill síncrono da árvore
     if (embedded) {
-      const pid = embedded.process?.pid;
+      const proc = embedded.process;
+      const pid = proc?.pid;
+
       await new Promise((resolve) => {
         let done = false;
-        const timer = setTimeout(() => {
+        const finish = () => {
           if (!done) {
             done = true;
+            clearTimeout(timer);
+            try {
+              proc?.stdout?.destroy();
+              proc?.stderr?.destroy();
+              proc?.stdin?.destroy();
+              if (typeof proc?.unref === 'function') proc.unref();
+            } catch {}
+            embedded.process = undefined;
             forceKillPid(pid);
             resolve();
           }
-        }, 3000);
+        };
+
+        const timer = setTimeout(finish, 2500);
         if (typeof timer.unref === 'function') timer.unref();
 
-        embedded.stop().then(() => {
-          if (!done) {
-            done = true;
-            clearTimeout(timer);
-            resolve();
-          }
-        }).catch(() => {
-          if (!done) {
-            done = true;
-            clearTimeout(timer);
-            forceKillPid(pid);
-            resolve();
-          }
-        });
+        embedded.stop().then(finish).catch(finish);
       });
+    } else {
+      forceKillPid(null);
     }
 
     // 5. Limpa diretório de dados do cluster

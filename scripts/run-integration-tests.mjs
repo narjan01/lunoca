@@ -7,12 +7,20 @@
 // embarcado e erradicação de colisões de disco NTFS no Windows.
 // ==============================================================================
 
-import { spawnSync } from 'node:child_process';
+import { spawnSync, execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
+
+function cleanupOrphanPostgres() {
+  if (process.platform === 'win32') {
+    try {
+      execSync('taskkill /f /im postgres.exe /fi "MEMUSAGE lt 4096"', { stdio: 'ignore', timeout: 5000 });
+    } catch {}
+  }
+}
 
 const testSuites = [
   'tests/integration/etapa2.integration.test.mjs',
@@ -23,11 +31,12 @@ const testSuites = [
   'tests/integration/frente_d.crm.test.mjs',
   'tests/integration/frente_e.producao.test.mjs',
   'tests/integration/frente_f.dashboard.test.mjs',
+  'tests/integration/frente_g.compras_insumos.test.mjs',
 ];
 
 console.log('🚀 Iniciando Runner Sequencial de Testes de Integração Lunoca...');
-let totalPassed = 0;
-let totalFailed = 0;
+
+cleanupOrphanPostgres();
 
 for (const suite of testSuites) {
   const suiteName = path.basename(suite);
@@ -38,8 +47,11 @@ for (const suite of testSuites) {
   const result = spawnSync('node', ['--test', suite], {
     cwd: ROOT,
     stdio: 'inherit',
+    timeout: 180000,
     env: { ...process.env },
   });
+
+  cleanupOrphanPostgres();
 
   if (result.status !== 0) {
     console.error(`\n❌ Falha na execução da suíte ${suiteName} (exit code: ${result.status})`);

@@ -30,6 +30,7 @@ function configurarAcessoAdminPorNivel() {
         'tab-btn-produtos',
         'tab-btn-estoque',
         'tab-btn-fichatecnica',
+        'tab-btn-compras',
         'tab-btn-crm'
     ];
 
@@ -69,7 +70,7 @@ function configurarAcessoAdminPorNivel() {
 
 function mudarTabAdmin(tab) {
     // Bloqueio de segurança no frontend para Operadores
-    const abasPermitidasOperador = ['hoje', 'dashboard', 'producao', 'pedidos', 'orcamentos', 'calendario', 'produtos', 'estoque', 'fichatecnica', 'crm'];
+    const abasPermitidasOperador = ['hoje', 'dashboard', 'producao', 'pedidos', 'orcamentos', 'calendario', 'produtos', 'estoque', 'fichatecnica', 'compras', 'crm'];
     if (usuarioAtual && usuarioAtual.nivel === 'operador' && !abasPermitidasOperador.includes(tab)) {
         mostrarToast('Acesso restrito ao Administrador.', 'aviso', 3000);
         return;
@@ -101,6 +102,7 @@ function mudarTabAdmin(tab) {
     if(tab === 'whatsapp' && typeof carregarConfigWhatsAppAdmin === 'function') carregarConfigWhatsAppAdmin();
     if(tab === 'estoque' && typeof carregarEstoqueAdmin === 'function') carregarEstoqueAdmin();
     if(tab === 'fichatecnica' && typeof carregarFichaTecnicaAdmin === 'function') carregarFichaTecnicaAdmin();
+    if(tab === 'compras' && typeof carregarComprasInsumosAdmin === 'function') carregarComprasInsumosAdmin();
     if(tab === 'financeiro' && typeof carregarFinanceiroAdmin === 'function') carregarFinanceiroAdmin();
     if(tab === 'crm' && typeof carregarCRMAdmin === 'function') carregarCRMAdmin();
 }

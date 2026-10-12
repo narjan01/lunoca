@@ -2477,7 +2477,102 @@ assert.ok(
 );
 console.log('    ✅ Migration 021, scripts mestre e frontend validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–21 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// --------------------------------------------------------------------------
+// FASE 22: Frente G - Compras, Fornecedores, Estoque de Insumos & CMV Real (022)
+// --------------------------------------------------------------------------
+console.log('\n📦 FASE 22: Frente G - Compras, Fornecedores, Estoque de Insumos & CMV Real (022)...');
+
+const m022 = fs.readFileSync('supabase/migrations/022_compras_fornecedores_estoque_insumos.sql', 'utf-8');
+
+console.log('  🔎 22.1 Verificando estruturas de fornecedores, compras, saldos, livro-razão e contas a pagar...');
+assert.ok(
+  m022.includes('CREATE TABLE IF NOT EXISTS public.fornecedores') &&
+  m022.includes('CREATE TABLE IF NOT EXISTS public.compras') &&
+  m022.includes('CREATE TABLE IF NOT EXISTS public.compra_itens') &&
+  m022.includes('CREATE TABLE IF NOT EXISTS public.ingrediente_saldos') &&
+  m022.includes('CREATE TABLE IF NOT EXISTS public.ingrediente_movimentacoes') &&
+  m022.includes('CREATE TABLE IF NOT EXISTS public.contas_pagar'),
+  '[FALHA] Uma ou mais tabelas da Frente G não foram definidas em 022!'
+);
+
+console.log('  🔎 22.2 Verificando imutabilidade do livro-razão de insumos (trg_imutabilidade_ingrediente_mov)...');
+assert.ok(
+  m022.includes('bloquear_mutacao_ingrediente_movimentacoes') &&
+  m022.includes('trg_imutabilidade_ingrediente_mov') &&
+  m022.includes('BEFORE UPDATE OR DELETE ON public.ingrediente_movimentacoes'),
+  '[FALHA] ingrediente_movimentacoes não possui trigger de imutabilidade bloqueando UPDATE/DELETE!'
+);
+
+console.log('  🔎 22.3 Verificando RPCs transacionais da Frente G e helper interno...');
+assert.ok(
+  m022.includes('CREATE OR REPLACE FUNCTION public._aplicar_movimento_ingrediente(') &&
+  m022.includes('CREATE OR REPLACE FUNCTION public.salvar_fornecedor_admin(') &&
+  m022.includes('CREATE OR REPLACE FUNCTION public.listar_fornecedores_admin(') &&
+  m022.includes('CREATE OR REPLACE FUNCTION public.criar_compra(') &&
+  m022.includes('CREATE OR REPLACE FUNCTION public.receber_compra(') &&
+  m022.includes('CREATE OR REPLACE FUNCTION public.cancelar_compra(') &&
+  m022.includes('CREATE OR REPLACE FUNCTION public.registrar_perda_insumo(') &&
+  m022.includes('CREATE OR REPLACE FUNCTION public.ajustar_estoque_insumo_admin(') &&
+  m022.includes('CREATE OR REPLACE FUNCTION public.registrar_pagamento_fornecedor(') &&
+  m022.includes('CREATE OR REPLACE FUNCTION public.obter_necessidade_reposicao(') &&
+  m022.includes('CREATE OR REPLACE FUNCTION public.obter_cmv_real_produto('),
+  '[FALHA] Uma ou mais RPCs da Frente G não foram definidas em 022!'
+);
+
+console.log('  🔎 22.4 Verificando separação dos 3 conceitos de custo (teórico, CMP e CMV real)...');
+assert.ok(
+  m022.includes('custo_teorico_receita') &&
+  m022.includes('custo_medio_ponderado') &&
+  m022.includes('AS cmv_real') &&
+  m022.includes('margem_teorica_pct') &&
+  m022.includes('margem_real_pct'),
+  '[FALHA] Migration 022 não preserva a separação explícita entre custo teórico, CMP e CMV real!'
+);
+
+console.log('  🔎 22.5 Verificando grants fail-closed para anon e revogação de escrita direta...');
+assert.ok(
+  m022.includes('REVOKE ALL ON FUNCTION public._aplicar_movimento_ingrediente(BIGINT, TEXT, NUMERIC, NUMERIC, TEXT, BIGINT, BIGINT, UUID, TEXT, TEXT) FROM PUBLIC, anon, authenticated;') &&
+  m022.includes('REVOKE ALL ON FUNCTION public.criar_compra(BIGINT, JSONB, TEXT, DATE, NUMERIC, NUMERIC, TEXT, TEXT) FROM PUBLIC, anon;') &&
+  m022.includes('REVOKE ALL ON FUNCTION public.receber_compra(BIGINT, DATE, BOOLEAN) FROM PUBLIC, anon;') &&
+  m022.includes('REVOKE ALL ON FUNCTION public.cancelar_compra(BIGINT, TEXT) FROM PUBLIC, anon;') &&
+  m022.includes('REVOKE ALL ON FUNCTION public.registrar_perda_insumo(BIGINT, NUMERIC, TEXT, TEXT) FROM PUBLIC, anon;') &&
+  m022.includes('REVOKE ALL ON FUNCTION public.ajustar_estoque_insumo_admin(BIGINT, TEXT, NUMERIC, TEXT, NUMERIC, TEXT) FROM PUBLIC, anon;') &&
+  m022.includes('REVOKE ALL ON FUNCTION public.registrar_pagamento_fornecedor(BIGINT, NUMERIC, TEXT, TEXT, TEXT) FROM PUBLIC, anon;') &&
+  m022.includes('REVOKE ALL ON FUNCTION public.obter_necessidade_reposicao(INT) FROM PUBLIC, anon;') &&
+  m022.includes('REVOKE ALL ON FUNCTION public.obter_cmv_real_produto(BIGINT) FROM PUBLIC, anon;'),
+  '[FALHA] Grants fail-closed das RPCs da Frente G ausentes ou incorretos!'
+);
+
+for (const [name, content] of [['install.sql', installFinal], ['schema.sql', schemaFinal]]) {
+  assert.ok(content.includes('public.fornecedores'), `[FALHA] ${name} não contém fornecedores!`);
+  assert.ok(content.includes('public.compras'), `[FALHA] ${name} não contém compras!`);
+  assert.ok(content.includes('public.ingrediente_saldos'), `[FALHA] ${name} não contém ingrediente_saldos!`);
+  assert.ok(content.includes('public.ingrediente_movimentacoes'), `[FALHA] ${name} não contém ingrediente_movimentacoes!`);
+  assert.ok(content.includes('public.contas_pagar'), `[FALHA] ${name} não contém contas_pagar!`);
+  assert.ok(content.includes('public.receber_compra'), `[FALHA] ${name} não contém receber_compra!`);
+  assert.ok(content.includes('public.obter_cmv_real_produto'), `[FALHA] ${name} não contém obter_cmv_real_produto!`);
+}
+
+console.log('  🔎 22.6 Verificando frontend de Compras, Insumos & CMV Real (admin-compras.js e admin.html)...');
+const adminHtmlG = fs.readFileSync('admin.html', 'utf-8');
+const adminComprasJs = fs.readFileSync('js/admin-compras.js', 'utf-8');
+assert.ok(
+  adminHtmlG.includes('id="tab-btn-compras"') &&
+  adminHtmlG.includes('id="admin-tab-compras"') &&
+  adminHtmlG.includes('js/admin-compras.js'),
+  '[FALHA] admin.html não integra a aba Compras & CMV Real!'
+);
+assert.ok(
+  adminComprasJs.includes('obter_necessidade_reposicao') &&
+  adminComprasJs.includes('obter_cmv_real_produto') &&
+  adminComprasJs.includes('criar_compra') &&
+  adminComprasJs.includes('receber_compra') &&
+  adminComprasJs.includes('registrar_pagamento_fornecedor'),
+  '[FALHA] js/admin-compras.js não implementa chamadas canônicas da Frente G!'
+);
+console.log('    ✅ Migration 022, scripts mestre e frontend validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–22 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
 
 
 

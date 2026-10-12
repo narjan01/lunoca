@@ -313,7 +313,7 @@ Este documento registra a evolução arquitetural e técnica da Lunoca Doceria, 
 
 ---
 
-## 🏛️ FRENTE A a FRENTE F: Fechamento Completo do Confectionery OS (Migrations 014–021) `[AUDITADAS E CONGELADAS ✅]`
+## 🏛️ FRENTE A a FRENTE G: Fechamento Completo do Confectionery OS (Migrations 014–022) `[AUDITADAS E CONGELADAS ✅]`
 
 ### 1. Frente A — Governança de Catálogo, Estoque Atômico & Portas de Domínio (`014`)
 - **`ajustar_estoque_operacao`**: RPC atômica com lock `FOR UPDATE`, auditoria obrigatória em `estoque_movimentacoes` e garantia da invariante `estoque >= estoque_reservado`.
@@ -348,6 +348,17 @@ Este documento registra a evolução arquitetural e técnica da Lunoca Doceria, 
   - `obter_indicadores_vendas_admin`, `obter_indicadores_financeiros_admin`, `obter_indicadores_producao`, `obter_indicadores_clientes_admin`, `obter_dashboard_resumo_admin`.
   - `obter_dashboard_operacional`: payload estritamente sanitizado para operadores, contendo apenas volumes de pedidos e capacidade produtiva (sem chaves financeiras no JSON).
 
+### 7. Frente G — Compras, Fornecedores, Estoque de Insumos & CMV Real (`022`)
+- **Invariante de Custos (3 Conceitos Separados)**:
+  1. `custo_teorico_receita`: calculado a partir de `ingredientes.custo_unitario` e `produto_ingredientes`.
+  2. `custo_medio_ponderado` (CMP): calculado atomicamente a cada recebimento de compra em `ingrediente_saldos`.
+  3. `cmv_real`: custo real do produto acabado derivado do CMP dos insumos em estoque (`obter_cmv_real_produto`), exibindo desvio em R$ e % frente ao teórico.
+- **Abastecimento Transacional & Livro-Razão Imutável**:
+  - Estruturas `fornecedores`, `compras`, `compra_itens`, `ingrediente_saldos`, `ingrediente_movimentacoes` (com trigger `trg_imutabilidade_ingrediente_mov` bloqueando `UPDATE`/`DELETE`) e `contas_pagar`.
+  - Recebimento idempotente (`receber_compra`) com rateio proporcional de frete/outras despesas/desconto nos itens, atualização do CMP e geração opcional de conta a pagar.
+  - Liquidação financeira (`registrar_pagamento_fornecedor`) gerando despesa auditável no DRE (`financeiro_lancamentos`).
+  - Sugestão inteligente de reposição (`obter_necessidade_reposicao`) cruzando saldo atual, estoque mínimo e demanda produtiva prevista nos próximos $N$ dias (sem compras automáticas).
+
 ---
 
 ## 🧪 Verificação, Hardening & Suíte de Integração
@@ -358,7 +369,7 @@ Execução do conjunto completo de testes automatizados:
 npm run lint:syntax
 npm run check:sql
 npm run test:structural
-npm run test:integration  # 134/134 testes de integração em PostgreSQL real (8 suítes)
+npm run test:integration  # 150/150 testes de integração em PostgreSQL real (9 suítes)
 ```
 
 ### Status Consolidado de Homologação:
@@ -373,5 +384,7 @@ npm run test:integration  # 134/134 testes de integração em PostgreSQL real (8
 | **Frente D** | CRM, Relacionamento & Visão 360° do Cliente (LGPD) | `019` | 18/18 | **CONGELADA ✅** |
 | **Frente E** | Agenda de Produção, Capacidade & Operação Visual | `020` | 18/18 | **CONGELADA ✅** |
 | **Frente F** | Dashboard Gerencial, DRE Contábil & Indicadores Executivos | `021` | 14/14 | **CONGELADA ✅** |
-| **TOTAL** | **Hardening Estrutural: 21/21 Fases • SQL Master: 12.803 linhas** | **`001`–`021`** | **134/134** | **100% HOMOLOGADO ✅** |
+| **Frente G** | Compras, Fornecedores, Estoque de Insumos & CMV Real | `022` | 16/16 | **CONGELADA ✅** |
+| **TOTAL** | **Hardening Estrutural: 22/22 Fases • SQL Master: 14.187 linhas** | **`001`–`022`** | **150/150** | **100% HOMOLOGADO ✅** |
+
 
