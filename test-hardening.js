@@ -2233,7 +2233,60 @@ for (const [name, content] of [['install.sql', installFinal], ['schema.sql', sch
 }
 console.log('    ✅ Migration 017 e scripts mestre em conformidade com versão estritamente obrigatória.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–17 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// --------------------------------------------------------------------------
+// FASE 18: FRENTE C - CARTEIRA DE CRÉDITO DO CLIENTE (018)
+// --------------------------------------------------------------------------
+console.log('\n🛡️ FASE 18: Frente C - Carteira de Crédito do Cliente (018)...');
+
+assert.ok(
+  fs.existsSync('supabase/migrations/018_credito_cliente_carteira_financeira.sql'),
+  '[FALHA] supabase/migrations/018_credito_cliente_carteira_financeira.sql não encontrada!'
+);
+
+const m018 = fs.readFileSync('supabase/migrations/018_credito_cliente_carteira_financeira.sql', 'utf-8');
+
+console.log('  🔎 18.1 Verificando estrutura de tabelas e imutabilidade de cliente_credito_movimentacoes...');
+assert.ok(
+  m018.includes('CREATE TABLE IF NOT EXISTS public.cliente_creditos') &&
+  m018.includes('CREATE TABLE IF NOT EXISTS public.cliente_credito_movimentacoes'),
+  '[FALHA] Tabelas de crédito não definidas em 018!'
+);
+assert.ok(
+  m018.includes('REVOKE UPDATE, DELETE ON public.cliente_credito_movimentacoes FROM PUBLIC, anon, authenticated;'),
+  '[FALHA] Livro-razão cliente_credito_movimentacoes não possui REVOKE UPDATE, DELETE!'
+);
+assert.ok(
+  m018.includes('saldo >= 0.00'),
+  '[FALHA] cliente_creditos não possui check constraint de saldo não-negativo!'
+);
+
+console.log('  🔎 18.2 Verificando segurança fail-closed da função interna aplicar_movimento_credito_cliente...');
+assert.ok(
+  m018.includes('REVOKE ALL ON FUNCTION public.aplicar_movimento_credito_cliente FROM PUBLIC, anon, authenticated;'),
+  '[FALHA] Função interna aplicar_movimento_credito_cliente não é estritamente privada!'
+);
+assert.ok(
+  !m018.includes('GRANT EXECUTE ON FUNCTION public.aplicar_movimento_credito_cliente TO authenticated'),
+  '[FALHA] Função interna aplicar_movimento_credito_cliente possui GRANT para authenticated!'
+);
+
+console.log('  🔎 18.3 Verificando métodos de cancelamento com CREDITO_CLIENTE e ESTORNO...');
+assert.ok(
+  m018.includes("p_destino_valor = 'CREDITO_CLIENTE'") && m018.includes("p_destino_valor = 'ESTORNO'"),
+  '[FALHA] cancelar_pedido_equipe não implementa fluxos de CREDITO_CLIENTE ou ESTORNO!'
+);
+
+for (const [name, content] of [['install.sql', installFinal], ['schema.sql', schemaFinal]]) {
+  assert.ok(content.includes('public.cliente_creditos'), `[FALHA] ${name} não contém cliente_creditos!`);
+  assert.ok(content.includes('public.cliente_credito_movimentacoes'), `[FALHA] ${name} não contém cliente_credito_movimentacoes!`);
+  assert.ok(content.includes('public.ajustar_credito_cliente_admin'), `[FALHA] ${name} não contém ajustar_credito_cliente_admin!`);
+  assert.ok(content.includes('public.utilizar_credito_cliente_pedido'), `[FALHA] ${name} não contém utilizar_credito_cliente_pedido!`);
+  assert.ok(content.includes('public.consultar_saldo_credito'), `[FALHA] ${name} não contém consultar_saldo_credito!`);
+}
+console.log('    ✅ Migration 018 e scripts mestre validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–18 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+
 
 
 

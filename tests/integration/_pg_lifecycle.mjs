@@ -140,6 +140,9 @@ export async function setupEmbeddedPostgres({ rootDir, dirName, port, dbName }) 
       } catch {
         forceKillPid(pid);
       }
+      if (pid) {
+        forceKillPid(pid);
+      }
     }
 
     // 5. Limpa diretório de dados do cluster
