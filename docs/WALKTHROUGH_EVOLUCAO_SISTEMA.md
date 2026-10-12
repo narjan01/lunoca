@@ -359,6 +359,16 @@ Este documento registra a evolução arquitetural e técnica da Lunoca Doceria, 
   - Liquidação financeira (`registrar_pagamento_fornecedor`) gerando despesa auditável no DRE (`financeiro_lancamentos`).
   - Sugestão inteligente de reposição (`obter_necessidade_reposicao`) cruzando saldo atual, estoque mínimo e demanda produtiva prevista nos próximos $N$ dias (sem compras automáticas).
 
+### 8. Frente H — Tesouraria, Fluxo de Caixa Projetado e Conciliação (`023`)
+- **Invariante Central de Tesouraria**:
+  - `caixa_realizado != caixa_projetado != competencia_faturamento != saldo_credito_cliente`
+  - **Zero duplicação de livro-razão**: sem tabela paralela `fluxo_caixa_lancamentos`. Todo o fluxo realizado e projetado deriva das fontes canônicas (`financeiro_lancamentos`, `pedido_pagamentos`, `contas_pagar`, `pedidos` confirmados e `cliente_creditos`).
+- **Estruturas Próprias & Livros Append-Only Imutáveis**:
+  - `contas_financeiras` (seed padrão: `CAIXA_FISICO`, `CONTA_PIX`, `CONTA_PRINCIPAL`), `conciliacoes_financeiras` (`trg_imutabilidade_conciliacoes_fin`) e `ajustes_tesouraria` (`trg_imutabilidade_ajustes_tesouraria`).
+- **RPCs Administrativas & Isolamento de Perfis**:
+  - `obter_posicao_tesouraria_admin`, `obter_fluxo_caixa_admin`, `obter_recebimentos_previstos_admin` (apenas pedidos `status_comercial = 'confirmado'` e `saldo > 0`), `obter_contas_pagar_periodo_admin`, `obter_conciliacao_financeira_admin`, `registrar_conciliacao_financeira_admin`, `registrar_ajuste_tesouraria_admin` e `salvar_conta_financeira_admin`.
+  - Acesso estrito a administradores (`PERMISSION_DENIED` para operadores e rejeição fail-closed `401/403` para `anon` e clientes comuns).
+
 ---
 
 ## 🧪 Verificação, Hardening & Suíte de Integração
@@ -369,7 +379,7 @@ Execução do conjunto completo de testes automatizados:
 npm run lint:syntax
 npm run check:sql
 npm run test:structural
-npm run test:integration  # 150/150 testes de integração em PostgreSQL real (9 suítes)
+npm run test:integration  # 166/166 testes de integração em PostgreSQL real (10 suítes)
 ```
 
 ### Status Consolidado de Homologação:
@@ -385,6 +395,5 @@ npm run test:integration  # 150/150 testes de integração em PostgreSQL real (9
 | **Frente E** | Agenda de Produção, Capacidade & Operação Visual | `020` | 18/18 | **CONGELADA ✅** |
 | **Frente F** | Dashboard Gerencial, DRE Contábil & Indicadores Executivos | `021` | 14/14 | **CONGELADA ✅** |
 | **Frente G** | Compras, Fornecedores, Estoque de Insumos & CMV Real | `022` | 16/16 | **CONGELADA ✅** |
-| **TOTAL** | **Hardening Estrutural: 22/22 Fases • SQL Master: 14.187 linhas** | **`001`–`022`** | **150/150** | **100% HOMOLOGADO ✅** |
-
-
+| **Frente H** | Tesouraria, Fluxo de Caixa Projetado & Conciliação | `023` | 16/16 | **CONGELADA ✅** |
+| **TOTAL** | **Hardening Estrutural: 23/23 Fases • SQL Master: 15.402 linhas** | **`001`–`023`** | **166/166** | **100% HOMOLOGADO ✅** |

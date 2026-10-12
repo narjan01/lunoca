@@ -14,6 +14,7 @@ function configurarAcessoAdminPorNivel() {
 
     // Abas estritas a administradores (financeiro sensível, gestão de acessos e credenciais)
     const abasRestritas = [
+        'tab-btn-tesouraria',
         'tab-btn-financeiro',
         'tab-btn-usuarios',
         'tab-btn-pagamentos',
@@ -103,6 +104,7 @@ function mudarTabAdmin(tab) {
     if(tab === 'estoque' && typeof carregarEstoqueAdmin === 'function') carregarEstoqueAdmin();
     if(tab === 'fichatecnica' && typeof carregarFichaTecnicaAdmin === 'function') carregarFichaTecnicaAdmin();
     if(tab === 'compras' && typeof carregarComprasInsumosAdmin === 'function') carregarComprasInsumosAdmin();
+    if(tab === 'tesouraria' && typeof carregarTesourariaAdmin === 'function') carregarTesourariaAdmin();
     if(tab === 'financeiro' && typeof carregarFinanceiroAdmin === 'function') carregarFinanceiroAdmin();
     if(tab === 'crm' && typeof carregarCRMAdmin === 'function') carregarCRMAdmin();
 }

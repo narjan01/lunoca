@@ -2572,17 +2572,100 @@ assert.ok(
 );
 console.log('    ✅ Migration 022, scripts mestre e frontend validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–22 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// --------------------------------------------------------------------------
+// FASE 23: Frente H - Tesouraria, Fluxo de Caixa Projetado e Conciliação (023)
+// --------------------------------------------------------------------------
+console.log('\n🏦 FASE 23: Frente H - Tesouraria, Fluxo de Caixa Projetado e Conciliação (023)...');
 
+const m023 = fs.readFileSync('supabase/migrations/023_tesouraria_fluxo_caixa_conciliacao.sql', 'utf-8');
 
+console.log('  🔎 23.1 Verificando estruturas de contas financeiras, conciliações e ajustes (zero duplicação de livro-razão)...');
+assert.ok(
+  m023.includes('CREATE TABLE IF NOT EXISTS public.contas_financeiras') &&
+  m023.includes('CREATE TABLE IF NOT EXISTS public.conciliacoes_financeiras') &&
+  m023.includes('CREATE TABLE IF NOT EXISTS public.ajustes_tesouraria') &&
+  !m023.includes('CREATE TABLE public.fluxo_caixa_lancamentos') &&
+  !m023.includes('CREATE TABLE IF NOT EXISTS public.fluxo_caixa_lancamentos'),
+  '[FALHA] Estruturas da Frente H ausentes ou tabela proibida fluxo_caixa_lancamentos criada!'
+);
 
+console.log('  🔎 23.2 Verificando imutabilidade append-only de conciliações e ajustes...');
+assert.ok(
+  m023.includes('bloquear_mutacao_tesouraria_append_only') &&
+  m023.includes('trg_imutabilidade_conciliacoes_fin') &&
+  m023.includes('BEFORE UPDATE OR DELETE ON public.conciliacoes_financeiras') &&
+  m023.includes('trg_imutabilidade_ajustes_tesouraria') &&
+  m023.includes('BEFORE UPDATE OR DELETE ON public.ajustes_tesouraria'),
+  '[FALHA] Triggers de imutabilidade em conciliacoes_financeiras ou ajustes_tesouraria ausentes!'
+);
 
+console.log('  🔎 23.3 Verificando RPCs canônicas da Frente H e helper interno...');
+assert.ok(
+  m023.includes('CREATE OR REPLACE FUNCTION public._tesouraria_data_efetiva_lancamento(') &&
+  m023.includes('CREATE OR REPLACE FUNCTION public.salvar_conta_financeira_admin(') &&
+  m023.includes('CREATE OR REPLACE FUNCTION public.registrar_ajuste_tesouraria_admin(') &&
+  m023.includes('CREATE OR REPLACE FUNCTION public.registrar_conciliacao_financeira_admin(') &&
+  m023.includes('CREATE OR REPLACE FUNCTION public.obter_contas_pagar_periodo_admin(') &&
+  m023.includes('CREATE OR REPLACE FUNCTION public.obter_recebimentos_previstos_admin(') &&
+  m023.includes('CREATE OR REPLACE FUNCTION public.obter_fluxo_caixa_admin(') &&
+  m023.includes('CREATE OR REPLACE FUNCTION public.obter_posicao_tesouraria_admin(') &&
+  m023.includes('CREATE OR REPLACE FUNCTION public.obter_conciliacao_financeira_admin('),
+  '[FALHA] Uma ou mais RPCs da Frente H não foram definidas em 023!'
+);
 
+console.log('  🔎 23.4 Verificando separação entre realizado, projetado, crédito de cliente e recebíveis confirmados...');
+assert.ok(
+  m023.includes("p.status_comercial = 'confirmado'") &&
+  m023.includes('entradas_liquidas_realizadas') &&
+  m023.includes('credito_cliente_utilizado_periodo') &&
+  m023.includes('entradas_previstas') &&
+  m023.includes('saidas_previstas') &&
+  m023.includes('saldo_acumulado_realizado') &&
+  m023.includes('saldo_acumulado_projetado'),
+  '[FALHA] Migration 023 não preserva as invariantes entre caixa realizado, projetado e crédito de cliente!'
+);
 
+console.log('  🔎 23.5 Verificando grants fail-closed para anon/PUBLIC e bloqueio de helper interno...');
+assert.ok(
+  m023.includes('REVOKE ALL ON FUNCTION public._tesouraria_data_efetiva_lancamento(DATE, TIMESTAMPTZ, TEXT, BIGINT) FROM PUBLIC, anon, authenticated;') &&
+  m023.includes('REVOKE ALL ON FUNCTION public.salvar_conta_financeira_admin(') &&
+  m023.includes('REVOKE ALL ON FUNCTION public.registrar_ajuste_tesouraria_admin(BIGINT, TEXT, NUMERIC, TEXT, DATE, TEXT, TEXT) FROM PUBLIC, anon;') &&
+  m023.includes('REVOKE ALL ON FUNCTION public.registrar_conciliacao_financeira_admin(') &&
+  m023.includes('REVOKE ALL ON FUNCTION public.obter_contas_pagar_periodo_admin(DATE, DATE, TEXT) FROM PUBLIC, anon;') &&
+  m023.includes('REVOKE ALL ON FUNCTION public.obter_recebimentos_previstos_admin(DATE, DATE) FROM PUBLIC, anon;') &&
+  m023.includes('REVOKE ALL ON FUNCTION public.obter_fluxo_caixa_admin(DATE, DATE) FROM PUBLIC, anon;') &&
+  m023.includes('REVOKE ALL ON FUNCTION public.obter_posicao_tesouraria_admin(INT) FROM PUBLIC, anon;') &&
+  m023.includes('REVOKE ALL ON FUNCTION public.obter_conciliacao_financeira_admin(DATE, DATE, TEXT) FROM PUBLIC, anon;'),
+  '[FALHA] Grants fail-closed das RPCs da Frente H ausentes ou incorretos!'
+);
 
+for (const [name, content] of [['install.sql', installFinal], ['schema.sql', schemaFinal]]) {
+  assert.ok(content.includes('public.contas_financeiras'), `[FALHA] ${name} não contém contas_financeiras!`);
+  assert.ok(content.includes('public.conciliacoes_financeiras'), `[FALHA] ${name} não contém conciliacoes_financeiras!`);
+  assert.ok(content.includes('public.ajustes_tesouraria'), `[FALHA] ${name} não contém ajustes_tesouraria!`);
+  assert.ok(content.includes('public.obter_fluxo_caixa_admin'), `[FALHA] ${name} não contém obter_fluxo_caixa_admin!`);
+  assert.ok(content.includes('public.obter_posicao_tesouraria_admin'), `[FALHA] ${name} não contém obter_posicao_tesouraria_admin!`);
+}
 
+console.log('  🔎 23.6 Verificando frontend de Tesouraria & Fluxo de Caixa (admin-tesouraria.js e admin.html)...');
+const adminHtmlH = fs.readFileSync('admin.html', 'utf-8');
+const adminTesourariaJs = fs.readFileSync('js/admin-tesouraria.js', 'utf-8');
+assert.ok(
+  adminHtmlH.includes('id="tab-btn-tesouraria"') &&
+  adminHtmlH.includes('id="admin-tab-tesouraria"') &&
+  adminHtmlH.includes('js/admin-tesouraria.js'),
+  '[FALHA] admin.html não integra a aba Tesouraria & Fluxo de Caixa!'
+);
+assert.ok(
+  adminTesourariaJs.includes('obter_posicao_tesouraria_admin') &&
+  adminTesourariaJs.includes('obter_fluxo_caixa_admin') &&
+  adminTesourariaJs.includes('obter_recebimentos_previstos_admin') &&
+  adminTesourariaJs.includes('obter_contas_pagar_periodo_admin') &&
+  adminTesourariaJs.includes('obter_conciliacao_financeira_admin') &&
+  adminTesourariaJs.includes('registrar_conciliacao_financeira_admin') &&
+  adminTesourariaJs.includes('registrar_ajuste_tesouraria_admin'),
+  '[FALHA] js/admin-tesouraria.js não implementa chamadas canônicas da Frente H!'
+);
+console.log('    ✅ Migration 023, scripts mestre e frontend validados com sucesso.');
 
-
-
-
-
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–23 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
