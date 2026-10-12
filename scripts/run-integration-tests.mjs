@@ -21,6 +21,7 @@ const testSuites = [
   'tests/integration/frente_b.integration.test.mjs',
   'tests/integration/frente_c.credito.test.mjs',
   'tests/integration/frente_d.crm.test.mjs',
+  'tests/integration/frente_e.producao.test.mjs',
 ];
 
 console.log('🚀 Iniciando Runner Sequencial de Testes de Integração Lunoca...');

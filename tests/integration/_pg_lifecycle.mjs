@@ -109,40 +109,52 @@ export async function setupEmbeddedPostgres({ rootDir, dirName, port, dbName }) 
     process.removeListener('SIGINT', emergencyKill);
     process.removeListener('SIGTERM', emergencyKill);
 
-    // 2. Fecha conexões normais (timeout de 1s para cada)
-    for (const c of activeClients) {
-      try {
-        await Promise.race([
-          c.end(),
-          new Promise((r) => setTimeout(r, 1000))
-        ]);
-      } catch {}
-    }
+    // 2. Fecha conexões normais em paralelo sem prender o event loop
+    const closeClient = (c) => {
+      if (!c) return Promise.resolve();
+      return new Promise((resolve) => {
+        const timer = setTimeout(resolve, 800);
+        if (typeof timer.unref === 'function') timer.unref();
+        c.end().then(resolve, resolve).finally(() => clearTimeout(timer));
+      });
+    };
+
+    await Promise.allSettled(activeClients.map(closeClient));
 
     // 3. Fecha admin client
     if (adminClient) {
-      try {
-        await Promise.race([
-          adminClient.end(),
-          new Promise((r) => setTimeout(r, 1000))
-        ]);
-      } catch {}
+      await closeClient(adminClient);
     }
 
-    // 4. Encerra EmbeddedPostgres com timeout fail-safe de 4 segundos
+    // 4. Encerra EmbeddedPostgres com timeout fail-safe
     if (embedded) {
       const pid = embedded.process?.pid;
-      try {
-        await Promise.race([
-          embedded.stop(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('stop_timeout')), 4000))
-        ]);
-      } catch {
-        forceKillPid(pid);
-      }
-      if (pid) {
-        forceKillPid(pid);
-      }
+      await new Promise((resolve) => {
+        let done = false;
+        const timer = setTimeout(() => {
+          if (!done) {
+            done = true;
+            forceKillPid(pid);
+            resolve();
+          }
+        }, 3000);
+        if (typeof timer.unref === 'function') timer.unref();
+
+        embedded.stop().then(() => {
+          if (!done) {
+            done = true;
+            clearTimeout(timer);
+            resolve();
+          }
+        }).catch(() => {
+          if (!done) {
+            done = true;
+            clearTimeout(timer);
+            forceKillPid(pid);
+            resolve();
+          }
+        });
+      });
     }
 
     // 5. Limpa diretório de dados do cluster

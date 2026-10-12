@@ -2338,9 +2338,73 @@ for (const [name, content] of [['install.sql', installFinal], ['schema.sql', sch
   assert.ok(content.includes('public.obter_cliente_360_admin'), `[FALHA] ${name} não contém obter_cliente_360_admin!`);
   assert.ok(content.includes('public.obter_meu_perfil_360'), `[FALHA] ${name} não contém obter_meu_perfil_360!`);
 }
-console.log('    ✅ Migration 019 e scripts mestre validados com sucesso.');
+// --------------------------------------------------------------------------
+// Teste 20: Verificação Fase 20 - Frente E: Agenda de Produção & Operação Visual (020)
+// --------------------------------------------------------------------------
+console.log('\n🛡️ FASE 20: Frente E - Agenda de Produção & Operação Visual (020)...');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–19 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+assert.ok(
+  fs.existsSync('supabase/migrations/020_agenda_producao_operacional.sql'),
+  '[FALHA] supabase/migrations/020_agenda_producao_operacional.sql não encontrada!'
+);
+
+const m020 = fs.readFileSync('supabase/migrations/020_agenda_producao_operacional.sql', 'utf-8');
+
+console.log('  🔎 20.1 Verificando estruturas de observações e configurações de produção...');
+assert.ok(
+  m020.includes('CREATE TABLE IF NOT EXISTS public.pedido_producao_observacoes') &&
+  m020.includes('CREATE TABLE IF NOT EXISTS public.pedido_producao_config'),
+  '[FALHA] Tabelas de produção não definidas em 020!'
+);
+assert.ok(
+  m020.includes('bloquear_delete_pedido_producao_observacoes') &&
+  m020.includes('trg_bloquear_delete_prod_obs'),
+  '[FALHA] pedido_producao_observacoes não possui trigger de bloqueio de DELETE!'
+);
+
+console.log('  🔎 20.2 Verificando RPCs da esteira de produção e expedição...');
+assert.ok(
+  m020.includes('CREATE OR REPLACE FUNCTION public.obter_agenda_producao(') &&
+  m020.includes('CREATE OR REPLACE FUNCTION public.obter_detalhe_producao_pedido(') &&
+  m020.includes('CREATE OR REPLACE FUNCTION public.iniciar_producao_pedido(') &&
+  m020.includes('CREATE OR REPLACE FUNCTION public.marcar_pedido_pronto(') &&
+  m020.includes('CREATE OR REPLACE FUNCTION public.marcar_saida_entrega(') &&
+  m020.includes('CREATE OR REPLACE FUNCTION public.confirmar_entrega_retirada(') &&
+  m020.includes('CREATE OR REPLACE FUNCTION public.definir_prioridade_producao(') &&
+  m020.includes('CREATE OR REPLACE FUNCTION public.adicionar_observacao_producao('),
+  '[FALHA] Uma ou mais RPCs da Frente E não foram definidas em 020!'
+);
+
+console.log('  🔎 20.3 Verificando grants fail-closed para anon nas RPCs operacionais...');
+assert.ok(
+  m020.includes('REVOKE ALL ON FUNCTION public.obter_agenda_producao FROM PUBLIC, anon;') &&
+  m020.includes('REVOKE ALL ON FUNCTION public.iniciar_producao_pedido FROM PUBLIC, anon;') &&
+  m020.includes('REVOKE ALL ON FUNCTION public.marcar_pedido_pronto FROM PUBLIC, anon;') &&
+  m020.includes('REVOKE ALL ON FUNCTION public.marcar_saida_entrega FROM PUBLIC, anon;') &&
+  m020.includes('REVOKE ALL ON FUNCTION public.confirmar_entrega_retirada FROM PUBLIC, anon;'),
+  '[FALHA] RPCs operacionais não revogam grants de PUBLIC e anon!'
+);
+
+console.log('  🔎 20.4 Verificando segregação estrita de modalidade (retirada bloqueada em saída de entrega)...');
+assert.ok(
+  m020.includes('INVALID_DELIVERY_MODALITY') &&
+  m020.includes("modalidade_entrega, 'retirada') = 'retirada'"),
+  '[FALHA] marcar_saida_entrega não possui guarda contra modalidade retirada!'
+);
+
+for (const [name, content] of [['install.sql', installFinal], ['schema.sql', schemaFinal]]) {
+  assert.ok(content.includes('public.pedido_producao_observacoes'), `[FALHA] ${name} não contém pedido_producao_observacoes!`);
+  assert.ok(content.includes('public.pedido_producao_config'), `[FALHA] ${name} não contém pedido_producao_config!`);
+  assert.ok(content.includes('public.obter_agenda_producao'), `[FALHA] ${name} não contém obter_agenda_producao!`);
+  assert.ok(content.includes('public.iniciar_producao_pedido'), `[FALHA] ${name} não contém iniciar_producao_pedido!`);
+  assert.ok(content.includes('public.marcar_pedido_pronto'), `[FALHA] ${name} não contém marcar_pedido_pronto!`);
+  assert.ok(content.includes('public.marcar_saida_entrega'), `[FALHA] ${name} não contém marcar_saida_entrega!`);
+  assert.ok(content.includes('public.confirmar_entrega_retirada'), `[FALHA] ${name} não contém confirmar_entrega_retirada!`);
+}
+console.log('    ✅ Migration 020 e scripts mestre validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–20 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+
 
 
 

@@ -70,6 +70,7 @@
         <h2 style="margin-top:0;"><i class="fa-solid fa-screwdriver-wrench" style="color:var(--primary)"></i> Painel de Controle</h2>
         <div class="admin-nav">
           <button id="tab-btn-hoje" class="active" onclick="mudarTabAdmin('hoje')"><i class="fa-solid fa-sun"></i> Hoje</button>
+          <button id="tab-btn-producao" onclick="mudarTabAdmin('producao')"><i class="fa-solid fa-kitchen-set"></i> Produção & Fila</button>
           <button id="tab-btn-pedidos" onclick="mudarTabAdmin('pedidos')"><i class="fa-solid fa-receipt"></i> Pedidos</button>
           <button id="tab-btn-orcamentos" onclick="mudarTabAdmin('orcamentos')"><i class="fa-solid fa-file-invoice-dollar"></i> Orçamentos</button>
           <button id="tab-btn-crm" onclick="mudarTabAdmin('crm')"><i class="fa-solid fa-address-book"></i> Clientes & CRM</button>
@@ -489,11 +490,72 @@
           <!-- Ficha 360° do Cliente Selecionado -->
           <div id="crm-ficha-360-container" style="display:none;"></div>
         </div>
+
+        <!-- ABA 11: Fila de Produção & Expedição (Frente E) -->
+        <div id="admin-tab-producao" class="admin-tab">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+            <div>
+              <h3 style="margin:0; font-size:18px; color:#1e293b; display:flex; align-items:center; gap:8px;">
+                <i class="fa-solid fa-kitchen-set" style="color:var(--primary);"></i> Fila de Produção & Linha Operacional
+              </h3>
+              <p style="margin:4px 0 0; font-size:12px; color:#64748b;">
+                Acompanhamento em tempo real da cozinha e expedição, com capacidade diária calculada e dados sensíveis sanitizados
+              </p>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <div style="display:flex; align-items:center; gap:6px; background:#fff; padding:4px 8px; border-radius:8px; border:1px solid #cbd5e1;">
+                <i class="fa-regular fa-calendar" style="color:#64748b; font-size:12px;"></i>
+                <input type="date" id="producao-filtro-data" onchange="carregarProducaoAdmin()" style="border:none; font-size:12px; color:#334155; outline:none; background:transparent;">
+              </div>
+              <select id="producao-filtro-modalidade" onchange="carregarProducaoAdmin()" style="padding:6px 10px; font-size:12px; border-radius:8px; border:1px solid #cbd5e1; background:#fff;">
+                <option value="todas">Todas as Modalidades</option>
+                <option value="retirada">Retirada na Loja</option>
+                <option value="entrega">Entrega em Domicílio</option>
+              </select>
+              <button onclick="carregarProducaoAdmin()" class="btn-outline" style="padding:6px 14px; font-size:12px; border-radius:8px;">
+                <i class="fa-solid fa-rotate-right"></i> Atualizar
+              </button>
+            </div>
+          </div>
+
+          <!-- Barra de Capacidade do Dia Selecionado -->
+          <div id="producao-barra-capacidade"></div>
+
+          <!-- Quadro Kanban de Produção (3 Colunas) -->
+          <div id="producao-kanban-container" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:16px;"></div>
+        </div>
       </div>
     </div>
   </main>
 
   <!-- Modais Administrativos -->
+  <div id="modal-observacao-producao" class="modal-overlay">
+    <div class="modal-content" style="max-width: 440px; text-align: left;">
+      <span class="close-modal" role="button" aria-label="Fechar janela" onclick="fecharModalObservacaoProducao()">&times;</span>
+      <h3 style="margin-top:0; color:var(--text-dark); font-size:17px;">
+        <i class="fa-solid fa-note-sticky" style="color:var(--primary);"></i> Nota de Produção <span id="obs-prod-pedido-id" style="color:#0284c7;"></span>
+      </h3>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label style="display:block; font-size:12px; font-weight:700; color:#475569; margin-bottom:4px;">Categoria</label>
+        <select id="obs-prod-categoria" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:13px;">
+          <option value="cozinha">Cozinha / Confeitaria</option>
+          <option value="embalagem">Embalagem</option>
+          <option value="entrega">Entrega / Retirada</option>
+          <option value="alergia">Alergia / Restrição</option>
+          <option value="geral">Geral</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:14px;">
+        <label style="display:block; font-size:12px; font-weight:700; color:#475569; margin-bottom:4px;">Conteúdo da Observação</label>
+        <textarea id="obs-prod-texto" rows="3" placeholder="Ex: Caprichar no laço dourado da embalagem..." style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:13px; box-sizing:border-box;"></textarea>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button type="button" onclick="salvarObservacaoProducaoUI()" class="btn-primary" style="flex:2; padding:10px; border-radius:8px;">Salvar Nota</button>
+        <button type="button" onclick="fecharModalObservacaoProducao()" class="btn-outline" style="flex:1; padding:10px; border-radius:8px;">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modal-editar-ingrediente" class="modal-overlay">
     <div class="modal-content" style="max-width: 440px; text-align: left;">
       <span class="close-modal" role="button" aria-label="Fechar janela" onclick="fecharModalIngrediente()">&times;</span>
@@ -1117,6 +1179,7 @@
   <script src="js/admin-operacao.js?v=3.1.0"></script>
   <script src="js/admin-orcamentos.js?v=3.1.0"></script>
   <script src="js/admin-crm.js?v=3.3.0"></script>
+  <script src="js/admin-agenda.js?v=3.4.0"></script>
   <script type="module" src="js/whatsapp-helper.js?v=3.2.0"></script>
 
   <script>
