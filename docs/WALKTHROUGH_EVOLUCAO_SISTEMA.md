@@ -313,7 +313,44 @@ Este documento registra a evolução arquitetural e técnica da Lunoca Doceria, 
 
 ---
 
-## 🧪 Verificação & Testes de Hardening
+## 🏛️ FRENTE A a FRENTE F: Fechamento Completo do Confectionery OS (Migrations 014–021) `[AUDITADAS E CONGELADAS ✅]`
+
+### 1. Frente A — Governança de Catálogo, Estoque Atômico & Portas de Domínio (`014`)
+- **`ajustar_estoque_operacao`**: RPC atômica com lock `FOR UPDATE`, auditoria obrigatória em `estoque_movimentacoes` e garantia da invariante `estoque >= estoque_reservado`.
+- **Segregação de Catálogo vs Operação**: RLS de `produtos` e `produto_opcoes` restrito a administradores; portas comerciais dedicadas (`cancelar_pedido_equipe`, `gerenciar_confirmacao_pedido_admin`).
+- **Teto de Desconto Operacional**: `desconto_operador_percentual_max` aplicado server-side no núcleo de encomendas.
+
+### 2. Frente B — Comunicação WhatsApp, Relacionamento & Versão Obrigatória (`015`–`017`)
+- **`comunicacoes_cliente`**: trilha auditável de mensagens com constraint XOR de vínculo (`pedido_id` ou `orcamento_id`) e idempotência por chave (`idempotency_key`).
+- **Normalização E.164 (`normalizar_telefone_e164`)**: validação estrita de telefones brasileiros (`55 + DDD + 9 dígitos`).
+- **Preview Server-Side (`obter_preview_comunicacao`) & Registro (`registrar_comunicacao_cliente`)**: separação entre abertura de link (`link_aberto` para `whatsapp_link`) e disparo confirmado (`enviado` via API).
+- **Controle de Versão em Orçamentos (`017`)**: `aprovar_orcamento_publico` exige `p_versao_esperada` sem `DEFAULT NULL`, bloqueando aprovações de versões obsoletas (`QUOTE_VERSION_CHANGED` / `VERSION_REQUIRED`).
+
+### 3. Frente C — Carteira de Crédito do Cliente & Livro-Razão Imutável (`018`)
+- **Estruturas `cliente_creditos` e `cliente_credito_movimentacoes`**: carteira consolidada acoplada a livro-razão imutável (triggers impedem `UPDATE` e `DELETE`), com `ON DELETE RESTRICT`.
+- **Motor Financeiro (`aplicar_movimento_credito_cliente`)**: função interna protegida (`REVOKE ALL FROM PUBLIC, anon, authenticated`) com lock `FOR UPDATE`, idempotência e proteção contra saldo negativo (`INSUFFICIENT_CREDIT_BALANCE`).
+- **Pagamento Misto & Cancelamento (`CREDITO_CLIENTE` vs `ESTORNO`)**: liquidação parcial ou integral via carteira sem duplicar receita no DRE; cancelamento de pedido misto (ex: R$ 60 crédito + R$ 40 PIX) recompõe integralmente a carteira ou estorna proporcionalmente.
+
+### 4. Frente D — CRM & Visão 360° do Cliente (`019`)
+- **Camada de Projeção Canônica**: sem colunas derivadas duplicadas em `clientes`; LTV, ticket médio e conversão são calculados em tempo real sobre as fontes canônicas.
+- **Estruturas próprias do CRM**: `cliente_notas`, `cliente_tags` (com `tag_slug` normalizado) e `cliente_preferencias` (restrições alimentares, alergias e datas comemorativas) com bloqueio de `DELETE` físico.
+- **LGPD & RBAC (`obter_cliente_360_admin` e `obter_meu_perfil_360`)**: CPF mascarado para operadores, completo apenas para administradores; notas internas e tags administrativas ocultas na visão do próprio cliente.
+
+### 5. Frente E — Agenda de Produção, Capacidade & Operação Visual (`020`)
+- **Projeção Operacional da Cozinha (`listar_agenda_producao`, `obter_resumo_capacidade_periodo`, `obter_ficha_producao_pedido`)**: sanitização estrita para a bancada (sem expor valores financeiros sensíveis ou dados privados desnecessários).
+- **Máquina de Estados de Produção & Expedição**: transições auditadas (`iniciar_producao_pedido`, `marcar_pedido_pronto`, `registrar_saida_entrega_pedido`, `concluir_entrega_ou_retirada_pedido`) com trava de modalidade (`INVALID_DELIVERY_MODALITY` impede saída de entrega para pedido de retirada) e conclusão sem efeito financeiro duplicado.
+- **Observações de Bancada (`pedido_producao_observacoes`)**: notas categorizadas (`cozinha`, `embalagem`, `entrega`, `alergia`, `geral`) imutáveis contra deleção física.
+
+### 6. Frente F — Dashboard Gerencial, DRE & Indicadores (`021`)
+- **Invariante Contábil nº 1**:
+  $$\text{Venda Confirmada} \neq \text{Faturamento Realizado} \neq \text{Entrada de Caixa Líquida} \neq \text{Crédito do Cliente Utilizado}$$
+- **RPCs Analíticas no Fuso `America/Fortaleza`**:
+  - `obter_indicadores_vendas_admin`, `obter_indicadores_financeiros_admin`, `obter_indicadores_producao`, `obter_indicadores_clientes_admin`, `obter_dashboard_resumo_admin`.
+  - `obter_dashboard_operacional`: payload estritamente sanitizado para operadores, contendo apenas volumes de pedidos e capacidade produtiva (sem chaves financeiras no JSON).
+
+---
+
+## 🧪 Verificação, Hardening & Suíte de Integração
 
 Execução do conjunto completo de testes automatizados:
 
@@ -321,58 +358,20 @@ Execução do conjunto completo de testes automatizados:
 npm run lint:syntax
 npm run check:sql
 npm run test:structural
-python scripts/run-pg-test.py  # 47/47 testes de integração em PostgreSQL 18.4 real
+npm run test:integration  # 134/134 testes de integração em PostgreSQL real (8 suítes)
 ```
 
-### Resultados das Fases de Teste:
-- **Fases 1–10**: 100% aprovadas (fundação de segurança, RBAC, auditoria, estornos, fail-closed).
-- **Fases 11.1–11.12**: 100% aprovadas (clientes desacoplados, capacidade, anti-overbooking, reagendamento, DRE, UI Hoje).
-- **Fases 11.13–11.21**: 100% aprovadas (reserva por item, pipeline único de expiração, revisão financeira, configurações centrais).
-- **Fase 12**: 100% aprovada (paridade canônica de `sql/install.sql` e `sql/schema.sql` com migrations e baseline).
-- **Fase 13: Etapa 3 - Orçamentos, Proposta Pública & Conversão Comercial**:
-  - `13.1`: Tabelas `orcamentos`, `orcamento_itens`, `orcamento_item_opcoes`, constraints de unicidade bidirecional `[APROVADO ✅]`
-  - `13.2`: RLS fail-closed nas tabelas de orçamentos sem acesso anônimo direto `[APROVADO ✅]`
-  - `13.3`: RPCs de ciclo de vida, expiração e aprovação registradas `[APROVADO ✅]`
-  - `13.4`: Isolamento e sanitização de `obter_orcamento_publico` e `aprovar_orcamento_publico` `[APROVADO ✅]`
-  - `13.5`: `expirar_orcamentos` com concorrência segura via `FOR UPDATE SKIP LOCKED` `[APROVADO ✅]`
-  - `13.6`: `converter_orcamento_em_pedido_admin` com snapshots imutáveis e núcleo compartilhado `[APROVADO ✅]`
-  - `13.7`: Frontend, documentos e integração com cron unificado validados `[APROVADO ✅]`
-  - `13.8`: Integridade contábil do sinal no núcleo e RLS público de orçamentos `[APROVADO ✅]`
+### Status Consolidado de Homologação:
 
-### Suíte de Integração PostgreSQL Real (47/47 Verde):
-- **Gate 1 (Etapa 2 - 27 Cenários)**: Concorrência, overbooking tardio, holds dinâmicos, resolução de revisão financeira, DRE contábil, isolamento de loja online `[27/27 PASSADOS ✅]`
-- **Gate 2 (Etapa 3 - 20 Cenários E3-1 a E3-20)**: Desacoplamento pré-conversão, sanitização pública, aprovação idempotente, janela de 24h, corrida de estoque na conversão, invalidação de versões, rate limiting, RLS fail-closed, concorrência transacional `[20/20 PASSADOS ✅]`
-- **Total**: `47 tests passed, 0 failed, exit code 0`
+| Etapa / Frente | Escopo | Migrations | Testes Integração | Status |
+|---|---|:---:|:---:|:---:|
+| **Etapa 1 & 2** | Fundação Tridimensional, Operação Diária, Capacidade, Hold & Concorrência | `001`–`012` | 27/27 | **CONGELADA ✅** |
+| **Etapa 3** | Orçamentos Formais, Proposta Pública & Conversão Transacional | `013` | 20/20 | **CONGELADA ✅** |
+| **Frente A** | Governança de Catálogo, Estoque Atômico & Portas de Domínio | `014` | 8/8 | **CONGELADA ✅** |
+| **Frente B** | Comunicação WhatsApp, Auditoria Canônica & Versão Obrigatória | `015`–`017` | 14/14 | **CONGELADA ✅** |
+| **Frente C** | Carteira de Crédito do Cliente & Livro-Razão Imutável | `018` | 15/15 | **CONGELADA ✅** |
+| **Frente D** | CRM, Relacionamento & Visão 360° do Cliente (LGPD) | `019` | 18/18 | **CONGELADA ✅** |
+| **Frente E** | Agenda de Produção, Capacidade & Operação Visual | `020` | 18/18 | **CONGELADA ✅** |
+| **Frente F** | Dashboard Gerencial, DRE Contábil & Indicadores Executivos | `021` | 14/14 | **CONGELADA ✅** |
+| **TOTAL** | **Hardening Estrutural: 21/21 Fases • SQL Master: 12.803 linhas** | **`001`–`021`** | **134/134** | **100% HOMOLOGADO ✅** |
 
----
-
-## 📋 Arquivos Criados e Modificados na Etapa 3
-
-- [`supabase/migrations/011_etapa2_fechamento_concorrencia.sql`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/supabase/migrations/011_etapa2_fechamento_concorrencia.sql) `[AJUSTES DE RLS E CONCORRÊNCIA]`
-- [`supabase/migrations/012_hardening_politicas_e_nucleo.sql`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/supabase/migrations/012_hardening_politicas_e_nucleo.sql) `[MIGRATION ETAPA 3 NÚCLEO & PROTEÇÃO DE ESTOQUE]`
-- [`supabase/migrations/013_etapa3_orcamentos_conversao_comercial.sql`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/supabase/migrations/013_etapa3_orcamentos_conversao_comercial.sql) `[MIGRATION ETAPA 3 ORÇAMENTOS & RATE LIMITING]`
-- [`sql/install.sql`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/sql/install.sql) `[RECOMPILADO CANÔNICO - 8000 LINHAS]`
-- [`sql/schema.sql`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/sql/schema.sql) `[RECOMPILADO CANÔNICO - 8000 LINHAS]`
-- [`functions/api/cron/expire-orders.js`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/functions/api/cron/expire-orders.js) `[CRON UNIFICADO PEDIDOS + ORÇAMENTOS]`
-- [`orcamento.html`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/orcamento.html) `[PROPOSTA PÚBLICA DO CLIENTE]`
-- [`js/orcamento-publico.js`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/js/orcamento-publico.js) `[CONTROLLER DA PROPOSTA PÚBLICA]`
-- [`admin.html`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/admin.html) `[ABA ORÇAMENTOS, MODAIS DE CRIAÇÃO, CONVERSÃO E IMPRESSÃO]`
-- [`js/admin-orcamentos.js`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/js/admin-orcamentos.js) `[CONTROLLER DE BACKOFFICE DE ORÇAMENTOS]`
-- [`js/admin.js`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/js/admin.js) `[RBAC OPERACIONAL PARA ORÇAMENTOS]`
-- [`js/admin-loader.js`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/js/admin-loader.js) `[LOADER DINÂMICO DE SCRIPTS]`
-- [`css/style.css`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/css/style.css) `[FOLHAS DE ESTILO DE IMPRESSÃO A4]`
-- [`docs/ARQUITETURA_ETAPA3.md`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/docs/ARQUITETURA_ETAPA3.md) `[DOCUMENTAÇÃO ARQUITETURAL VINCULANTE]`
-- [`tests/integration/etapa2.integration.test.mjs`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/tests/integration/etapa2.integration.test.mjs) `[27 CENÁRIOS DE REGRESSÃO ETAPA 2]`
-- [`tests/integration/etapa3.integration.test.mjs`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/tests/integration/etapa3.integration.test.mjs) `[20 CENÁRIOS DE INTEGRAÇÃO ETAPA 3]`
-- [`scripts/run-pg-test.py`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/scripts/run-pg-test.py) `[RUNNER DESPRIVILEGIADO EM WINDOWS]`
-- [`test-hardening.js`](file:///C:/Users/narjan.andrade/.gemini/antigravity/scratch/lunoca/test-hardening.js) `[FASE 13 INTEGRADA - 100% VERDE]`
-
----
-
-## 🏆 Status Atual do Sistema
-
-| Etapa | Descrição | Status |
-|---|---|:---:|
-| **Etapa 1** | Fundação Tridimensional, DRE Contábil, Catálogo de Opções & Anti-Spoofing | **AUDITADA E ENCERRADA ✅** |
-| **Etapa 2** | Operação Diária (Tela Hoje, Encomendas Nooty, Capacidade, Hold & Concorrência) | **AUDITADA E CONCLUÍDA ✅** |
-| **Etapa 3** | Orçamentos Formais, Espelho/Impressão, Proposta Pública & Conversão Transacional | **AUDITADA E CONCLUÍDA ✅** |
