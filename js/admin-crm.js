@@ -126,9 +126,9 @@ function renderizarResultadosBuscaCRM(clientes, termo) {
             <i class="fa-solid fa-address-card"></i> Ver Ficha 360°
           </button>
           ${c.telefone ? `
-            <a href="https://wa.me/${escapeHtml(c.telefone_normalizado || c.telefone.replace(/\\D/g, ''))}" target="_blank" rel="noopener noreferrer" class="btn-outline" style="padding:7px 10px; font-size:12px; border-radius:8px; color:#16a34a; border-color:#bbf7d0; display:flex; align-items:center; justify-content:center;" title="Abrir WhatsApp">
+            <button onclick="crmAbrirWhatsApp(${c.id}, '${escapeHtml(c.telefone || '')}', '${escapeHtml(c.nome || '')}')" class="btn-outline" style="padding:7px 10px; font-size:12px; border-radius:8px; color:#16a34a; border-color:#bbf7d0; display:flex; align-items:center; justify-content:center; cursor:pointer;" title="Conversar no WhatsApp">
               <i class="fa-brands fa-whatsapp"></i>
-            </a>
+            </button>
           ` : ''}
         </div>
       </div>
@@ -247,9 +247,9 @@ function renderizarFicha360Completa(res) {
         <!-- Ações Rápidas no Cliente -->
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
           ${telLink ? `
-            <a href="https://wa.me/${escapeHtml(telLink)}" target="_blank" rel="noopener noreferrer" class="btn-primary" style="background:#25D366; border:none; padding:8px 14px; font-size:12px; border-radius:10px; display:inline-flex; align-items:center; gap:6px; color:#fff; text-decoration:none; font-weight:600;">
+            <button onclick="crmAbrirWhatsApp(${c.id}, '${escapeHtml(c.telefone || '')}', '${escapeHtml(c.nome || '')}')" class="btn-primary" style="background:#25D366; border:none; padding:8px 14px; font-size:12px; border-radius:10px; display:inline-flex; align-items:center; gap:6px; color:#fff; cursor:pointer; font-weight:600;" title="Abrir comunicação WhatsApp com auditoria">
               <i class="fa-brands fa-whatsapp"></i> Conversar no WhatsApp
-            </a>
+            </button>
           ` : ''}
           <button onclick="crmCriarEncomendaRapida(${c.id})" class="btn-primary" style="padding:8px 14px; font-size:12px; border-radius:10px; display:inline-flex; align-items:center; gap:6px; cursor:pointer;" title="Lançar pedido com dados deste cliente">
             <i class="fa-solid fa-plus"></i> Nova Encomenda
@@ -721,3 +721,49 @@ function crmCriarOrcamentoRapido(clienteId) {
     mostrarToast('Modal de novo orçamento não carregado.', 'aviso');
   }
 }
+
+/**
+ * Ação canônica de WhatsApp integrada à infraestrutura da Frente B
+ */
+function crmAbrirWhatsApp(clienteId, telefoneRaw, nomeCliente) {
+  const norm = (typeof window.normalizarTelefoneE164 === 'function')
+    ? window.normalizarTelefoneE164(telefoneRaw)
+    : (telefoneRaw ? telefoneRaw.replace(/\D/g, '') : null);
+
+  if (!norm) {
+    mostrarToast('Telefone do cliente é inválido ou incompleto para WhatsApp.', 'aviso');
+    return;
+  }
+
+  // Verifica se o cliente possui pedido ou orçamento na Ficha 360 ativa
+  let ultimoPedidoId = null;
+  let ultimoOrcamentoId = null;
+  if (crmDadosClienteCache && Array.isArray(crmDadosClienteCache.timeline)) {
+    const pedEv = crmDadosClienteCache.timeline.find(ev => ev.tipo === 'pedido' && ev.referencia_id);
+    if (pedEv) ultimoPedidoId = pedEv.referencia_id;
+    const orcEv = crmDadosClienteCache.timeline.find(ev => ev.tipo === 'orcamento' && ev.referencia_id);
+    if (orcEv) ultimoOrcamentoId = orcEv.referencia_id;
+  }
+
+  // Se houver pedido ou orçamento vinculado e o helper da Frente B estiver presente,
+  // aciona a trilha formal com preview server-side e registro de link_aberto
+  if (typeof window.abrirModalComunicacaoWhatsApp === 'function' && (ultimoPedidoId || ultimoOrcamentoId)) {
+    if (ultimoPedidoId) {
+      window.abrirModalComunicacaoWhatsApp({ tipo: 'SINAL_CONFIRMADO', pedidoId: ultimoPedidoId });
+      return;
+    } else if (ultimoOrcamentoId) {
+      window.abrirModalComunicacaoWhatsApp({ tipo: 'ORCAMENTO_PROPOSTA', orcamentoId: ultimoOrcamentoId });
+      return;
+    }
+  }
+
+  // Fallback seguro para contato geral: normalização E.164 canônica e abertura protegida
+  const primeiroNome = (nomeCliente || 'Cliente').split(' ')[0];
+  const msgPadrao = `Olá, ${primeiroNome}! Aqui é da Lunoca Doceria 🍰 Tudo bem?`;
+  const url = (typeof window.gerarLinkWhatsApp === 'function')
+    ? window.gerarLinkWhatsApp({ telefone: norm, mensagem: msgPadrao })
+    : `https://wa.me/${norm}?text=${encodeURIComponent(msgPadrao)}`;
+
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
