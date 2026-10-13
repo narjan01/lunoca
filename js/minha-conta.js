@@ -292,6 +292,13 @@ async function carregarMeusPedidosPortalUI() {
       return '<li>' + Number(it.quantidade) + 'x ' + escPortal(it.nome) + ' (' + moedaPortal(it.preco_unitario) + ')</li>';
     }).join('');
 
+    var btnAcompanharEntrega = (p.modalidade === 'entrega')
+      ? '<div style="margin-top:8px;">' +
+          '<button type="button" class="portal-btn portal-btn-outline" style="padding:6px 12px; font-size:0.8rem;" onclick="acompanharMinhaEntrega(' + Number(p.pedido_id) + ')">🚚 Acompanhar Entrega</button>' +
+          '<div id="portal-tracking-pedido-' + Number(p.pedido_id) + '" style="display:none; margin-top:8px; padding:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; font-size:0.82rem;"></div>' +
+        '</div>'
+      : '';
+
     return '<div style="border:1px solid #e5e7eb; border-radius:12px; padding:14px; margin-bottom:12px;">' +
       '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">' +
         '<div><strong>Pedido #' + Number(p.pedido_id) + '</strong> • Modalidade: ' + escPortal(p.modalidade) + '</div>' +
@@ -299,8 +306,42 @@ async function carregarMeusPedidosPortalUI() {
       '</div>' +
       '<div style="font-size:0.84rem; color:#4b5563; margin-top:6px;">Data programada: ' + dataPortal(p.data_entrega) + ' • Total: <strong>' + moedaPortal(p.total) + '</strong> • Saldo a pagar: <strong>' + moedaPortal(p.saldo_a_pagar) + '</strong></div>' +
       '<ul style="margin:8px 0 0 18px; padding:0; font-size:0.85rem; color:#374151;">' + itensHtml + '</ul>' +
+      btnAcompanharEntrega +
     '</div>';
   }).join('');
+}
+
+async function acompanharMinhaEntrega(pedidoId) {
+  var box = document.getElementById('portal-tracking-pedido-' + Number(pedidoId));
+  if (!box) return;
+  box.style.display = 'block';
+  box.innerHTML = '<span style="color:#6b7280;">Consultando status de entrega...</span>';
+
+  var resp = await supabaseClient.rpc('obter_acompanhamento_entrega_cliente', {
+    p_pedido_id: Number(pedidoId)
+  });
+
+  if (resp.error || !resp.data || !resp.data.success) {
+    box.innerHTML = '<span style="color:#dc2626;">' + escPortal((resp.data && resp.data.error) || 'Não foi possível consultar o acompanhamento.') + '</span>';
+    return;
+  }
+
+  var d = resp.data.rastreamento || resp.data;
+  var comp = d.comprovante || null;
+  var compHtml = comp
+    ? '<div style="margin-top:6px; color:#166534;">✅ Comprovante registrado' +
+        (comp.recebido_por ? ' — Recebido por: <strong>' + escPortal(comp.recebido_por) + '</strong>' : '') +
+        (d.entregue_em ? ' em ' + dataPortal(d.entregue_em) : '') +
+      '</div>'
+    : '';
+
+  box.innerHTML =
+    '<div><strong>Status da Entrega:</strong> ' + escPortal(labelEtapaCliente(d.etapa_cliente)) + ' (' + escPortal(d.status_logistico) + ')</div>' +
+    '<div style="color:#4b5563; margin-top:4px;">Data prevista: ' + dataPortal(d.data_entrega_prevista) +
+      (d.hora_entrega_prevista ? ' às ' + escPortal(String(d.hora_entrega_prevista).slice(0, 5)) : '') +
+    '</div>' +
+    (d.despachado_em ? '<div style="color:#1d4ed8; margin-top:4px;">🛵 Saiu para entrega em: ' + dataPortal(d.despachado_em) + '</div>' : '') +
+    compHtml;
 }
 
 async function carregarMeusOrcamentosPortalUI() {
@@ -519,5 +560,6 @@ window.mudarSecaoPortalCliente = mudarSecaoPortalCliente;
 window.aprovarMeuOrcamentoPortalUI = aprovarMeuOrcamentoPortalUI;
 window.salvarMinhaPreferenciaPortalUI = salvarMinhaPreferenciaPortalUI;
 window.atualizarMeuConsentimentoPortalUI = atualizarMeuConsentimentoPortalUI;
+window.acompanharMinhaEntrega = acompanharMinhaEntrega;
 
 document.addEventListener('DOMContentLoaded', inicializarPortalMinhaConta);

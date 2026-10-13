@@ -2859,4 +2859,93 @@ assert.ok(
 );
 console.log('    ✅ Migration 025, scripts mestre e Portal Minha Conta validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–25 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// --------------------------------------------------------------------------
+// FASE 26: Frente K - Logística, Rotas e Comprovante de Entrega (026)
+// --------------------------------------------------------------------------
+console.log('\n🚚 FASE 26: Frente K - Logística, Rotas e Comprovante de Entrega (026)...');
+
+const m026 = fs.readFileSync('supabase/migrations/026_logistica_rotas_entregas.sql', 'utf-8');
+const m026CodeOnly = m026.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+
+console.log('  🔎 26.1 Verificando as 5 tabelas logísticas e triggers append-only de imutabilidade...');
+assert.ok(
+  m026.includes('CREATE TABLE IF NOT EXISTS public.rotas_entrega') &&
+  m026.includes('CREATE TABLE IF NOT EXISTS public.entregas') &&
+  m026.includes('CREATE TABLE IF NOT EXISTS public.rota_entregas') &&
+  m026.includes('CREATE TABLE IF NOT EXISTS public.entrega_eventos') &&
+  m026.includes('CREATE TABLE IF NOT EXISTS public.entrega_comprovantes') &&
+  m026.includes('trg_imutabilidade_entrega_eventos') &&
+  m026.includes('trg_imutabilidade_entrega_comprovantes') &&
+  !m026CodeOnly.toUpperCase().includes('BYTEA'),
+  '[FALHA] Tabelas ou triggers de imutabilidade ausentes, ou BYTEA proibido encontrado em 026!'
+);
+
+console.log('  🔎 26.2 Verificando as 10 RPCs canônicas da Frente K e locks transacionais...');
+assert.ok(
+  m026.includes('CREATE OR REPLACE FUNCTION public.criar_rota_entrega_admin(') &&
+  m026.includes('CREATE OR REPLACE FUNCTION public.atribuir_entrega_rota(') &&
+  m026.includes('CREATE OR REPLACE FUNCTION public.reordenar_rota_entrega(') &&
+  m026.includes('CREATE OR REPLACE FUNCTION public.despachar_pedido_entrega(') &&
+  m026.includes('CREATE OR REPLACE FUNCTION public.registrar_falha_entrega(') &&
+  m026.includes('CREATE OR REPLACE FUNCTION public.reagendar_entrega(') &&
+  m026.includes('CREATE OR REPLACE FUNCTION public.registrar_comprovante_entrega(') &&
+  m026.includes('CREATE OR REPLACE FUNCTION public.confirmar_entrega_pedido(') &&
+  m026.includes('CREATE OR REPLACE FUNCTION public.obter_painel_logistica(') &&
+  m026.includes('CREATE OR REPLACE FUNCTION public.obter_acompanhamento_entrega_cliente('),
+  '[FALHA] Uma ou mais RPCs canônicas da Frente K ausentes em 026!'
+);
+
+console.log('  🔎 26.3 Verificando invariantes K1–K16 (bloqueio de retirada, zero efeito financeiro e tracking sanitizado)...');
+assert.ok(
+  m026.includes("'PICKUP_ORDER_NOT_ROUTABLE'") &&
+  m026.includes("'INVALID_DELIVERY_MODALITY'") &&
+  m026.includes("'ORDER_NOT_READY_FOR_DISPATCH'") &&
+  m026.includes("'ORDER_NOT_DISPATCHED'") &&
+  m026.includes("'DELIVERY_TRACKING_NOT_APPLICABLE'") &&
+  !m026CodeOnly.includes('INSERT INTO public.financeiro_lancamentos') &&
+  !m026CodeOnly.includes('INSERT INTO public.pedido_pagamentos'),
+  '[FALHA] Invariantes de bloqueio de retirada ou zero efeito financeiro violadas em 026!'
+);
+
+console.log('  🔎 26.4 Verificando grants fail-closed para anon/PUBLIC nas tabelas e RPCs da Frente K...');
+assert.ok(
+  m026.includes('REVOKE ALL ON public.rotas_entrega FROM PUBLIC, anon, authenticated;') &&
+  m026.includes('REVOKE ALL ON public.entregas FROM PUBLIC, anon, authenticated;') &&
+  m026.includes('REVOKE ALL ON public.rota_entregas FROM PUBLIC, anon, authenticated;') &&
+  m026.includes('REVOKE ALL ON public.entrega_eventos FROM PUBLIC, anon, authenticated;') &&
+  m026.includes('REVOKE ALL ON public.entrega_comprovantes FROM PUBLIC, anon, authenticated;') &&
+  m026.includes('REVOKE ALL ON FUNCTION public.obter_acompanhamento_entrega_cliente(BIGINT) FROM PUBLIC, anon;'),
+  '[FALHA] Grants fail-closed das tabelas ou RPCs da Frente K ausentes!'
+);
+
+for (const [name, content] of [['install.sql', installFinal], ['schema.sql', schemaFinal]]) {
+  assert.ok(content.includes('public.rotas_entrega'), `[FALHA] ${name} não contém rotas_entrega!`);
+  assert.ok(content.includes('public.despachar_pedido_entrega'), `[FALHA] ${name} não contém despachar_pedido_entrega!`);
+  assert.ok(content.includes('public.confirmar_entrega_pedido'), `[FALHA] ${name} não contém confirmar_entrega_pedido!`);
+  assert.ok(content.includes('public.obter_acompanhamento_entrega_cliente'), `[FALHA] ${name} não contém obter_acompanhamento_entrega_cliente!`);
+}
+
+console.log('  🔎 26.5 Verificando frontend de Logística (admin.html, js/admin-logistica.js e js/minha-conta.js)...');
+const adminHtmlLog = fs.readFileSync('admin.html', 'utf-8');
+const adminLogisticaJs = fs.readFileSync('js/admin-logistica.js', 'utf-8');
+const minhaContaJsLog = fs.readFileSync('js/minha-conta.js', 'utf-8');
+assert.ok(
+  adminHtmlLog.includes('id="tab-btn-logistica"') &&
+  adminHtmlLog.includes('id="admin-tab-logistica"') &&
+  adminHtmlLog.includes('js/admin-logistica.js') &&
+  adminLogisticaJs.includes('obter_painel_logistica') &&
+  adminLogisticaJs.includes('criar_rota_entrega_admin') &&
+  adminLogisticaJs.includes('atribuir_entrega_rota') &&
+  adminLogisticaJs.includes('reordenar_rota_entrega') &&
+  adminLogisticaJs.includes('despachar_pedido_entrega') &&
+  adminLogisticaJs.includes('registrar_falha_entrega') &&
+  adminLogisticaJs.includes('reagendar_entrega') &&
+  adminLogisticaJs.includes('confirmar_entrega_pedido') &&
+  adminLogisticaJs.includes('abrirFluxoWhatsAppComunicacao') &&
+  minhaContaJsLog.includes('obter_acompanhamento_entrega_cliente'),
+  '[FALHA] Frontend de Logística ou tracking no Portal do Cliente incompleto!'
+);
+console.log('    ✅ Migration 026, scripts mestre, painel de Logística e tracking do cliente validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–26 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+

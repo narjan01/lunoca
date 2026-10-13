@@ -399,6 +399,20 @@ Este documento registra a evolução arquitetural e técnica da Lunoca Doceria, 
   - `atualizar_minhas_preferencias_cliente` permite apenas categorias self-service (`sabor`, `decoracao`, `ocasiao`, `restricao_alimentar`, `embalagem`), mantendo `cliente_notas` e `cliente_tags` 100% invisíveis e intocáveis pelo cliente.
   - `atualizar_meu_consentimento_marketing` grava append-only com `origem = 'portal_cliente'`, bloqueando campanhas promocionais imediatamente em caso de `opt_out` sem afetar avisos transacionais (`listar_minhas_comunicacoes`).
 
+### 11. Frente K — Logística, Rotas e Comprovante de Entrega (`026`)
+- **Invariante Central de Logística & Fonte Única de Status Operacional**:
+  - **Zero segundo pedido ou segundo status**: `public.pedidos.status_operacional` continua sendo a única verdade operacional (`pronto -> saiu_para_entrega -> entregue`).
+  - `entregas` referencia `pedido_id UNIQUE` sem duplicar nome, telefone ou endereço do cliente (lidos dos snapshots canônicos de `public.pedidos`).
+  - **Segregação estrita de modalidade (`K1`, `K15`)**: pedidos com `modalidade_entrega = 'retirada'` nunca entram em rota (`PICKUP_ORDER_NOT_ROUTABLE`), nunca são despachados como entrega (`INVALID_DELIVERY_MODALITY`) e nunca acessam tracking de rota (`DELIVERY_TRACKING_NOT_APPLICABLE`).
+- **Rotas, Despacho Serializado, Ocorrências, Reagendamento e Comprovante Imutável**:
+  - Planejamento de rotas diárias por turno (`rotas_entrega`, `rota_entregas`) via `criar_rota_entrega_admin`, `atribuir_entrega_rota` e `reordenar_rota_entrega`.
+  - Despacho idempotente com lock `FOR UPDATE` (`despachar_pedido_entrega`), bloqueando pedidos que ainda não estão prontos (`ORDER_NOT_READY_FOR_DISPATCH`).
+  - Falha temporária (`registrar_falha_entrega`: `DESTINATARIO_AUSENTE`, `ENDERECO_NAO_LOCALIZADO`, `RECUSADO`, `PROBLEMA_TRANSPORTE`, `OUTRO`) e reagendamento (`reagendar_entrega`) mantêm trilha append-only em `entrega_eventos` sem criar estados paralelos em `pedidos` e sem efeito financeiro.
+  - Confirmação de entrega (`confirmar_entrega_pedido`) e comprovante (`registrar_comprovante_entrega` em `entrega_comprovantes`, apenas metadados/referência sem `BYTEA`) são protegidos por triggers append-only (`trg_imutabilidade_entrega_eventos`, `trg_imutabilidade_entrega_comprovantes`) e têm **efeito financeiro ZERO** (`K12`).
+- **Tracking Sanitizado no Portal do Cliente & WhatsApp Frente B**:
+  - `obter_acompanhamento_entrega_cliente(p_pedido_id)` resolve a identidade exclusivamente por `_resolver_meu_cliente_id()` (`auth.uid()`), valida titularidade do pedido e retorna linha do tempo sanitizada sem expor telefone do entregador, placa, notas internas da equipe, rota completa nem dados de terceiros.
+  - Aviso de saída para entrega reutiliza `obter_preview_comunicacao('SAIU_PARA_ENTREGA', ...)` e `registrar_comunicacao_cliente` da Frente B.
+
 ---
 
 ## 🧪 Verificação, Hardening & Suíte de Integração
@@ -409,7 +423,7 @@ Execução do conjunto completo de testes automatizados:
 npm run lint:syntax
 npm run check:sql
 npm run test:structural
-npm run test:integration  # 200/200 testes de integração em PostgreSQL real (12 suítes)
+npm run test:integration  # 216/216 testes de integração em PostgreSQL real (13 suítes)
 ```
 
 ### Status Consolidado de Homologação:
@@ -427,6 +441,7 @@ npm run test:integration  # 200/200 testes de integração em PostgreSQL real (1
 | **Frente G** | Compras, Fornecedores, Estoque de Insumos & CMV Real | `022` | 16/16 | **CONGELADA ✅** |
 | **Frente H** | Tesouraria, Fluxo de Caixa Projetado & Conciliação | `023` | 16/16 | **CONGELADA ✅** |
 | **Frente I** | Fidelidade, Recompra, Campanhas & Consentimento de Marketing | `024` | 18/18 | **CONGELADA ✅** |
-| **Frente J** | Portal do Cliente / Minha Conta (Autoatendimento & LGPD) | `025` | 16/16 | **HOMOLOGADA ✅** |
-| **TOTAL** | **Hardening Estrutural: 25/25 Fases • SQL Master: 18.748 linhas** | **`001`–`025`** | **200/200** | **100% HOMOLOGADO ✅** |
+| **Frente J** | Portal do Cliente / Minha Conta (Autoatendimento & LGPD) | `025` | 16/16 | **CONGELADA ✅** |
+| **Frente K** | Logística, Rotas, Despacho & Comprovante Imutável de Entrega | `026` | 16/16 | **HOMOLOGADA ✅** |
+| **TOTAL** | **Hardening Estrutural: 26/26 Fases • SQL Master: 20.483 linhas** | **`001`–`026`** | **216/216** | **100% HOMOLOGADO ✅** |
 
