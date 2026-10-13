@@ -1,6 +1,6 @@
 {
   "name": "lunoca",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "private": true,
   "description": "Lunoca Doceria - Confectionery OS (loja + operação) sobre Supabase e Cloudflare Pages",
   "type": "module",

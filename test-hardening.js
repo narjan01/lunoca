@@ -2947,5 +2947,92 @@ assert.ok(
 );
 console.log('    ✅ Migration 026, scripts mestre, painel de Logística e tracking do cliente validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–26 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// --------------------------------------------------------------------------
+// FASE 27: Frente L - Lotes, Validade, Rastreabilidade e Qualidade (027)
+// --------------------------------------------------------------------------
+console.log('\n🔬 FASE 27: Frente L - Lotes, Validade, Rastreabilidade e Qualidade de Produção (027)...');
+
+const m027 = fs.readFileSync('supabase/migrations/027_lotes_validade_rastreabilidade_qualidade.sql', 'utf-8');
+const m027CodeOnly = m027.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+
+console.log('  🔎 27.1 Verificando as 5 tabelas de lotes/qualidade e triggers append-only de imutabilidade...');
+assert.ok(
+  m027.includes('CREATE TABLE IF NOT EXISTS public.ingrediente_lotes') &&
+  m027.includes('CREATE TABLE IF NOT EXISTS public.ingrediente_lote_movimentacoes') &&
+  m027.includes('CREATE TABLE IF NOT EXISTS public.pedido_consumos_lote') &&
+  m027.includes('CREATE TABLE IF NOT EXISTS public.producao_controles_qualidade') &&
+  m027.includes('CREATE TABLE IF NOT EXISTS public.producao_ocorrencias_qualidade') &&
+  m027.includes('trg_imutabilidade_ingrediente_lote_mov') &&
+  m027.includes('trg_imutabilidade_pedido_consumos_lote') &&
+  m027.includes('trg_imutabilidade_producao_cq') &&
+  m027.includes('trg_proteger_escrita_ingrediente_lotes'),
+  '[FALHA] Tabelas ou triggers de imutabilidade/proteção de escrita ausentes em 027!'
+);
+
+console.log('  🔎 27.2 Verificando as RPCs canônicas da Frente L, política FEFO e reconciliação de saldo...');
+assert.ok(
+  m027.includes('CREATE OR REPLACE FUNCTION public._derivar_estado_validade_lote(') &&
+  m027.includes('CREATE OR REPLACE FUNCTION public._verificar_reconciliacao_lotes_ingrediente(') &&
+  m027.includes('CREATE OR REPLACE FUNCTION public.configurar_rastreabilidade_ingrediente_admin(') &&
+  m027.includes('CREATE OR REPLACE FUNCTION public.receber_compra_com_lotes(') &&
+  m027.includes('CREATE OR REPLACE FUNCTION public.consumir_insumos_producao_pedido(') &&
+  m027.includes('CREATE OR REPLACE FUNCTION public.registrar_baixa_lote_insumo(') &&
+  m027.includes('CREATE OR REPLACE FUNCTION public.ajustar_lote_insumo_admin(') &&
+  m027.includes('CREATE OR REPLACE FUNCTION public.alterar_bloqueio_qualidade_lote(') &&
+  m027.includes('CREATE OR REPLACE FUNCTION public.registrar_controle_qualidade_pedido(') &&
+  m027.includes('CREATE OR REPLACE FUNCTION public.rastrear_lote_ingrediente_admin(') &&
+  m027.includes('CREATE OR REPLACE FUNCTION public.rastrear_pedido_producao_admin(') &&
+  m027.includes('CREATE OR REPLACE FUNCTION public.obter_painel_lotes_validade(') &&
+  m027.includes('CREATE OR REPLACE FUNCTION public.reconciliar_saldos_lotes_admin('),
+  '[FALHA] Uma ou mais RPCs canônicas da Frente L ausentes em 027!'
+);
+
+console.log('  🔎 27.3 Verificando invariantes L1–L16 (FEFO com FOR UPDATE, bloqueio QUALITY_HOLD_ACTIVE e zero efeito financeiro)...');
+assert.ok(
+  m027.includes('ORDER BY l.data_validade ASC NULLS LAST, l.data_recebimento ASC, l.id ASC') &&
+  m027.includes('FOR UPDATE') &&
+  m027.includes("'INSUFFICIENT_ELIGIBLE_LOT_STOCK'") &&
+  m027.includes("'QUALITY_HOLD_ACTIVE'") &&
+  m027.includes('LOT_AGGREGATE_MISMATCH') &&
+  !m027CodeOnly.includes('INSERT INTO public.financeiro_lancamentos') &&
+  !m027CodeOnly.includes('INSERT INTO public.pedido_pagamentos'),
+  '[FALHA] Invariantes de FEFO, QUALITY_HOLD_ACTIVE, reconciliação ou zero efeito financeiro violadas em 027!'
+);
+
+console.log('  🔎 27.4 Verificando grants fail-closed para anon/PUBLIC nas tabelas e RPCs da Frente L...');
+assert.ok(
+  m027.includes('REVOKE ALL ON public.ingrediente_lotes FROM PUBLIC, anon, authenticated;') &&
+  m027.includes('REVOKE ALL ON public.ingrediente_lote_movimentacoes FROM PUBLIC, anon, authenticated;') &&
+  m027.includes('REVOKE ALL ON public.pedido_consumos_lote FROM PUBLIC, anon, authenticated;') &&
+  m027.includes('REVOKE ALL ON public.producao_controles_qualidade FROM PUBLIC, anon, authenticated;') &&
+  m027.includes('REVOKE ALL ON public.producao_ocorrencias_qualidade FROM PUBLIC, anon, authenticated;'),
+  '[FALHA] Grants fail-closed das tabelas da Frente L ausentes!'
+);
+
+for (const [name, content] of [['install.sql', installFinal], ['schema.sql', schemaFinal]]) {
+  assert.ok(content.includes('public.ingrediente_lotes'), `[FALHA] ${name} não contém ingrediente_lotes!`);
+  assert.ok(content.includes('public.consumir_insumos_producao_pedido'), `[FALHA] ${name} não contém consumir_insumos_producao_pedido!`);
+  assert.ok(content.includes('public.registrar_controle_qualidade_pedido'), `[FALHA] ${name} não contém registrar_controle_qualidade_pedido!`);
+  assert.ok(content.includes('public.rastrear_lote_ingrediente_admin'), `[FALHA] ${name} não contém rastrear_lote_ingrediente_admin!`);
+}
+
+console.log('  🔎 27.5 Verificando frontend de Lotes, Validades e Qualidade (admin.html, js/admin-compras.js e js/admin-agenda.js)...');
+const adminHtmlLotes = fs.readFileSync('admin.html', 'utf-8');
+const adminComprasJsLotes = fs.readFileSync('js/admin-compras.js', 'utf-8');
+const adminAgendaJsLotes = fs.readFileSync('js/admin-agenda.js', 'utf-8');
+assert.ok(
+  adminHtmlLotes.includes('id="btn-subaba-compras-lotes"') &&
+  adminComprasJsLotes.includes('obter_painel_lotes_validade') &&
+  adminComprasJsLotes.includes('rastrear_lote_ingrediente_admin') &&
+  adminComprasJsLotes.includes('registrar_baixa_lote_insumo') &&
+  adminComprasJsLotes.includes('alterar_bloqueio_qualidade_lote') &&
+  adminAgendaJsLotes.includes('consumir_insumos_producao_pedido') &&
+  adminAgendaJsLotes.includes('registrar_controle_qualidade_pedido') &&
+  adminAgendaJsLotes.includes('rastrear_pedido_producao_admin'),
+  '[FALHA] Frontend de Lotes, Validades e Qualidade incompleto!'
+);
+console.log('    ✅ Migration 027, scripts mestre, painel de Lotes/Validade e controles de Qualidade validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–27 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+
 

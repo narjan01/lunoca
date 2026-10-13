@@ -321,10 +321,19 @@ function renderizarCardCozinha(p, coluna) {
         ${notasHtml}
       </div>
 
-      <!-- Botão para Adicionar Observação -->
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; padding-top:8px; border-top:1px solid #f1f5f9;">
+      <!-- Botão para Adicionar Observação & Qualidade / Lotes (Frente L) -->
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-top:8px; padding-top:8px; border-top:1px solid #f1f5f9;">
         <button onclick="abrirModalObservacaoProducao(${p.id})" style="background:none; border:none; color:#64748b; font-size:11px; cursor:pointer; display:flex; align-items:center; gap:4px; padding:4px 0;">
-          <i class="fa-solid fa-plus-circle" style="color:var(--primary);"></i> Adicionar Nota
+          <i class="fa-solid fa-plus-circle" style="color:var(--primary);"></i> Nota
+        </button>
+        <button onclick="consumirInsumosProducaoPedidoUI(${p.id})" style="background:none; border:none; color:#0284c7; font-size:11px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; padding:4px 0;" title="Consumir insumos por lote FEFO">
+          <i class="fa-solid fa-boxes-packing"></i> Consumir FEFO
+        </button>
+        <button onclick="registrarControleQualidadePedidoUI(${p.id})" style="background:none; border:none; color:#059669; font-size:11px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; padding:4px 0;" title="Registrar checkpoint de qualidade">
+          <i class="fa-solid fa-clipboard-check"></i> Qualidade
+        </button>
+        <button onclick="rastrearPedidoProducaoUI(${p.id})" style="background:none; border:none; color:#475569; font-size:11px; cursor:pointer; display:flex; align-items:center; gap:4px; padding:4px 0;" title="Ver lotes consumidos e histórico de qualidade">
+          <i class="fa-solid fa-magnifying-glass"></i> Lotes
         </button>
       </div>
 
@@ -541,6 +550,95 @@ function notificarClientePedidoProntoUI(pedidoId, telefoneRaw) {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
+// ==========================================================================
+// FRENTE L - LOTES FEFO, RASTREABILIDADE & CONTROLE DE QUALIDADE (MIGRATION 027)
+// ==========================================================================
+
+async function consumirInsumosProducaoPedidoUI(pedidoId) {
+  if (!confirm(`Confirmar consumo automático por política FEFO dos insumos da ficha técnica para o Pedido #${pedidoId}?`)) return;
+  try {
+    const { data: res, error } = await supabaseClient.rpc('consumir_insumos_producao_pedido', {
+      p_pedido_id: pedidoId,
+      p_itens_consumo: null,
+      p_chave_idempotencia: null
+    });
+    if (error) throw error;
+    if (!res || !res.success) throw new Error(res?.error || 'Erro ao consumir lotes para produção.');
+
+    const msg = res.idempotente
+      ? `Insumos do Pedido #${pedidoId} já haviam sido consumidos (idempotente).`
+      : `Consumo FEFO registrado com sucesso (${(res.consumos_lote || []).length} alocações de lote)!`;
+    mostrarToast(msg, 'sucesso');
+    await carregarProducaoAdmin(agendaDataFiltroAtual, agendaModalidadeFiltroAtual);
+  } catch (err) {
+    console.error('[Produção FEFO] Erro:', err);
+    mostrarToast(err.message, 'erro');
+  }
+}
+
+async function registrarControleQualidadePedidoUI(pedidoId) {
+  const etapa = prompt(
+    'Etapa da inspeção de qualidade (PRE_PRODUCAO, FINALIZACAO, EMBALAGEM, EXPEDICAO):',
+    'FINALIZACAO'
+  );
+  if (!etapa) return;
+
+  const resultado = prompt(
+    'Resultado da inspeção (APROVADO, APROVADO_COM_RESSALVA, REPROVADO):',
+    'APROVADO'
+  );
+  if (!resultado) return;
+
+  const obs = prompt('Observações da inspeção (obrigatório em caso de reprovação ou ressalva):', 'Padrão visual, peso e acabamento conferidos.');
+  if (obs === null) return;
+
+  try {
+    const { data: res, error } = await supabaseClient.rpc('registrar_controle_qualidade_pedido', {
+      p_pedido_id: pedidoId,
+      p_etapa: etapa.trim().toUpperCase(),
+      p_resultado: resultado.trim().toUpperCase(),
+      p_observacao: obs.trim() || null
+    });
+    if (error) throw error;
+    if (!res || !res.success) throw new Error(res?.error || 'Erro ao registrar checkpoint de qualidade.');
+
+    mostrarToast(`Inspeção ${res.etapa} (${res.resultado}) registrada no Pedido #${pedidoId}!`, 'sucesso');
+    await carregarProducaoAdmin(agendaDataFiltroAtual, agendaModalidadeFiltroAtual);
+  } catch (err) {
+    console.error('[Qualidade Produção] Erro:', err);
+    mostrarToast(err.message, 'erro');
+  }
+}
+
+async function rastrearPedidoProducaoUI(pedidoId) {
+  try {
+    const { data: res, error } = await supabaseClient.rpc('rastrear_pedido_producao_admin', {
+      p_pedido_id: pedidoId
+    });
+    if (error) throw error;
+    if (!res || !res.success) throw new Error(res?.error || 'Erro ao rastrear lotes do pedido.');
+
+    const lotes = res.lotes_consumidos || [];
+    const checks = res.controles_qualidade || [];
+    const resumoLotes = lotes.length === 0
+      ? 'Nenhum lote consumido registrado ainda.'
+      : lotes.map(l => `• ${l.ingrediente_nome}: ${l.quantidade_consumida} (Lote ${l.codigo_lote}, Val: ${l.data_validade || 'N/A'})`).join('\n');
+    const resumoQualidade = checks.length === 0
+      ? 'Nenhum checkpoint registrado.'
+      : checks.map(c => `• [${c.etapa}] ${c.resultado} ${c.observacao ? '- ' + c.observacao : ''}`).join('\n');
+
+    alert(
+      `RASTREABILIDADE DE PRODUÇÃO — PEDIDO #${pedidoId}\n` +
+      `Bloqueio de Qualidade Ativo: ${res.pedido_bloqueado_qualidade ? 'SIM (Hold Ativo)' : 'NÃO'}\n\n` +
+      `LOTES CONSUMIDOS (FEFO):\n${resumoLotes}\n\n` +
+      `CHECKPOINTS DE QUALIDADE:\n${resumoQualidade}`
+    );
+  } catch (err) {
+    console.error('[Rastreabilidade Pedido] Erro:', err);
+    mostrarToast(err.message, 'erro');
+  }
+}
+
 // Expõe helpers no escopo global
 window.carregarProducaoAdmin = carregarProducaoAdmin;
 window.iniciarProducaoPedidoUI = iniciarProducaoPedidoUI;
@@ -552,3 +650,7 @@ window.abrirModalObservacaoProducao = abrirModalObservacaoProducao;
 window.fecharModalObservacaoProducao = fecharModalObservacaoProducao;
 window.salvarObservacaoProducaoUI = salvarObservacaoProducaoUI;
 window.notificarClientePedidoProntoUI = notificarClientePedidoProntoUI;
+window.consumirInsumosProducaoPedidoUI = consumirInsumosProducaoPedidoUI;
+window.registrarControleQualidadePedidoUI = registrarControleQualidadePedidoUI;
+window.rastrearPedidoProducaoUI = rastrearPedidoProducaoUI;
+

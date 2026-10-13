@@ -413,6 +413,18 @@ Este documento registra a evolução arquitetural e técnica da Lunoca Doceria, 
   - `obter_acompanhamento_entrega_cliente(p_pedido_id)` resolve a identidade exclusivamente por `_resolver_meu_cliente_id()` (`auth.uid()`), valida titularidade do pedido e retorna linha do tempo sanitizada sem expor telefone do entregador, placa, notas internas da equipe, rota completa nem dados de terceiros.
   - Aviso de saída para entrega reutiliza `obter_preview_comunicacao('SAIU_PARA_ENTREGA', ...)` e `registrar_comunicacao_cliente` da Frente B.
 
+### 12. Frente L — Lotes, Validade, Rastreabilidade e Qualidade de Produção (`027`)
+- **Invariante Central de Saldo Agregado vs Composição por Lotes (`L7`)**:
+  - `public.ingrediente_saldos` permanece a verdade consolidada de estoque de insumos, enquanto `public.ingrediente_lotes` modela a composição rastreável desse saldo.
+  - Ao final de toda transação, `_verificar_reconciliacao_lotes_ingrediente(p_ingrediente_id)` garante que `SUM(ingrediente_lotes.quantidade_atual) == ingrediente_saldos.saldo_atual` (`LOT_AGGREGATE_MISMATCH` em caso de divergência).
+- **Política FEFO Server-Side com `FOR UPDATE` (`L3`, `L4`, `L5`, `L6`)**:
+  - `consumir_insumos_producao_pedido()` seleciona automaticamente primeiro os lotes com menor `data_validade` (`ORDER BY data_validade ASC NULLS LAST, data_recebimento ASC, id ASC FOR UPDATE`), suportando consumo multi-lote parcial, ignorando lotes vencidos (`data_validade < hoje`) e lotes bloqueados por qualidade (`bloqueado_qualidade = true`).
+  - Estados de validade são sempre derivados por `_derivar_estado_validade_lote()` (`bloqueado`, `esgotado`, `vencido`, `vence_em_breve`, `valido`), nunca digitados manualmente.
+- **Livros-Razão Append-Only, Recall Bidirecional e Controle de Qualidade (`L9–L16`)**:
+  - `ingrediente_lote_movimentacoes`, `pedido_consumos_lote` e `producao_controles_qualidade` bloqueiam `UPDATE` e `DELETE` físicos via triggers (`ERRCODE = '42501'`), e `ingrediente_lotes` bloqueia escrita direta fora das RPCs canônicas.
+  - `rastrear_lote_ingrediente_admin(p_lote_id)` executa recall completo listando todos os pedidos que consumiram um lote; `rastrear_pedido_producao_admin(p_pedido_id)` lista lotes consumidos e checkpoints de qualidade do pedido (ocultando custos unitários para operadores).
+  - `registrar_controle_qualidade_pedido()` registra inspeções (`PRE_PRODUCAO`, `FINALIZACAO`, `EMBALAGEM`, `EXPEDICAO`). Uma reprovação ativa bloqueia o avanço operacional (`QUALITY_HOLD_ACTIVE`) até que haja reinspeção aprovada na etapa, mantendo **efeito financeiro ZERO** (`L16`).
+
 ---
 
 ## 🧪 Verificação, Hardening & Suíte de Integração
@@ -423,7 +435,7 @@ Execução do conjunto completo de testes automatizados:
 npm run lint:syntax
 npm run check:sql
 npm run test:structural
-npm run test:integration  # 216/216 testes de integração em PostgreSQL real (13 suítes)
+npm run test:integration  # 232/232 testes de integração em PostgreSQL real (14 suítes)
 ```
 
 ### Status Consolidado de Homologação:
@@ -442,6 +454,8 @@ npm run test:integration  # 216/216 testes de integração em PostgreSQL real (1
 | **Frente H** | Tesouraria, Fluxo de Caixa Projetado & Conciliação | `023` | 16/16 | **CONGELADA ✅** |
 | **Frente I** | Fidelidade, Recompra, Campanhas & Consentimento de Marketing | `024` | 18/18 | **CONGELADA ✅** |
 | **Frente J** | Portal do Cliente / Minha Conta (Autoatendimento & LGPD) | `025` | 16/16 | **CONGELADA ✅** |
-| **Frente K** | Logística, Rotas, Despacho & Comprovante Imutável de Entrega | `026` | 16/16 | **HOMOLOGADA ✅** |
-| **TOTAL** | **Hardening Estrutural: 26/26 Fases • SQL Master: 20.483 linhas** | **`001`–`026`** | **216/216** | **100% HOMOLOGADO ✅** |
+| **Frente K** | Logística, Rotas, Despacho & Comprovante Imutável de Entrega | `026` | 16/16 | **CONGELADA ✅** |
+| **Frente L** | Lotes, Validade FEFO, Rastreabilidade (Recall) & Qualidade de Produção | `027` | 16/16 | **HOMOLOGADA ✅** |
+| **TOTAL** | **Hardening Estrutural: 27/27 Fases • SQL Master: 23.776 linhas** | **`001`–`027`** | **232/232** | **100% HOMOLOGADO ✅** |
+
 
