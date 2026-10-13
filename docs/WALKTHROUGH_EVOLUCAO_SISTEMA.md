@@ -425,6 +425,21 @@ Este documento registra a evolução arquitetural e técnica da Lunoca Doceria, 
   - `rastrear_lote_ingrediente_admin(p_lote_id)` executa recall completo listando todos os pedidos que consumiram um lote; `rastrear_pedido_producao_admin(p_pedido_id)` lista lotes consumidos e checkpoints de qualidade do pedido (ocultando custos unitários para operadores).
   - `registrar_controle_qualidade_pedido()` registra inspeções (`PRE_PRODUCAO`, `FINALIZACAO`, `EMBALAGEM`, `EXPEDICAO`). Uma reprovação ativa bloqueia o avanço operacional (`QUALITY_HOLD_ACTIVE`) até que haja reinspeção aprovada na etapa, mantendo **efeito financeiro ZERO** (`L16`).
 
+### 13. Frente M — Engenharia de Custos, Precificação e Margem por Produto/Pedido (`028`)
+- **Segregação Estrita dos 5 Conceitos de Custos Industriais**:
+  $$\mathbf{\text{Custo Atribuível}} = C_{\text{ingredientes\_real}} + C_{\text{embalagem}} + C_{\text{mao\_de\_obra}} + C_{\text{adicionais}} + C_{\text{indireto\_rateado}} + T_{\text{variaveis}}$$
+  $$\mathbf{\text{Margem de Contribuição}} \neq \mathbf{\text{Lucro Líquido Contábil (DRE)}} \neq \mathbf{\text{Entrada de Caixa (Tesouraria)}}$$
+- **Temporalidade Histórica Baseada em Lotes da Frente L (`M1`, `M2`, `M4`)**:
+  - `pedido_custos_realizados` e `pedido_custo_componentes` consolidam o custo real consumindo estritamente `custo_unitario_lote_snapshot` de `pedido_consumos_lote` e as taxas horárias vigentes no momento do cálculo.
+  - Alterações futuras de CMP de insumos ou reajustes salariais de recursos **jamais alteram o custo histórico de pedidos já calculados**.
+- **Receita Líquida Comercial e Independência de Meio de Pagamento (`M7`, `M8`)**:
+  - Margem calculada sobre a receita líquida (`subtotal - descontos`). Pagamentos via PIX, cartão ou `credito_cliente` não alteram a receita líquida nem a margem industrial da venda.
+- **Desacoplamento Rigoroso de Catálogo (`M11`, `M12`)**:
+  - `simular_preco_produto_admin()` projeta o preço de equilíbrio (*break-even*) e o preço de margem alvo sob demanda, **sem executar `UPDATE` em `produtos.preco`**. Alteração de catálogo permanece restrita às portas canônicas governadas pela Frente A.
+- **Auditoria Append-Only e Efeito Financeiro Zero (`M9`, `M10`, `M15`, `M16`)**:
+  - `pedido_custos_realizados` e `pedido_custo_componentes` são protegidos por triggers append-only (`ERRCODE = '42501'`), suportando retificação auditada via novas versões (`status = 'substituido'`).
+  - Reconciliação exata componente por componente ($\sum \text{componentes} == \text{custo\_atribuivel\_total}$). Zero inserções em `financeiro_lancamentos` ou `pedido_pagamentos`.
+
 ---
 
 ## 🧪 Verificação, Hardening & Suíte de Integração
@@ -435,7 +450,7 @@ Execução do conjunto completo de testes automatizados:
 npm run lint:syntax
 npm run check:sql
 npm run test:structural
-npm run test:integration  # 232/232 testes de integração em PostgreSQL real (14 suítes)
+npm run test:integration  # 248/248 testes de integração em PostgreSQL real (15 suítes)
 ```
 
 ### Status Consolidado de Homologação:
@@ -455,7 +470,8 @@ npm run test:integration  # 232/232 testes de integração em PostgreSQL real (1
 | **Frente I** | Fidelidade, Recompra, Campanhas & Consentimento de Marketing | `024` | 18/18 | **CONGELADA ✅** |
 | **Frente J** | Portal do Cliente / Minha Conta (Autoatendimento & LGPD) | `025` | 16/16 | **CONGELADA ✅** |
 | **Frente K** | Logística, Rotas, Despacho & Comprovante Imutável de Entrega | `026` | 16/16 | **CONGELADA ✅** |
-| **Frente L** | Lotes, Validade FEFO, Rastreabilidade (Recall) & Qualidade de Produção | `027` | 16/16 | **HOMOLOGADA ✅** |
-| **TOTAL** | **Hardening Estrutural: 27/27 Fases • SQL Master: 23.776 linhas** | **`001`–`027`** | **232/232** | **100% HOMOLOGADO ✅** |
+| **Frente L** | Lotes, Validade FEFO, Rastreabilidade (Recall) & Qualidade de Produção | `027` | 16/16 | **CONGELADA ✅** |
+| **Frente M** | Engenharia de Custos, Precificação & Margem por Produto/Pedido | `028` | 16/16 | **HOMOLOGADA ✅** |
+| **TOTAL** | **Hardening Estrutural: 28/28 Fases • SQL Master: 25.133 linhas** | **`001`–`028`** | **248/248** | **100% HOMOLOGADO ✅** |
 
 

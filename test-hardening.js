@@ -3033,6 +3033,99 @@ assert.ok(
 );
 console.log('    ✅ Migration 027, scripts mestre, painel de Lotes/Validade e controles de Qualidade validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–27 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// --------------------------------------------------------------------------
+// FASE 28: Frente M - Engenharia de Custos, Precificação e Margens (028)
+// --------------------------------------------------------------------------
+console.log('\n📊 FASE 28: Frente M - Engenharia de Custos, Precificação e Margens por Produto/Pedido (028)...');
+
+const m028 = fs.readFileSync('supabase/migrations/028_engenharia_custos_precificacao_margens.sql', 'utf-8');
+const m028CodeOnly = m028.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+
+console.log('  🔎 28.1 Verificando as estruturas fabris e de custos realizados e triggers append-only...');
+assert.ok(
+  m028.includes('CREATE TABLE IF NOT EXISTS public.recursos_producao') &&
+  m028.includes('CREATE TABLE IF NOT EXISTS public.produto_tempos_producao') &&
+  m028.includes('CREATE TABLE IF NOT EXISTS public.produto_custos_adicionais') &&
+  m028.includes('CREATE TABLE IF NOT EXISTS public.politicas_precificacao') &&
+  m028.includes('CREATE TABLE IF NOT EXISTS public.pedido_custos_realizados') &&
+  m028.includes('CREATE TABLE IF NOT EXISTS public.pedido_custo_componentes') &&
+  m028.includes('trg_imutabilidade_pedido_custos_realizados') &&
+  m028.includes('trg_imutabilidade_pedido_custo_componentes'),
+  '[FALHA] Tabelas ou triggers de imutabilidade ausentes em 028!'
+);
+
+console.log('  🔎 28.2 Verificando as RPCs canônicas da Frente M...');
+assert.ok(
+  m028.includes('CREATE OR REPLACE FUNCTION public.simular_preco_produto_admin(') &&
+  m028.includes('CREATE OR REPLACE FUNCTION public.calcular_custo_real_pedido_admin(') &&
+  m028.includes('CREATE OR REPLACE FUNCTION public.obter_margem_pedido_admin(') &&
+  m028.includes('CREATE OR REPLACE FUNCTION public.obter_margens_produtos_admin(') &&
+  m028.includes('CREATE OR REPLACE FUNCTION public.salvar_recurso_producao_admin(') &&
+  m028.includes('CREATE OR REPLACE FUNCTION public.salvar_tempo_producao_produto_admin(') &&
+  m028.includes('CREATE OR REPLACE FUNCTION public.salvar_custo_adicional_produto_admin(') &&
+  m028.includes('CREATE OR REPLACE FUNCTION public.salvar_politica_precificacao_admin(') &&
+  m028.includes('CREATE OR REPLACE FUNCTION public.obter_engenharia_custos_produto_admin(') &&
+  m028.includes('CREATE OR REPLACE FUNCTION public.obter_dashboard_margens_admin('),
+  '[FALHA] Uma ou mais RPCs canônicas da Frente M ausentes em 028!'
+);
+
+console.log('  🔎 28.3 Verificando invariantes M1–M16 (lotes Frente L, desacoplamento de catálogo e zero efeito financeiro)...');
+assert.ok(
+  m028.includes('public.pedido_consumos_lote') &&
+  m028.includes('custo_unitario_lote_snapshot') &&
+  m028.includes('receita_liquida_snapshot') &&
+  m028.includes('ORDER_CANCELLED_BEFORE_PRODUCTION') &&
+  !m028CodeOnly.includes('UPDATE public.produtos SET preco') &&
+  !m028CodeOnly.includes('INSERT INTO public.financeiro_lancamentos') &&
+  !m028CodeOnly.includes('INSERT INTO public.pedido_pagamentos'),
+  '[FALHA] Invariantes de Frente L, integridade de catálogo ou efeito financeiro violadas em 028!'
+);
+
+console.log('  🔎 28.4 Verificando grants fail-closed para anon/PUBLIC nas tabelas e RPCs da Frente M...');
+assert.ok(
+  m028.includes('REVOKE ALL ON public.recursos_producao FROM PUBLIC, anon, authenticated;') &&
+  m028.includes('REVOKE ALL ON public.produto_tempos_producao FROM PUBLIC, anon, authenticated;') &&
+  m028.includes('REVOKE ALL ON public.produto_custos_adicionais FROM PUBLIC, anon, authenticated;') &&
+  m028.includes('REVOKE ALL ON public.politicas_precificacao FROM PUBLIC, anon, authenticated;') &&
+  m028.includes('REVOKE ALL ON public.pedido_custos_realizados FROM PUBLIC, anon, authenticated;') &&
+  m028.includes('REVOKE ALL ON public.pedido_custo_componentes FROM PUBLIC, anon, authenticated;') &&
+  m028.includes('REVOKE ALL ON FUNCTION public.simular_preco_produto_admin FROM PUBLIC, anon;') &&
+  m028.includes('REVOKE ALL ON FUNCTION public.calcular_custo_real_pedido_admin FROM PUBLIC, anon;') &&
+  m028.includes('REVOKE ALL ON FUNCTION public.obter_margem_pedido_admin FROM PUBLIC, anon;') &&
+  m028.includes('REVOKE ALL ON FUNCTION public.obter_dashboard_margens_admin FROM PUBLIC, anon;'),
+  '[FALHA] Grants fail-closed das tabelas e RPCs da Frente M ausentes!'
+);
+
+console.log('  🔎 28.5 Verificando presença das estruturas da Frente M nos schemas mestres (install.sql e schema.sql)...');
+const installFim = fs.readFileSync('sql/install.sql', 'utf-8');
+const schemaFim = fs.readFileSync('sql/schema.sql', 'utf-8');
+for (const [name, content] of [['install.sql', installFim], ['schema.sql', schemaFim]]) {
+  assert.ok(content.includes('public.recursos_producao'), `[FALHA] ${name} não contém recursos_producao!`);
+  assert.ok(content.includes('public.pedido_custos_realizados'), `[FALHA] ${name} não contém pedido_custos_realizados!`);
+  assert.ok(content.includes('public.pedido_custo_componentes'), `[FALHA] ${name} não contém pedido_custo_componentes!`);
+  assert.ok(content.includes('public.simular_preco_produto_admin'), `[FALHA] ${name} não contém simular_preco_produto_admin!`);
+  assert.ok(content.includes('public.calcular_custo_real_pedido_admin'), `[FALHA] ${name} não contém calcular_custo_real_pedido_admin!`);
+  assert.ok(content.includes('public.obter_dashboard_margens_admin'), `[FALHA] ${name} não contém obter_dashboard_margens_admin!`);
+}
+
+console.log('  🔎 28.6 Verificando frontend de Custos & Precificação (admin.html, js/admin-custos.js e js/admin.js)...');
+const adminHtmlCustos = fs.readFileSync('admin.html', 'utf-8');
+const adminCustosJs = fs.readFileSync('js/admin-custos.js', 'utf-8');
+const adminJsCustos = fs.readFileSync('js/admin.js', 'utf-8');
+assert.ok(
+  adminHtmlCustos.includes('id="tab-btn-custos"') &&
+  adminHtmlCustos.includes('id="admin-tab-custos"') &&
+  adminHtmlCustos.includes('js/admin-custos.js') &&
+  adminCustosJs.includes('simular_preco_produto_admin') &&
+  adminCustosJs.includes('obter_dashboard_margens_admin') &&
+  adminCustosJs.includes('obter_margem_pedido_admin') &&
+  adminJsCustos.includes('tab-btn-custos') &&
+  adminJsCustos.includes('carregarCustosAdmin'),
+  '[FALHA] Frontend de Custos & Precificação incompleto!'
+);
+console.log('    ✅ Migration 028, scripts mestre, painel de Custos/Margens e simulador validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–28 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+
 
 

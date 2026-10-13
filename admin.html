@@ -81,6 +81,7 @@
           <button id="tab-btn-produtos" onclick="mudarTabAdmin('produtos')"><i class="fa-solid fa-box"></i> Produtos</button>
           <button id="tab-btn-estoque" onclick="mudarTabAdmin('estoque')"><i class="fa-solid fa-boxes-stacked"></i> Estoque</button>
           <button id="tab-btn-fichatecnica" onclick="mudarTabAdmin('fichatecnica')"><i class="fa-solid fa-mortar-pestle"></i> Ficha Técnica & CMV</button>
+          <button id="tab-btn-custos" onclick="mudarTabAdmin('custos')"><i class="fa-solid fa-calculator"></i> Custos & Margens</button>
           <button id="tab-btn-compras" onclick="mudarTabAdmin('compras')"><i class="fa-solid fa-truck-ramp-box"></i> Compras & Insumos</button>
           <button id="tab-btn-tesouraria" onclick="mudarTabAdmin('tesouraria')"><i class="fa-solid fa-vault"></i> Tesouraria & Fluxo</button>
           <button id="tab-btn-financeiro" onclick="mudarTabAdmin('financeiro')"><i class="fa-solid fa-chart-line"></i> Financeiro</button>
@@ -667,6 +668,33 @@
             </div>
           </div>
           <div id="logistica-conteudo-dinamico"></div>
+        </div>
+
+        <!-- ABA: Engenharia de Custos, Precificação & Margens (Frente M) -->
+        <div id="admin-tab-custos" class="admin-tab">
+          <div style="background:#ffffff; padding:16px; border-radius:14px; border:1px solid #e2e8f0; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <div>
+              <h3 style="margin:0; font-size:17px; color:#0f172a; display:flex; align-items:center; gap:8px;">
+                <i class="fa-solid fa-calculator" style="color:var(--primary);"></i> Engenharia de Custos, Precificação & Margens
+              </h3>
+              <p style="margin:4px 0 0; font-size:12px; color:#64748b;">
+                Dashboard Executivo &bull; Margem por Pedido &bull; Simulação Break-even &bull; Recursos & Tempos
+              </p>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <input type="date" id="custos-data-inicio" onchange="carregarCustosAdmin()" style="padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px;">
+              <input type="date" id="custos-data-fim" onchange="carregarCustosAdmin()" style="padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px;">
+              <button id="btn-subaba-custos-dashboard" class="btn-periodo-dash btn-subaba-custos active" onclick="mudarSubAbaCustos('dashboard')">Dashboard</button>
+              <button id="btn-subaba-custos-produtos" class="btn-periodo-dash btn-subaba-custos" onclick="mudarSubAbaCustos('produtos')">Margens Catálogo</button>
+              <button id="btn-subaba-custos-simulador" class="btn-periodo-dash btn-subaba-custos" onclick="mudarSubAbaCustos('simulador')">Simulador</button>
+              <button id="btn-subaba-custos-recursos" class="btn-periodo-dash btn-subaba-custos" onclick="mudarSubAbaCustos('recursos')">Recursos & Tempos</button>
+              <button id="btn-subaba-custos-politicas" class="btn-periodo-dash btn-subaba-custos" onclick="mudarSubAbaCustos('politicas')">Políticas</button>
+              <button onclick="carregarCustosAdmin()" class="btn-outline" style="padding:6px 14px; font-size:12px; border-radius:8px;">
+                <i class="fa-solid fa-rotate-right"></i> Atualizar
+              </button>
+            </div>
+          </div>
+          <div id="custos-conteudo-dinamico"></div>
         </div>
       </div>
     </div>
@@ -1329,6 +1357,7 @@
   <script src="js/admin-tesouraria.js?v=3.7.0"></script>
   <script src="js/admin-fidelidade.js?v=3.8.0"></script>
   <script src="js/admin-logistica.js?v=4.0.0"></script>
+  <script src="js/admin-custos.js?v=4.1.0"></script>
   <script type="module" src="js/whatsapp-helper.js?v=3.2.0"></script>
 
   <script>

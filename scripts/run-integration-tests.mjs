@@ -37,6 +37,7 @@ const testSuites = [
   'tests/integration/frente_j.portal_cliente.test.mjs',
   'tests/integration/frente_k.logistica_entregas.test.mjs',
   'tests/integration/frente_l.lotes_validade_qualidade.test.mjs',
+  'tests/integration/frente_m.custos_precificacao_margens.test.mjs',
 ];
 
 console.log('🚀 Iniciando Runner Sequencial de Testes de Integração Lunoca...');
