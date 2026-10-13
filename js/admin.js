@@ -32,7 +32,8 @@ function configurarAcessoAdminPorNivel() {
         'tab-btn-estoque',
         'tab-btn-fichatecnica',
         'tab-btn-compras',
-        'tab-btn-crm'
+        'tab-btn-crm',
+        'tab-btn-fidelidade'
     ];
 
     const tituloAdmin = document.querySelector('#admin-section h2');
@@ -71,7 +72,7 @@ function configurarAcessoAdminPorNivel() {
 
 function mudarTabAdmin(tab) {
     // Bloqueio de segurança no frontend para Operadores
-    const abasPermitidasOperador = ['hoje', 'dashboard', 'producao', 'pedidos', 'orcamentos', 'calendario', 'produtos', 'estoque', 'fichatecnica', 'compras', 'crm'];
+    const abasPermitidasOperador = ['hoje', 'dashboard', 'producao', 'pedidos', 'orcamentos', 'calendario', 'produtos', 'estoque', 'fichatecnica', 'compras', 'crm', 'fidelidade'];
     if (usuarioAtual && usuarioAtual.nivel === 'operador' && !abasPermitidasOperador.includes(tab)) {
         mostrarToast('Acesso restrito ao Administrador.', 'aviso', 3000);
         return;
@@ -107,6 +108,7 @@ function mudarTabAdmin(tab) {
     if(tab === 'tesouraria' && typeof carregarTesourariaAdmin === 'function') carregarTesourariaAdmin();
     if(tab === 'financeiro' && typeof carregarFinanceiroAdmin === 'function') carregarFinanceiroAdmin();
     if(tab === 'crm' && typeof carregarCRMAdmin === 'function') carregarCRMAdmin();
+    if(tab === 'fidelidade' && typeof carregarFidelidadeCampanhasAdmin === 'function') carregarFidelidadeCampanhasAdmin();
 }
 
 // ==========================================================================

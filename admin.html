@@ -75,6 +75,7 @@
           <button id="tab-btn-pedidos" onclick="mudarTabAdmin('pedidos')"><i class="fa-solid fa-receipt"></i> Pedidos</button>
           <button id="tab-btn-orcamentos" onclick="mudarTabAdmin('orcamentos')"><i class="fa-solid fa-file-invoice-dollar"></i> Orçamentos</button>
           <button id="tab-btn-crm" onclick="mudarTabAdmin('crm')"><i class="fa-solid fa-address-book"></i> Clientes & CRM</button>
+          <button id="tab-btn-fidelidade" onclick="mudarTabAdmin('fidelidade')"><i class="fa-solid fa-gift"></i> Fidelidade & Campanhas</button>
           <button id="tab-btn-calendario" onclick="mudarTabAdmin('calendario')"><i class="fa-regular fa-calendar-days"></i> Calendário</button>
           <button id="tab-btn-produtos" onclick="mudarTabAdmin('produtos')"><i class="fa-solid fa-box"></i> Produtos</button>
           <button id="tab-btn-estoque" onclick="mudarTabAdmin('estoque')"><i class="fa-solid fa-boxes-stacked"></i> Estoque</button>
@@ -616,6 +617,30 @@
             </div>
           </div>
           <div id="tesouraria-conteudo-dinamico"></div>
+        </div>
+
+        <!-- ABA: Fidelidade, Recompra, Cupons & Campanhas (Frente I) -->
+        <div id="admin-tab-fidelidade" class="admin-tab">
+          <div style="background:#ffffff; padding:16px; border-radius:14px; border:1px solid #e2e8f0; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <div>
+              <h3 style="margin:0; font-size:17px; color:#0f172a; display:flex; align-items:center; gap:8px;">
+                <i class="fa-solid fa-gift" style="color:var(--primary);"></i> Clube de Fidelidade, Cupons & Campanhas
+              </h3>
+              <p style="margin:4px 0 0; font-size:12px; color:#64748b;">
+                Pontos Append-Only • Cupons Promocionais • Consentimento LGPD Opt-In/Opt-Out • Campanhas WhatsApp
+              </p>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <button id="btn-subaba-fidelidade-pontos" class="btn-periodo-dash btn-subaba-fidelidade active" onclick="mudarSubAbaFidelidade('pontos')">Pontos & Livro-Razão</button>
+              <button id="btn-subaba-fidelidade-cupons" class="btn-periodo-dash btn-subaba-fidelidade" onclick="mudarSubAbaFidelidade('cupons')">Cupons Promocionais</button>
+              <button id="btn-subaba-fidelidade-campanhas" class="btn-periodo-dash btn-subaba-fidelidade" onclick="mudarSubAbaFidelidade('campanhas')">Campanhas & Audiência</button>
+              <button id="btn-subaba-fidelidade-consentimento" class="btn-periodo-dash btn-subaba-fidelidade" onclick="mudarSubAbaFidelidade('consentimento')">Consentimento Mkt</button>
+              <button onclick="carregarFidelidadeCampanhasAdmin()" class="btn-outline" style="padding:6px 14px; font-size:12px; border-radius:8px;">
+                <i class="fa-solid fa-rotate-right"></i> Atualizar
+              </button>
+            </div>
+          </div>
+          <div id="fidelidade-conteudo-dinamico"></div>
         </div>
       </div>
     </div>
@@ -1276,6 +1301,7 @@
   <script src="js/admin-dashboard.js?v=3.5.0"></script>
   <script src="js/admin-compras.js?v=3.6.0"></script>
   <script src="js/admin-tesouraria.js?v=3.7.0"></script>
+  <script src="js/admin-fidelidade.js?v=3.8.0"></script>
   <script type="module" src="js/whatsapp-helper.js?v=3.2.0"></script>
 
   <script>

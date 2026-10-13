@@ -313,7 +313,7 @@ Este documento registra a evolução arquitetural e técnica da Lunoca Doceria, 
 
 ---
 
-## 🏛️ FRENTE A a FRENTE G: Fechamento Completo do Confectionery OS (Migrations 014–022) `[AUDITADAS E CONGELADAS ✅]`
+## 🏛️ FRENTE A a FRENTE I: Fechamento Completo do Confectionery OS (Migrations 014–024) `[AUDITADAS E CONGELADAS ✅]`
 
 ### 1. Frente A — Governança de Catálogo, Estoque Atômico & Portas de Domínio (`014`)
 - **`ajustar_estoque_operacao`**: RPC atômica com lock `FOR UPDATE`, auditoria obrigatória em `estoque_movimentacoes` e garantia da invariante `estoque >= estoque_reservado`.
@@ -321,7 +321,7 @@ Este documento registra a evolução arquitetural e técnica da Lunoca Doceria, 
 - **Teto de Desconto Operacional**: `desconto_operador_percentual_max` aplicado server-side no núcleo de encomendas.
 
 ### 2. Frente B — Comunicação WhatsApp, Relacionamento & Versão Obrigatória (`015`–`017`)
-- **`comunicacoes_cliente`**: trilha auditável de mensagens com constraint XOR de vínculo (`pedido_id` ou `orcamento_id`) e idempotência por chave (`idempotency_key`).
+- **`comunicacoes_cliente`**: trilha auditável de mensagens com constraint de vínculo e idempotência por chave (`chave_idempotencia`).
 - **Normalização E.164 (`normalizar_telefone_e164`)**: validação estrita de telefones brasileiros (`55 + DDD + 9 dígitos`).
 - **Preview Server-Side (`obter_preview_comunicacao`) & Registro (`registrar_comunicacao_cliente`)**: separação entre abertura de link (`link_aberto` para `whatsapp_link`) e disparo confirmado (`enviado` via API).
 - **Controle de Versão em Orçamentos (`017`)**: `aprovar_orcamento_publico` exige `p_versao_esperada` sem `DEFAULT NULL`, bloqueando aprovações de versões obsoletas (`QUOTE_VERSION_CHANGED` / `VERSION_REQUIRED`).
@@ -369,6 +369,22 @@ Este documento registra a evolução arquitetural e técnica da Lunoca Doceria, 
   - `obter_posicao_tesouraria_admin`, `obter_fluxo_caixa_admin`, `obter_recebimentos_previstos_admin` (apenas pedidos `status_comercial = 'confirmado'` e `saldo > 0`), `obter_contas_pagar_periodo_admin`, `obter_conciliacao_financeira_admin`, `registrar_conciliacao_financeira_admin`, `registrar_ajuste_tesouraria_admin` e `salvar_conta_financeira_admin`.
   - Acesso estrito a administradores (`PERMISSION_DENIED` para operadores e rejeição fail-closed `401/403` para `anon` e clientes comuns).
 
+### 9. Frente I — Fidelidade, Recompra, Campanhas & Consentimento de Marketing (`024`)
+- **Invariante Central de Fidelidade e Benefícios Comerciais**:
+  $$\text{credito\_financeiro\_cliente} \neq \text{pontos\_fidelidade} \neq \text{cupom\_desconto\_promocional}$$
+  - A carteira financeira da Frente C (`cliente_creditos` / `cliente_credito_movimentacoes`) e o passivo da tesouraria jamais são afetados por pontos de fidelidade ou cupons promocionais.
+- **Livro-Razão Imutável & Proteção da Carteira de Pontos**:
+  - `programas_fidelidade`, `cliente_pontos` (com trigger `trg_proteger_mutacao_direta_cliente_pontos` bloqueando escrita direta fora de `_aplicar_movimento_pontos_cliente`) e `cliente_pontos_movimentacoes` (append-only imutável via `trg_imutabilidade_cliente_pontos_mov`).
+  - Crédito automático e idempotente de pontos apenas em `status_comercial = 'concluido'` (`creditar_pontos_pedido_concluido`); cancelamento posterior gera movimentação compensatória (`COMPENSACAO_CANCELAMENTO`) sem apagar o ganho original.
+  - Expiração idempotente de lotes vencidos (`expirar_pontos_fidelidade`), resgate concorrente serializado (`resgatar_pontos_fidelidade` com `FOR UPDATE`) e ajuste manual restrito a administradores com justificativa obrigatória (`ajustar_pontos_fidelidade_admin`).
+- **Cupons Promocionais & Governança Central de Desconto Combinado**:
+  - `cupons_promocionais` e `cupom_utilizacoes`, validados e aplicados via `aplicar_cupom_promocional`.
+  - O desconto total combinado (`desconto_cupom + desconto_manual + desconto_frete + beneficio_pontos`) passa obrigatoriamente por `politica_desconto()`, impedindo que operadores ultrapassem o teto global de 10%.
+- **Consentimento LGPD & Reutilização da Esteira Canônica da Frente B**:
+  - `cliente_consentimentos_marketing` (histórico append-only de `opt_in` / `opt_out` por canal) e `obter_status_consentimento_marketing`.
+  - Templates promocionais (`CUPOM_ANIVERSARIO`, `VOLTE_A_COMPRAR`, `CAMPANHA_PASCOA`, `CAMPANHA_PROMOCIONAL`, `LEMBRETE_PONTOS_EXPIRANDO`) exigem `opt_in` ativo (`MARKETING_OPT_IN_REQUIRED`), enquanto comunicações transacionais (`PEDIDO_PRONTO`, `SINAL_CONFIRMADO`, `ORCAMENTO_VENCENDO`, etc.) permanecem permitidas mesmo para clientes em `opt_out` de marketing.
+  - Campanhas (`campanhas` e `campanha_publicos`) disparam de forma idempotente (`disparar_campanha_marketing`) gravando diretamente em `comunicacoes_cliente`.
+
 ---
 
 ## 🧪 Verificação, Hardening & Suíte de Integração
@@ -379,7 +395,7 @@ Execução do conjunto completo de testes automatizados:
 npm run lint:syntax
 npm run check:sql
 npm run test:structural
-npm run test:integration  # 166/166 testes de integração em PostgreSQL real (10 suítes)
+npm run test:integration  # 184/184 testes de integração em PostgreSQL real (11 suítes)
 ```
 
 ### Status Consolidado de Homologação:
@@ -396,4 +412,5 @@ npm run test:integration  # 166/166 testes de integração em PostgreSQL real (1
 | **Frente F** | Dashboard Gerencial, DRE Contábil & Indicadores Executivos | `021` | 14/14 | **CONGELADA ✅** |
 | **Frente G** | Compras, Fornecedores, Estoque de Insumos & CMV Real | `022` | 16/16 | **CONGELADA ✅** |
 | **Frente H** | Tesouraria, Fluxo de Caixa Projetado & Conciliação | `023` | 16/16 | **CONGELADA ✅** |
-| **TOTAL** | **Hardening Estrutural: 23/23 Fases • SQL Master: 15.402 linhas** | **`001`–`023`** | **166/166** | **100% HOMOLOGADO ✅** |
+| **Frente I** | Fidelidade, Recompra, Campanhas & Consentimento de Marketing | `024` | 18/18 | **HOMOLOGADA ✅** |
+| **TOTAL** | **Hardening Estrutural: 24/24 Fases • SQL Master: 17.577 linhas** | **`001`–`024`** | **184/184** | **100% HOMOLOGADO ✅** |

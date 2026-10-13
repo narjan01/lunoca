@@ -2668,4 +2668,96 @@ assert.ok(
 );
 console.log('    ✅ Migration 023, scripts mestre e frontend validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–23 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// --------------------------------------------------------------------------
+// FASE 24: Frente I - Fidelidade, Recompra, Campanhas & Consentimento (024)
+// --------------------------------------------------------------------------
+console.log('\n🎁 FASE 24: Frente I - Fidelidade, Recompra, Campanhas & Consentimento (024)...');
+
+const m024 = fs.readFileSync('supabase/migrations/024_fidelidade_recompra_campanhas.sql', 'utf-8');
+
+console.log('  🔎 24.1 Verificando as 8 estruturas de fidelidade, cupons, consentimento e campanhas...');
+assert.ok(
+  m024.includes('CREATE TABLE IF NOT EXISTS public.programas_fidelidade') &&
+  m024.includes('CREATE TABLE IF NOT EXISTS public.cliente_pontos') &&
+  m024.includes('CREATE TABLE IF NOT EXISTS public.cliente_pontos_movimentacoes') &&
+  m024.includes('CREATE TABLE IF NOT EXISTS public.cliente_consentimentos_marketing') &&
+  m024.includes('CREATE TABLE IF NOT EXISTS public.campanhas') &&
+  m024.includes('CREATE TABLE IF NOT EXISTS public.cupons_promocionais') &&
+  m024.includes('CREATE TABLE IF NOT EXISTS public.cupom_utilizacoes') &&
+  m024.includes('CREATE TABLE IF NOT EXISTS public.campanha_publicos'),
+  '[FALHA] Uma ou mais tabelas da Frente I não foram definidas em 024!'
+);
+
+console.log('  🔎 24.2 Verificando imutabilidade de cliente_pontos_movimentacoes e bloqueio de UPDATE direto em cliente_pontos...');
+assert.ok(
+  m024.includes('bloquear_mutacao_cliente_pontos_mov') &&
+  m024.includes('trg_imutabilidade_cliente_pontos_mov') &&
+  m024.includes('BEFORE UPDATE OR DELETE ON public.cliente_pontos_movimentacoes') &&
+  m024.includes('proteger_mutacao_direta_cliente_pontos') &&
+  m024.includes('trg_proteger_mutacao_direta_cliente_pontos') &&
+  m024.includes("current_setting('lunoca.internal_points_mutation', true)"),
+  '[FALHA] Triggers de imutabilidade de pontos ou proteção contra UPDATE direto ausentes!'
+);
+
+console.log('  🔎 24.3 Verificando RPCs canônicas da Frente I e reutilização da esteira da Frente B...');
+assert.ok(
+  m024.includes('CREATE OR REPLACE FUNCTION public._aplicar_movimento_pontos_cliente(') &&
+  m024.includes('CREATE OR REPLACE FUNCTION public._processar_expiracao_pontos_cliente(') &&
+  m024.includes('CREATE OR REPLACE FUNCTION public.expirar_pontos_fidelidade(') &&
+  m024.includes('CREATE OR REPLACE FUNCTION public.creditar_pontos_pedido_concluido(') &&
+  m024.includes('CREATE OR REPLACE FUNCTION public.compensar_pontos_pedido_cancelado(') &&
+  m024.includes('CREATE OR REPLACE FUNCTION public.resgatar_pontos_fidelidade(') &&
+  m024.includes('CREATE OR REPLACE FUNCTION public.ajustar_pontos_fidelidade_admin(') &&
+  m024.includes('CREATE OR REPLACE FUNCTION public.salvar_cupom_promocional_admin(') &&
+  m024.includes('CREATE OR REPLACE FUNCTION public.aplicar_cupom_promocional(') &&
+  m024.includes('CREATE OR REPLACE FUNCTION public.registrar_consentimento_marketing(') &&
+  m024.includes('CREATE OR REPLACE FUNCTION public.salvar_campanha_admin(') &&
+  m024.includes('CREATE OR REPLACE FUNCTION public.avaliar_publico_campanha(') &&
+  m024.includes('CREATE OR REPLACE FUNCTION public.disparar_campanha_marketing(') &&
+  m024.includes('CREATE OR REPLACE FUNCTION public.obter_painel_fidelidade_campanhas_admin(') &&
+  !fs.existsSync('functions/api/whatsapp/send-whatsapp-marketing.js'),
+  '[FALHA] Uma ou mais RPCs da Frente I ausentes ou arquivo paralelo proibido send-whatsapp-marketing.js criado!'
+);
+
+console.log('  🔎 24.4 Verificando grants fail-closed para anon/PUBLIC e bloqueio de helpers internos...');
+assert.ok(
+  m024.includes('REVOKE ALL ON FUNCTION public._aplicar_movimento_pontos_cliente(BIGINT, TEXT, TEXT, INTEGER, TEXT, TEXT, BIGINT, BIGINT, BIGINT, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;') &&
+  m024.includes('REVOKE ALL ON FUNCTION public._processar_expiracao_pontos_cliente(BIGINT, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;') &&
+  m024.includes('REVOKE ALL ON FUNCTION public.expirar_pontos_fidelidade(BIGINT, TIMESTAMPTZ) FROM PUBLIC, anon;') &&
+  m024.includes('REVOKE ALL ON FUNCTION public.creditar_pontos_pedido_concluido(BIGINT) FROM PUBLIC, anon;') &&
+  m024.includes('REVOKE ALL ON FUNCTION public.resgatar_pontos_fidelidade(BIGINT, INTEGER, BIGINT, TEXT) FROM PUBLIC, anon;') &&
+  m024.includes('REVOKE ALL ON FUNCTION public.ajustar_pontos_fidelidade_admin(BIGINT, TEXT, INTEGER, TEXT, TEXT, TIMESTAMPTZ) FROM PUBLIC, anon;') &&
+  m024.includes('REVOKE ALL ON FUNCTION public.aplicar_cupom_promocional(TEXT, BIGINT, NUMERIC, NUMERIC, NUMERIC, INTEGER, TEXT, BIGINT, BOOLEAN, TEXT) FROM PUBLIC, anon;') &&
+  m024.includes('REVOKE ALL ON FUNCTION public.disparar_campanha_marketing(BIGINT, TEXT) FROM PUBLIC, anon;'),
+  '[FALHA] Grants fail-closed das RPCs da Frente I ausentes ou incorretos!'
+);
+
+for (const [name, content] of [['install.sql', installFinal], ['schema.sql', schemaFinal]]) {
+  assert.ok(content.includes('public.programas_fidelidade'), `[FALHA] ${name} não contém programas_fidelidade!`);
+  assert.ok(content.includes('public.cliente_pontos'), `[FALHA] ${name} não contém cliente_pontos!`);
+  assert.ok(content.includes('public.cliente_pontos_movimentacoes'), `[FALHA] ${name} não contém cliente_pontos_movimentacoes!`);
+  assert.ok(content.includes('public.cupons_promocionais'), `[FALHA] ${name} não contém cupons_promocionais!`);
+  assert.ok(content.includes('public.campanhas'), `[FALHA] ${name} não contém campanhas!`);
+}
+
+console.log('  🔎 24.5 Verificando frontend de Fidelidade & Campanhas (admin-fidelidade.js e admin.html)...');
+const adminHtmlI = fs.readFileSync('admin.html', 'utf-8');
+const adminFidelidadeJs = fs.readFileSync('js/admin-fidelidade.js', 'utf-8');
+assert.ok(
+  adminHtmlI.includes('id="tab-btn-fidelidade"') &&
+  adminHtmlI.includes('id="admin-tab-fidelidade"') &&
+  adminHtmlI.includes('js/admin-fidelidade.js'),
+  '[FALHA] admin.html não integra a aba Fidelidade & Campanhas!'
+);
+assert.ok(
+  adminFidelidadeJs.includes('obter_painel_fidelidade_campanhas_admin') &&
+  adminFidelidadeJs.includes('ajustar_pontos_fidelidade_admin') &&
+  adminFidelidadeJs.includes('salvar_cupom_promocional_admin') &&
+  adminFidelidadeJs.includes('salvar_campanha_admin') &&
+  adminFidelidadeJs.includes('disparar_campanha_marketing') &&
+  adminFidelidadeJs.includes('registrar_consentimento_marketing'),
+  '[FALHA] js/admin-fidelidade.js não implementa chamadas canônicas da Frente I!'
+);
+console.log('    ✅ Migration 024, scripts mestre e frontend validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–24 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');

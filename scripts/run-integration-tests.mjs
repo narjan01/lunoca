@@ -33,6 +33,7 @@ const testSuites = [
   'tests/integration/frente_f.dashboard.test.mjs',
   'tests/integration/frente_g.compras_insumos.test.mjs',
   'tests/integration/frente_h.tesouraria_fluxo.test.mjs',
+  'tests/integration/frente_i.fidelidade_campanhas.test.mjs',
 ];
 
 console.log('🚀 Iniciando Runner Sequencial de Testes de Integração Lunoca...');
