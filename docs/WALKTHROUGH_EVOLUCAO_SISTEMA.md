@@ -385,6 +385,20 @@ Este documento registra a evolução arquitetural e técnica da Lunoca Doceria, 
   - Templates promocionais (`CUPOM_ANIVERSARIO`, `VOLTE_A_COMPRAR`, `CAMPANHA_PASCOA`, `CAMPANHA_PROMOCIONAL`, `LEMBRETE_PONTOS_EXPIRANDO`) exigem `opt_in` ativo (`MARKETING_OPT_IN_REQUIRED`), enquanto comunicações transacionais (`PEDIDO_PRONTO`, `SINAL_CONFIRMADO`, `ORCAMENTO_VENCENDO`, etc.) permanecem permitidas mesmo para clientes em `opt_out` de marketing.
   - Campanhas (`campanhas` e `campanha_publicos`) disparam de forma idempotente (`disparar_campanha_marketing`) gravando diretamente em `comunicacoes_cliente`.
 
+### 10. Frente J — Portal do Cliente / Minha Conta (`025`)
+- **Invariante Central de Autoatendimento & Isolamento por Titular**:
+  - **Zero lógica de negócio paralela**: o portal é uma camada pura de projeção sanitizada e autoatendimento fail-closed sobre as Frentes B, C, D, E e I.
+  - **Resolução estrita de identidade (`_resolver_meu_cliente_id`)**: `auth.uid() -> clientes.auth_user_id -> cliente_id` (com unicidade estrutural `uq_clientes_auth_user_id`, sem fallback por e-mail/telefone e falhando fechado com `CLIENT_LINK_REQUIRED` se não houver vínculo ou `AMBIGUOUS_CLIENT_LINK` se houver colisão).
+  - **Zero `p_cliente_id` no navegador**: nenhuma das 11 RPCs públicas do portal aceita `cliente_id` enviado pelo cliente.
+- **Sanitização Estrita & Aprovação Autenticada sem `token_publico`**:
+  - `obter_painel_minha_conta_cliente`, `listar_meus_pedidos`, `obter_meu_pedido` e `listar_meus_orcamentos` jamais expõem `token_publico`, `observacoes_internas`, `pedido_producao_observacoes`, custos/margens (`cmv_unitario_snapshot`), `provider_payment_id` ou notas/tags administrativas.
+  - Pedidos expõem `etapa_cliente` amigável derivada no banco (`_derivar_etapa_cliente_pedido`: `aguardando_preparo`, `em_preparo`, `pronto_para_retirada`, `pronto_para_entrega`, `saiu_para_entrega`, `entregue`, `retirado`, `cancelado`).
+  - Aprovação de orçamento no portal usa `aprovar_meu_orcamento(p_orcamento_id, p_versao_esperada)`, validando propriedade (`orcamentos.cliente_id = v_cli_id`) e delegando internamente para `aprovar_orcamento_publico`.
+- **Separação Estrutural Crédito (R$) vs. Pontos (pts) & Autoatendimento LGPD**:
+  - `listar_meu_extrato_credito` (`natureza: 'valor_financeiro'`, `moeda: 'BRL'`), `listar_meu_extrato_pontos` (`natureza: 'beneficio_promocional'`, `unidade: 'pts'`) e `listar_meus_cupons`.
+  - `atualizar_minhas_preferencias_cliente` permite apenas categorias self-service (`sabor`, `decoracao`, `ocasiao`, `restricao_alimentar`, `embalagem`), mantendo `cliente_notas` e `cliente_tags` 100% invisíveis e intocáveis pelo cliente.
+  - `atualizar_meu_consentimento_marketing` grava append-only com `origem = 'portal_cliente'`, bloqueando campanhas promocionais imediatamente em caso de `opt_out` sem afetar avisos transacionais (`listar_minhas_comunicacoes`).
+
 ---
 
 ## 🧪 Verificação, Hardening & Suíte de Integração
@@ -395,7 +409,7 @@ Execução do conjunto completo de testes automatizados:
 npm run lint:syntax
 npm run check:sql
 npm run test:structural
-npm run test:integration  # 184/184 testes de integração em PostgreSQL real (11 suítes)
+npm run test:integration  # 200/200 testes de integração em PostgreSQL real (12 suítes)
 ```
 
 ### Status Consolidado de Homologação:
@@ -412,5 +426,7 @@ npm run test:integration  # 184/184 testes de integração em PostgreSQL real (1
 | **Frente F** | Dashboard Gerencial, DRE Contábil & Indicadores Executivos | `021` | 14/14 | **CONGELADA ✅** |
 | **Frente G** | Compras, Fornecedores, Estoque de Insumos & CMV Real | `022` | 16/16 | **CONGELADA ✅** |
 | **Frente H** | Tesouraria, Fluxo de Caixa Projetado & Conciliação | `023` | 16/16 | **CONGELADA ✅** |
-| **Frente I** | Fidelidade, Recompra, Campanhas & Consentimento de Marketing | `024` | 18/18 | **HOMOLOGADA ✅** |
-| **TOTAL** | **Hardening Estrutural: 24/24 Fases • SQL Master: 17.577 linhas** | **`001`–`024`** | **184/184** | **100% HOMOLOGADO ✅** |
+| **Frente I** | Fidelidade, Recompra, Campanhas & Consentimento de Marketing | `024` | 18/18 | **CONGELADA ✅** |
+| **Frente J** | Portal do Cliente / Minha Conta (Autoatendimento & LGPD) | `025` | 16/16 | **HOMOLOGADA ✅** |
+| **TOTAL** | **Hardening Estrutural: 25/25 Fases • SQL Master: 18.748 linhas** | **`001`–`025`** | **200/200** | **100% HOMOLOGADO ✅** |
+

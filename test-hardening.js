@@ -2760,4 +2760,103 @@ assert.ok(
 );
 console.log('    ✅ Migration 024, scripts mestre e frontend validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–24 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// --------------------------------------------------------------------------
+// FASE 25: Frente J - Portal do Cliente / Minha Conta (025)
+// --------------------------------------------------------------------------
+console.log('\n👤 FASE 25: Frente J - Portal do Cliente / Minha Conta (025)...');
+
+const m025 = fs.readFileSync('supabase/migrations/025_portal_cliente_minha_conta.sql', 'utf-8');
+
+console.log('  🔎 25.1 Verificando helpers internos e unicidade estrutural auth_user_id...');
+assert.ok(
+  m025.includes('CREATE UNIQUE INDEX IF NOT EXISTS uq_clientes_auth_user_id') &&
+  m025.includes('CREATE OR REPLACE FUNCTION public._resolver_meu_cliente_id()') &&
+  m025.includes('CREATE OR REPLACE FUNCTION public._derivar_etapa_cliente_pedido(') &&
+  m025.includes('REVOKE ALL ON FUNCTION public._resolver_meu_cliente_id() FROM PUBLIC, anon, authenticated;') &&
+  m025.includes('REVOKE ALL ON FUNCTION public._derivar_etapa_cliente_pedido(TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated;'),
+  '[FALHA] Helpers internos ou índice de unicidade uq_clientes_auth_user_id ausentes em 025!'
+);
+
+console.log('  🔎 25.2 Verificando as 11 RPCs canônicas do Portal do Cliente e ausência de p_cliente_id...');
+const m025CodeOnly = m025.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+assert.ok(
+  m025.includes('CREATE OR REPLACE FUNCTION public.obter_painel_minha_conta_cliente()') &&
+  m025.includes('CREATE OR REPLACE FUNCTION public.listar_meus_pedidos(') &&
+  m025.includes('CREATE OR REPLACE FUNCTION public.obter_meu_pedido(') &&
+  m025.includes('CREATE OR REPLACE FUNCTION public.listar_meus_orcamentos(') &&
+  m025.includes('CREATE OR REPLACE FUNCTION public.aprovar_meu_orcamento(') &&
+  m025.includes('CREATE OR REPLACE FUNCTION public.listar_meu_extrato_credito(') &&
+  m025.includes('CREATE OR REPLACE FUNCTION public.listar_meu_extrato_pontos(') &&
+  m025.includes('CREATE OR REPLACE FUNCTION public.listar_meus_cupons()') &&
+  m025.includes('CREATE OR REPLACE FUNCTION public.listar_minhas_comunicacoes(') &&
+  m025.includes('CREATE OR REPLACE FUNCTION public.atualizar_minhas_preferencias_cliente(') &&
+  m025.includes('CREATE OR REPLACE FUNCTION public.atualizar_meu_consentimento_marketing(') &&
+  !m025CodeOnly.includes('p_cliente_id'),
+  '[FALHA] Uma ou mais RPCs do portal ausentes ou parâmetro proibido p_cliente_id encontrado em 025!'
+);
+
+console.log('  🔎 25.3 Verificando sanitização (zero token_publico exposto em listar_meus_orcamentos e etapa_cliente)...');
+assert.ok(
+  m025.includes("'aguardando_preparo'") &&
+  m025.includes("'em_preparo'") &&
+  m025.includes("'pronto_para_retirada'") &&
+  m025.includes("'pronto_para_entrega'") &&
+  m025.includes("'saiu_para_entrega'") &&
+  m025.includes('public.aprovar_orcamento_publico(v_orc.token_publico, p_versao_esperada)') &&
+  !m025.includes("'token_publico',"),
+  '[FALHA] Sanitização de etapa_cliente ou ocultação de token_publico falhou em 025!'
+);
+
+console.log('  🔎 25.4 Verificando grants fail-closed para anon/PUBLIC nas RPCs da Frente J...');
+assert.ok(
+  m025.includes('REVOKE ALL ON FUNCTION public.obter_painel_minha_conta_cliente() FROM PUBLIC, anon;') &&
+  m025.includes('REVOKE ALL ON FUNCTION public.listar_meus_pedidos(INTEGER, INTEGER) FROM PUBLIC, anon;') &&
+  m025.includes('REVOKE ALL ON FUNCTION public.obter_meu_pedido(BIGINT) FROM PUBLIC, anon;') &&
+  m025.includes('REVOKE ALL ON FUNCTION public.listar_meus_orcamentos(INTEGER, INTEGER) FROM PUBLIC, anon;') &&
+  m025.includes('REVOKE ALL ON FUNCTION public.aprovar_meu_orcamento(BIGINT, INTEGER) FROM PUBLIC, anon;') &&
+  m025.includes('REVOKE ALL ON FUNCTION public.listar_meu_extrato_credito(INTEGER, INTEGER) FROM PUBLIC, anon;') &&
+  m025.includes('REVOKE ALL ON FUNCTION public.listar_meu_extrato_pontos(INTEGER, INTEGER) FROM PUBLIC, anon;') &&
+  m025.includes('REVOKE ALL ON FUNCTION public.listar_meus_cupons() FROM PUBLIC, anon;') &&
+  m025.includes('REVOKE ALL ON FUNCTION public.listar_minhas_comunicacoes(INTEGER, INTEGER) FROM PUBLIC, anon;') &&
+  m025.includes('REVOKE ALL ON FUNCTION public.atualizar_minhas_preferencias_cliente(TEXT, TEXT, TEXT) FROM PUBLIC, anon;') &&
+  m025.includes('REVOKE ALL ON FUNCTION public.atualizar_meu_consentimento_marketing(TEXT, TEXT, TEXT) FROM PUBLIC, anon;'),
+  '[FALHA] Grants fail-closed das RPCs da Frente J ausentes ou incorretos!'
+);
+
+for (const [name, content] of [['install.sql', installFinal], ['schema.sql', schemaFinal]]) {
+  assert.ok(content.includes('public.obter_painel_minha_conta_cliente'), `[FALHA] ${name} não contém obter_painel_minha_conta_cliente!`);
+  assert.ok(content.includes('public.aprovar_meu_orcamento'), `[FALHA] ${name} não contém aprovar_meu_orcamento!`);
+  assert.ok(content.includes('public.atualizar_meu_consentimento_marketing'), `[FALHA] ${name} não contém atualizar_meu_consentimento_marketing!`);
+}
+
+console.log('  🔎 25.5 Verificando frontend do Portal do Cliente (minha-conta.html e js/minha-conta.js)...');
+const minhaContaHtml = fs.readFileSync('minha-conta.html', 'utf-8');
+const minhaContaJs = fs.readFileSync('js/minha-conta.js', 'utf-8');
+assert.ok(
+  minhaContaHtml.includes('id="portal-state-loading"') &&
+  minhaContaHtml.includes('id="portal-state-login"') &&
+  minhaContaHtml.includes('id="portal-state-unlinked"') &&
+  minhaContaHtml.includes('id="portal-state-error"') &&
+  minhaContaHtml.includes('id="portal-main-content"') &&
+  minhaContaHtml.includes('js/minha-conta.js'),
+  '[FALHA] minha-conta.html não contém os estados obrigatórios do portal!'
+);
+const minhaContaJsCodeOnly = minhaContaJs.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
+assert.ok(
+  minhaContaJs.includes('obter_painel_minha_conta_cliente') &&
+  minhaContaJs.includes('listar_meus_pedidos') &&
+  minhaContaJs.includes('listar_meus_orcamentos') &&
+  minhaContaJs.includes('aprovar_meu_orcamento') &&
+  minhaContaJs.includes('listar_meu_extrato_credito') &&
+  minhaContaJs.includes('listar_meu_extrato_pontos') &&
+  minhaContaJs.includes('listar_meus_cupons') &&
+  minhaContaJs.includes('listar_minhas_comunicacoes') &&
+  minhaContaJs.includes('atualizar_minhas_preferencias_cliente') &&
+  minhaContaJs.includes('atualizar_meu_consentimento_marketing') &&
+  !minhaContaJsCodeOnly.includes('p_cliente_id') &&
+  !minhaContaJsCodeOnly.includes('token_publico'),
+  '[FALHA] js/minha-conta.js não implementa as chamadas canônicas ou referencia p_cliente_id / token_publico!'
+);
+console.log('    ✅ Migration 025, scripts mestre e Portal Minha Conta validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–25 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');

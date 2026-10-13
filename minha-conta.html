@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>Minha Conta — Lunoca Doceria</title>
+  <link rel="icon" type="image/png" href="img/logo.png">
+  <link rel="stylesheet" href="css/style.css?v=3.9.0">
+  <style>
+    :root {
+      --portal-bg: #faf6f9;
+      --portal-card: #ffffff;
+      --portal-primary: #6b21a8;
+      --portal-primary-soft: #f3e8ff;
+      --portal-accent: #b45309;
+      --portal-text: #1f2937;
+      --portal-muted: #6b7280;
+      --portal-border: #e9d5ff;
+    }
+    body.portal-body {
+      background: var(--portal-bg);
+      color: var(--portal-text);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+    }
+    .portal-header {
+      background: #fff;
+      border-bottom: 1px solid var(--portal-border);
+      padding: 14px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .portal-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--portal-primary);
+      font-weight: 800;
+      font-size: 1.15rem;
+    }
+    .portal-brand img {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    .portal-container {
+      max-width: 1120px;
+      margin: 24px auto;
+      padding: 0 16px 48px;
+    }
+    .portal-state-card {
+      background: var(--portal-card);
+      border: 1px solid var(--portal-border);
+      border-radius: 16px;
+      padding: 32px 24px;
+      max-width: 480px;
+      margin: 48px auto;
+      text-align: center;
+      box-shadow: 0 10px 25px rgba(107, 33, 168, 0.06);
+    }
+    .portal-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 20px;
+      background: #fff;
+      padding: 8px;
+      border-radius: 14px;
+      border: 1px solid var(--portal-border);
+    }
+    .portal-nav-btn {
+      border: none;
+      background: transparent;
+      color: var(--portal-muted);
+      font-weight: 600;
+      font-size: 0.9rem;
+      padding: 10px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+    .portal-nav-btn.active {
+      background: var(--portal-primary);
+      color: #fff;
+    }
+    .portal-grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .portal-wallet-card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 20px;
+      border: 1px solid var(--portal-border);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.03);
+    }
+    .portal-wallet-card.credito {
+      border-left: 5px solid #059669;
+    }
+    .portal-wallet-card.pontos {
+      border-left: 5px solid #7c3aed;
+    }
+    .portal-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .portal-section {
+      display: none;
+    }
+    .portal-section.active {
+      display: block;
+    }
+    .portal-card {
+      background: #fff;
+      border: 1px solid var(--portal-border);
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 14px;
+    }
+    .portal-btn {
+      background: var(--portal-primary);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .portal-btn-outline {
+      background: #fff;
+      color: var(--portal-primary);
+      border: 1px solid var(--portal-primary);
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .portal-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body class="portal-body">
+  <header class="portal-header">
+    <a href="index.html" class="portal-brand">
+      <img src="img/logo.png" alt="Lunoca Doceria">
+      <span>Lunoca Doceria • Minha Conta</span>
+    </a>
+    <div id="portal-user-bar" style="display:none; align-items:center; gap:12px;">
+      <span id="portal-user-name" style="font-size:0.9rem; font-weight:600; color:#4b5563;"></span>
+      <a href="index.html" class="portal-btn-outline" style="text-decoration:none; font-size:0.85rem;">Ir para a Loja</a>
+      <button type="button" class="portal-btn-outline" style="font-size:0.85rem;" onclick="sairPortalMinhaConta()">Sair</button>
+    </div>
+  </header>
+
+  <main class="portal-container">
+    <!-- 1. ESTADO: LOADING -->
+    <div id="portal-state-loading" class="portal-state-card">
+      <h2 style="margin-top:0; color:var(--portal-primary);">Carregando sua conta...</h2>
+      <p style="color:var(--portal-muted);">Validando sua sessão e sincronizando seus dados com segurança.</p>
+    </div>
+
+    <!-- 2. ESTADO: LOGIN NECESSÁRIO -->
+    <div id="portal-state-login" class="portal-state-card" style="display:none;">
+      <h2 style="margin-top:0; color:var(--portal-primary);">Entrar na Minha Conta</h2>
+      <p style="color:var(--portal-muted); font-size:0.92rem; margin-bottom:20px;">
+        Acesse seus pedidos, orçamentos, saldo de crédito, pontos de fidelidade, cupons e preferências.
+      </p>
+      <form id="portal-login-form" onsubmit="realizarLoginPortalCliente(event)">
+        <input type="email" id="portal-login-email" class="portal-input" placeholder="Seu e-mail" required autocomplete="email">
+        <input type="password" id="portal-login-senha" class="portal-input" placeholder="Sua senha" required autocomplete="current-password">
+        <div id="portal-login-erro" style="color:#dc2626; font-size:0.85rem; margin-bottom:12px; display:none;"></div>
+        <button type="submit" id="portal-login-btn" class="portal-btn" style="width:100%;">Entrar com Segurança</button>
+      </form>
+      <p style="margin-top:16px; font-size:0.85rem;">
+        <a href="index.html" style="color:var(--portal-primary);">← Voltar para o cardápio da loja</a>
+      </p>
+    </div>
+
+    <!-- 3. ESTADO: SEM VÍNCULO DE CLIENTE -->
+    <div id="portal-state-unlinked" class="portal-state-card" style="display:none;">
+      <h2 style="margin-top:0; color:#b45309;">Cadastro em Sincronização</h2>
+      <p style="color:var(--portal-muted); font-size:0.95rem;">
+        Sua sessão foi autenticada, mas ainda não há uma ficha de cliente vinculada a este usuário (<code>CLIENT_LINK_REQUIRED</code>).
+      </p>
+      <p style="color:var(--portal-muted); font-size:0.88rem;">
+        Realize seu primeiro pedido na loja ou solicite à nossa equipe o vínculo do seu cadastro.
+      </p>
+      <div style="display:flex; gap:10px; justify-content:center; margin-top:20px;">
+        <a href="index.html" class="portal-btn" style="text-decoration:none;">Ir para a Loja</a>
+        <button type="button" class="portal-btn-outline" onclick="inicializarPortalMinhaConta()">Tentar novamente</button>
+      </div>
+    </div>
+
+    <!-- 4. ESTADO: ERRO DE REDE / RETRY -->
+    <div id="portal-state-error" class="portal-state-card" style="display:none;">
+      <h2 style="margin-top:0; color:#dc2626;">Não foi possível carregar o portal</h2>
+      <p id="portal-error-msg" style="color:var(--portal-muted); font-size:0.92rem;">
+        Ocorreu uma instabilidade temporária de conexão. Nenhum dado foi exposto.
+      </p>
+      <button type="button" class="portal-btn" onclick="inicializarPortalMinhaConta()">Tentar Novamente</button>
+    </div>
+
+    <!-- 5. ESTADO: CONTEÚDO AUTENTICADO DO PORTAL -->
+    <div id="portal-main-content" style="display:none;">
+      <nav class="portal-nav" aria-label="Navegação Minha Conta">
+        <button type="button" class="portal-nav-btn active" data-sec="resumo" onclick="mudarSecaoPortalCliente('resumo')">Resumo</button>
+        <button type="button" class="portal-nav-btn" data-sec="pedidos" onclick="mudarSecaoPortalCliente('pedidos')">Meus Pedidos</button>
+        <button type="button" class="portal-nav-btn" data-sec="orcamentos" onclick="mudarSecaoPortalCliente('orcamentos')">Meus Orçamentos</button>
+        <button type="button" class="portal-nav-btn" data-sec="credito" onclick="mudarSecaoPortalCliente('credito')">Meu Crédito (R$)</button>
+        <button type="button" class="portal-nav-btn" data-sec="pontos-cupons" onclick="mudarSecaoPortalCliente('pontos-cupons')">Pontos &amp; Cupons</button>
+        <button type="button" class="portal-nav-btn" data-sec="preferencias" onclick="mudarSecaoPortalCliente('preferencias')">Preferências</button>
+        <button type="button" class="portal-nav-btn" data-sec="privacidade" onclick="mudarSecaoPortalCliente('privacidade')">Privacidade &amp; Avisos</button>
+      </nav>
+
+      <!-- SEÇÃO: RESUMO -->
+      <section id="portal-sec-resumo" class="portal-section active">
+        <div class="portal-grid-2">
+          <div class="portal-wallet-card credito">
+            <span class="portal-badge" style="background:#d1fae5; color:#065f46;">VALOR FINANCEIRO • FRENTE C</span>
+            <h3 style="margin:10px 0 4px; font-size:1rem; color:#374151;">Meu Crédito em Carteira</h3>
+            <div id="portal-resumo-credito" style="font-size:1.9rem; font-weight:800; color:#059669;">R$ 0,00</div>
+            <p style="margin:6px 0 0; font-size:0.82rem; color:var(--portal-muted);">
+              Saldo financeiro originado de pagamentos/devoluções. Não se confunde com pontos promocionais.
+            </p>
+          </div>
+
+          <div class="portal-wallet-card pontos">
+            <span class="portal-badge" style="background:#ede9fe; color:#5b21b6;">BENEFÍCIO PROMOCIONAL • FRENTE I</span>
+            <h3 style="margin:10px 0 4px; font-size:1rem; color:#374151;">Meus Pontos de Fidelidade</h3>
+            <div id="portal-resumo-pontos" style="font-size:1.9rem; font-weight:800; color:#7c3aed;">0 pts</div>
+            <p id="portal-resumo-pontos-sub" style="margin:6px 0 0; font-size:0.82rem; color:var(--portal-muted);">
+              Benefício promocional acumulável em compras concluídas.
+            </p>
+          </div>
+        </div>
+
+        <div class="portal-grid-2">
+          <div class="portal-card">
+            <h3 style="margin-top:0;">Últimos Pedidos</h3>
+            <div id="portal-resumo-pedidos-lista"></div>
+          </div>
+          <div class="portal-card">
+            <h3 style="margin-top:0;">Últimos Orçamentos</h3>
+            <div id="portal-resumo-orcamentos-lista"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SEÇÃO: MEUS PEDIDOS -->
+      <section id="portal-sec-pedidos" class="portal-section">
+        <div class="portal-card">
+          <h3 style="margin-top:0;">Meus Pedidos &amp; Acompanhamento de Etapa</h3>
+          <div id="portal-pedidos-lista"></div>
+        </div>
+      </section>
+
+      <!-- SEÇÃO: MEUS ORÇAMENTOS -->
+      <section id="portal-sec-orcamentos" class="portal-section">
+        <div class="portal-card">
+          <h3 style="margin-top:0;">Minhas Propostas e Orçamentos</h3>
+          <p style="font-size:0.86rem; color:var(--portal-muted);">
+            Aprove propostas enviadas diretamente na sua conta autenticada, com verificação automática de versão.
+          </p>
+          <div id="portal-orcamentos-lista"></div>
+        </div>
+      </section>
+
+      <!-- SEÇÃO: MEU CRÉDITO -->
+      <section id="portal-sec-credito" class="portal-section">
+        <div class="portal-card">
+          <span class="portal-badge" style="background:#d1fae5; color:#065f46;">VALOR FINANCEIRO (BRL)</span>
+          <h3 style="margin:8px 0;">Extrato de Crédito Financeiro</h3>
+          <div id="portal-extrato-credito-lista"></div>
+        </div>
+      </section>
+
+      <!-- SEÇÃO: PONTOS & CUPONS -->
+      <section id="portal-sec-pontos-cupons" class="portal-section">
+        <div class="portal-grid-2">
+          <div class="portal-card">
+            <span class="portal-badge" style="background:#fef3c7; color:#92400e;">CUPONS ELEGÍVEIS</span>
+            <h3 style="margin:8px 0;">Meus Cupons Disponíveis</h3>
+            <div id="portal-cupons-disponiveis-lista"></div>
+          </div>
+          <div class="portal-card">
+            <span class="portal-badge" style="background:#ede9fe; color:#5b21b6;">LIVRO-RAZÃO DE PONTOS</span>
+            <h3 style="margin:8px 0;">Extrato de Pontos Promocionais</h3>
+            <div id="portal-extrato-pontos-lista"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SEÇÃO: PREFERÊNCIAS -->
+      <section id="portal-sec-preferencias" class="portal-section">
+        <div class="portal-grid-2">
+          <div class="portal-card">
+            <h3 style="margin-top:0;">Declarar Preferência ou Restrição Alimentar</h3>
+            <p style="font-size:0.84rem; color:var(--portal-muted);">
+              Registre apenas informações declaradas por você (sabores favoritos, decoração, ocasião, embalagem ou restrições alimentares).
+            </p>
+            <label style="font-size:0.82rem; font-weight:600;">Categoria</label>
+            <select id="portal-pref-categoria" class="portal-input">
+              <option value="sabor">Sabor Favorito</option>
+              <option value="decoracao">Estilo de Decoração</option>
+              <option value="ocasiao">Ocasião / Datas Especiais</option>
+              <option value="restricao_alimentar">Restrição Alimentar / Alergia Declarada</option>
+              <option value="embalagem">Preferência de Embalagem</option>
+            </select>
+            <label style="font-size:0.82rem; font-weight:600;">Sua declaração</label>
+            <input type="text" id="portal-pref-valor" class="portal-input" placeholder="Ex: Sem lactose, prefiro massa de chocolate amargo">
+            <label style="font-size:0.82rem; font-weight:600;">Observação adicional (opcional)</label>
+            <input type="text" id="portal-pref-obs" class="portal-input" placeholder="Detalhes adicionais">
+            <button type="button" class="portal-btn" onclick="salvarMinhaPreferenciaPortalUI()">Salvar Preferência</button>
+          </div>
+          <div class="portal-card">
+            <h3 style="margin-top:0;">Minhas Preferências Ativas</h3>
+            <div id="portal-preferencias-lista"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SEÇÃO: PRIVACIDADE & COMUNICAÇÕES -->
+      <section id="portal-sec-privacidade" class="portal-section">
+        <div class="portal-grid-2">
+          <div class="portal-card">
+            <h3 style="margin-top:0;">Consentimento de Marketing (LGPD)</h3>
+            <p style="font-size:0.85rem; color:var(--portal-muted);">
+              Você controla se deseja receber campanhas promocionais e cupons no WhatsApp.
+              <strong>Importante:</strong> desativar o marketing (opt-out) tem efeito imediato e <strong>não bloqueia</strong> avisos operacionais sobre seus pedidos em andamento.
+            </p>
+            <div id="portal-consentimento-status-box" style="margin:14px 0; font-weight:700;"></div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+              <button type="button" class="portal-btn" onclick="atualizarMeuConsentimentoPortalUI('opt_in')">Autorizar Novidades e Cupons (Opt-In)</button>
+              <button type="button" class="portal-btn-outline" onclick="atualizarMeuConsentimentoPortalUI('opt_out')">Não quero mensagens promocionais (Opt-Out)</button>
+            </div>
+          </div>
+          <div class="portal-card">
+            <h3 style="margin-top:0;">Histórico de Avisos e Comunicações</h3>
+            <div id="portal-comunicacoes-lista"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase.js?v=3.9.0"></script>
+  <script src="js/minha-conta.js?v=3.9.0"></script>
+</body>
+</html>
