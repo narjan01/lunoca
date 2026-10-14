@@ -3228,7 +3228,111 @@ assert.ok(
 );
 console.log('    ✅ Migration 029, scripts mestre, Modelo B autônomo, painel de Alertas, Health-Check e Auditoria validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–29 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+console.log('\n🔒 FASE 30: Frente O - Pessoas, Turnos, Escalas & Capacidade Real da Equipe (030)...');
+
+const m030 = fs.readFileSync('supabase/migrations/030_equipe_turnos_escalas_capacidade_real.sql', 'utf-8');
+const m030CodeOnly = m030.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+
+console.log('  🔎 30.1 Verificando imutabilidade de 001–029 e forward-only de 030...');
+assert.ok(
+  fs.existsSync('supabase/migrations/030_equipe_turnos_escalas_capacidade_real.sql'),
+  '[FALHA] Arquivo da migration 030 não encontrado!'
+);
+
+console.log('  🔎 30.2 Verificando as 8 tabelas/estruturas de equipe e turnos...');
+assert.ok(
+  m030.includes('CREATE TABLE IF NOT EXISTS public.funcoes_equipe') &&
+  m030.includes('CREATE TABLE IF NOT EXISTS public.colaboradores') &&
+  m030.includes('CREATE TABLE IF NOT EXISTS public.colaborador_funcoes') &&
+  m030.includes('CREATE TABLE IF NOT EXISTS public.turnos_trabalho') &&
+  m030.includes('CREATE TABLE IF NOT EXISTS public.escalas_equipe') &&
+  m030.includes('CREATE TABLE IF NOT EXISTS public.escala_intervalos') &&
+  m030.includes('CREATE TABLE IF NOT EXISTS public.ausencias_equipe') &&
+  m030.includes('CREATE TABLE IF NOT EXISTS public.equipe_configuracoes'),
+  '[FALHA] Uma ou mais tabelas essenciais da Frente O ausentes em 030!'
+);
+
+console.log('  🔎 30.3 Verificando integridade de sobreposição de escalas e concorrência serializada (trg_valida_escala_overlap)...');
+assert.ok(
+  m030.includes('CREATE TRIGGER trg_valida_escala_overlap') &&
+  m030.includes('ESCALA_OVERLAP') &&
+  m030.includes('FOR UPDATE'),
+  '[FALHA] Trigger trg_valida_escala_overlap ou lock de concorrência ausente em 030!'
+);
+
+console.log('  🔎 30.4 Verificando expansão de alertas com SOBRECARGA_EQUIPE e cálculo de minutos...');
+assert.ok(
+  m030.includes('SOBRECARGA_EQUIPE') &&
+  m030.includes('public._calcular_minutos_disponiveis_escala') &&
+  m030.includes('produto_tempos_producao'),
+  '[FALHA] Integração com alertas proativos ou cálculo de tempos padrão ausente em 030!'
+);
+
+console.log('  🔎 30.5 Verificando as RPCs canônicas da Frente O...');
+assert.ok(
+  m030.includes('CREATE OR REPLACE FUNCTION public.salvar_colaborador_admin') &&
+  m030.includes('CREATE OR REPLACE FUNCTION public.salvar_funcao_equipe_admin') &&
+  m030.includes('CREATE OR REPLACE FUNCTION public.vincular_funcao_colaborador_admin') &&
+  m030.includes('CREATE OR REPLACE FUNCTION public.salvar_turno_admin') &&
+  m030.includes('CREATE OR REPLACE FUNCTION public.salvar_escala_equipe_admin') &&
+  m030.includes('CREATE OR REPLACE FUNCTION public.registrar_ausencia_equipe_admin') &&
+  m030.includes('CREATE OR REPLACE FUNCTION public.obter_escala_periodo') &&
+  m030.includes('CREATE OR REPLACE FUNCTION public.obter_capacidade_humana_data') &&
+  m030.includes('CREATE OR REPLACE FUNCTION public.obter_painel_capacidade_equipe'),
+  '[FALHA] Uma ou mais RPCs canônicas da Frente O ausentes em 030!'
+);
+
+console.log('  🔎 30.6 Verificando invariantes O1–O16 (sem folha, sem diagnóstico clínico, zero efeito financeiro)...');
+assert.ok(
+  !m030CodeOnly.includes('salario') &&
+  !m030CodeOnly.includes('comissao') &&
+  !m030CodeOnly.includes('hora_extra') &&
+  !m030CodeOnly.includes('INSERT INTO public.financeiro_lancamentos') &&
+  !m030CodeOnly.includes('INSERT INTO public.pedido_pagamentos') &&
+  !m030CodeOnly.includes('UPDATE public.capacidade_producao SET'),
+  '[FALHA] Invariantes O1–O16 violadas em 030 (efeito financeiro ou colisão com Frente E detectados)!'
+);
+
+console.log('  🔎 30.7 Verificando grants fail-closed para anon/PUBLIC nas tabelas e RPCs da Frente O...');
+assert.ok(
+  m030.includes('REVOKE ALL ON public.funcoes_equipe FROM PUBLIC, anon, authenticated;') &&
+  m030.includes('REVOKE ALL ON public.colaboradores FROM PUBLIC, anon, authenticated;') &&
+  m030.includes('REVOKE ALL ON public.escalas_equipe FROM PUBLIC, anon, authenticated;') &&
+  m030.includes('REVOKE ALL ON public.ausencias_equipe FROM PUBLIC, anon, authenticated;') &&
+  m030.includes('REVOKE ALL ON FUNCTION public.salvar_colaborador_admin FROM PUBLIC, anon;') &&
+  m030.includes('REVOKE ALL ON FUNCTION public.salvar_escala_equipe_admin FROM PUBLIC, anon;') &&
+  m030.includes('REVOKE ALL ON FUNCTION public.obter_painel_capacidade_equipe FROM PUBLIC, anon;'),
+  '[FALHA] Grants fail-closed das tabelas e RPCs da Frente O ausentes!'
+);
+
+console.log('  🔎 30.8 Verificando presença das estruturas da Frente O nos schemas mestres (install.sql e schema.sql)...');
+for (const [name, content] of [['install.sql', installFim], ['schema.sql', schemaFim]]) {
+  assert.ok(content.includes('public.funcoes_equipe'), `[FALHA] ${name} não contém funcoes_equipe!`);
+  assert.ok(content.includes('public.colaboradores'), `[FALHA] ${name} não contém colaboradores!`);
+  assert.ok(content.includes('public.escalas_equipe'), `[FALHA] ${name} não contém escalas_equipe!`);
+  assert.ok(content.includes('public.ausencias_equipe'), `[FALHA] ${name} não contém ausencias_equipe!`);
+  assert.ok(content.includes('public.salvar_escala_equipe_admin'), `[FALHA] ${name} não contém salvar_escala_equipe_admin!`);
+  assert.ok(content.includes('public.obter_painel_capacidade_equipe'), `[FALHA] ${name} não contém obter_painel_capacidade_equipe!`);
+}
+
+console.log('  🔎 30.9 Verificando frontend de Equipe & Capacidade (admin.html, js/admin-equipe.js e js/admin.js)...');
+const adminHtmlEquipe = fs.readFileSync('admin.html', 'utf-8');
+const adminEquipeJs = fs.readFileSync('js/admin-equipe.js', 'utf-8');
+const adminJsEquipe = fs.readFileSync('js/admin.js', 'utf-8');
+assert.ok(
+  adminHtmlEquipe.includes('id="tab-btn-equipe"') &&
+  adminHtmlEquipe.includes('id="admin-tab-equipe"') &&
+  adminHtmlEquipe.includes('js/admin-equipe.js') &&
+  adminEquipeJs.includes('obter_painel_capacidade_equipe') &&
+  adminEquipeJs.includes('salvar_escala_equipe_admin') &&
+  adminEquipeJs.includes('registrar_ausencia_equipe_admin') &&
+  adminJsEquipe.includes('tab-btn-equipe') &&
+  adminJsEquipe.includes('carregarEquipeAdmin'),
+  '[FALHA] Frontend de Equipe & Capacidade incompleto!'
+);
+console.log('    ✅ Migration 030, scripts mestre, regras de não-sobreposição, painel de Equipe e Capacidade validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–30 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
 
 
 

@@ -83,6 +83,7 @@
           <button id="tab-btn-fichatecnica" onclick="mudarTabAdmin('fichatecnica')"><i class="fa-solid fa-mortar-pestle"></i> Ficha Técnica & CMV</button>
           <button id="tab-btn-custos" onclick="mudarTabAdmin('custos')"><i class="fa-solid fa-calculator"></i> Custos & Margens</button>
           <button id="tab-btn-alertas" onclick="mudarTabAdmin('alertas')"><i class="fa-solid fa-triangle-exclamation"></i> Alertas & Auditoria</button>
+          <button id="tab-btn-equipe" onclick="mudarTabAdmin('equipe')"><i class="fa-solid fa-users-gear"></i> Equipe & Capacidade</button>
           <button id="tab-btn-compras" onclick="mudarTabAdmin('compras')"><i class="fa-solid fa-truck-ramp-box"></i> Compras & Insumos</button>
           <button id="tab-btn-tesouraria" onclick="mudarTabAdmin('tesouraria')"><i class="fa-solid fa-vault"></i> Tesouraria & Fluxo</button>
           <button id="tab-btn-financeiro" onclick="mudarTabAdmin('financeiro')"><i class="fa-solid fa-chart-line"></i> Financeiro</button>
@@ -721,6 +722,9 @@
           </div>
           <div id="alertas-conteudo-dinamico"></div>
         </div>
+
+        <!-- ABA: Equipe, Turnos, Escalas & Capacidade Real (Frente O) -->
+        <div id="admin-tab-equipe" class="admin-tab" style="display:none;"></div>
       </div>
     </div>
   </main>
@@ -1384,6 +1388,7 @@
   <script src="js/admin-logistica.js?v=4.0.0"></script>
   <script src="js/admin-custos.js?v=4.1.0"></script>
   <script src="js/admin-alertas.js?v=4.2.0"></script>
+  <script type="module" src="js/admin-equipe.js?v=4.3.0"></script>
   <script type="module" src="js/whatsapp-helper.js?v=3.2.0"></script>
 
   <script>
