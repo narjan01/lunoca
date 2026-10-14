@@ -706,8 +706,15 @@ async function executarCheckoutPdv() {
       p_observacoes: cpfNota ? ('CPF na nota: ' + cpfNota) : null
     });
 
-    if (error) throw error;
     if (!data || !data.success) {
+      if (data?.code === 'CASH_SESSION_REQUIRED') {
+        if (confirm('Atenção: Nenhuma sessão de caixa aberta para este operador.\n\nDeseja abrir o caixa agora na aba Sessões de Caixa?')) {
+          if (typeof window.mudarTabAdmin === 'function') {
+            window.mudarTabAdmin('caixa');
+          }
+        }
+        return;
+      }
       throw new Error(data?.error || 'Falha ao concluir venda no PDV.');
     }
 

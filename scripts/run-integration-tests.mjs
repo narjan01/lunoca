@@ -42,6 +42,7 @@ const testSuites = [
   'tests/integration/frente_o.equipe_capacidade.test.mjs',
   'tests/integration/frente_p.expedicao_retirada.test.mjs',
   'tests/integration/frente_q.pdv_pronta_entrega.test.mjs',
+  'tests/integration/frente_r.caixa_sessoes.test.mjs',
 ];
 
 console.log('🚀 Iniciando Runner Sequencial de Testes de Integração Lunoca...');

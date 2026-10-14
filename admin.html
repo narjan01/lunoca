@@ -75,6 +75,7 @@
           <button id="tab-btn-logistica" onclick="mudarTabAdmin('logistica')"><i class="fa-solid fa-truck-fast"></i> Logística & Rotas</button>
           <button id="tab-btn-retirada" onclick="mudarTabAdmin('retirada')"><i class="fa-solid fa-store"></i> Balcão & Retirada</button>
           <button id="tab-btn-pdv" onclick="mudarTabAdmin('pdv')"><i class="fa-solid fa-bolt" style="color:#f59e0b;"></i> PDV Balcão</button>
+          <button id="tab-btn-caixa" onclick="mudarTabAdmin('caixa')"><i class="fa-solid fa-cash-register" style="color:#10b981;"></i> Sessões de Caixa</button>
           <button id="tab-btn-pedidos" onclick="mudarTabAdmin('pedidos')"><i class="fa-solid fa-receipt"></i> Pedidos</button>
           <button id="tab-btn-orcamentos" onclick="mudarTabAdmin('orcamentos')"><i class="fa-solid fa-file-invoice-dollar"></i> Orçamentos</button>
           <button id="tab-btn-crm" onclick="mudarTabAdmin('crm')"><i class="fa-solid fa-address-book"></i> Clientes & CRM</button>
@@ -733,6 +734,9 @@
 
         <!-- ABA: PDV Rápido & Pronta Entrega (Frente Q) -->
         <div id="admin-tab-pdv" class="admin-tab" style="display:none;"></div>
+
+        <!-- ABA: Sessões de Caixa & Turnos PDV (Frente R) -->
+        <div id="admin-tab-caixa" class="admin-tab" style="display:none;"></div>
       </div>
     </div>
   </main>
@@ -1399,6 +1403,7 @@
   <script type="module" src="js/admin-equipe.js?v=4.3.0"></script>
   <script type="module" src="js/admin-retirada.js?v=4.4.0"></script>
   <script type="module" src="js/admin-pdv.js?v=4.6.0"></script>
+  <script type="module" src="js/admin-caixa.js?v=4.7.0"></script>
   <script type="module" src="js/whatsapp-helper.js?v=3.2.0"></script>
 
   <script>

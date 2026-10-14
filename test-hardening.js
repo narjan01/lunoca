@@ -3531,7 +3531,97 @@ assert.ok(!installFim.includes('COALESCE(p_novo_status'), '[FALHA] install.sql a
 assert.ok(!schemaFim.includes('COALESCE(p_novo_status'), '[FALHA] schema.sql ainda contém referência a p_novo_status!');
 console.log('    ✅ Migration 033, schemas mestre e eliminação de p_novo_status validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–33 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// ==============================================================================
+// 💵 FASE 34: FRENTE R — Caixa PDV, Sessões e Fechamento de Turno (Migration 034)
+// ==============================================================================
+console.log('\n============================================================');
+console.log('💵 FASE 34: Frente R — Caixa PDV & Turnos (Migration 034)...');
+console.log('============================================================');
+console.log('  🔎 34.1 Verificando integridade da migration 034_caixa_pdv_sessoes_fechamento.sql...');
+const m034 = fs.readFileSync('supabase/migrations/034_caixa_pdv_sessoes_fechamento.sql', 'utf-8');
+const m034CodeOnly = m034.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+
+console.log('  🔎 34.2 Verificando as 4 tabelas canônicas de caixa...');
+assert.ok(m034.includes('CREATE TABLE IF NOT EXISTS public.caixa_sessoes'), '[FALHA] Tabela caixa_sessoes ausente!');
+assert.ok(m034.includes('CREATE TABLE IF NOT EXISTS public.caixa_sessao_movimentacoes'), '[FALHA] Tabela caixa_sessao_movimentacoes ausente!');
+assert.ok(m034.includes('CREATE TABLE IF NOT EXISTS public.caixa_sessao_pagamentos'), '[FALHA] Tabela caixa_sessao_pagamentos ausente!');
+assert.ok(m034.includes('CREATE TABLE IF NOT EXISTS public.caixa_sessao_auditorias'), '[FALHA] Tabela caixa_sessao_auditorias ausente!');
+
+console.log('  🔎 34.3 Verificando índices parciais de sessão única e idempotência...');
+assert.ok(m034.includes('uq_caixa_sessao_operador_aberta'), '[FALHA] Índice parcial de sessão por operador ausente!');
+assert.ok(m034.includes('uq_caixa_sessao_terminal_aberta'), '[FALHA] Índice parcial de sessão por terminal ausente!');
+assert.ok(m034.includes('uq_caixa_sessao_mov_idemp'), '[FALHA] Constraint de idempotência em movimentações ausente!');
+
+console.log('  🔎 34.4 Verificando triggers append-only e imutabilidade (SQLSTATE 42501)...');
+assert.ok(m034.includes('trg_valida_sessao_imutavel'), '[FALHA] Trigger de imutabilidade de sessão fechada ausente!');
+assert.ok(m034.includes('trg_caixa_movimentacoes_append_only'), '[FALHA] Trigger append-only em movimentações ausente!');
+assert.ok(m034.includes('trg_caixa_pagamentos_append_only'), '[FALHA] Trigger append-only em pagamentos ausente!');
+assert.ok(m034.includes('trg_caixa_auditorias_append_only'), '[FALHA] Trigger append-only em auditorias ausente!');
+assert.ok(m034.includes("'42501'"), '[FALHA] SQLSTATE 42501 ausente nos triggers de segurança!');
+
+console.log('  🔎 34.5 Verificando as 7 RPCs canônicas da Frente R...');
+assert.ok(m034.includes('CREATE OR REPLACE FUNCTION public.abrir_sessao_caixa'), '[FALHA] abrir_sessao_caixa ausente!');
+assert.ok(m034.includes('CREATE OR REPLACE FUNCTION public.registrar_movimentacao_caixa'), '[FALHA] registrar_movimentacao_caixa ausente!');
+assert.ok(m034.includes('CREATE OR REPLACE FUNCTION public.consultar_sessao_caixa_atual'), '[FALHA] consultar_sessao_caixa_atual ausente!');
+assert.ok(m034.includes('CREATE OR REPLACE FUNCTION public.obter_resumo_sessao_caixa_admin'), '[FALHA] obter_resumo_sessao_caixa_admin ausente!');
+assert.ok(m034.includes('CREATE OR REPLACE FUNCTION public.fechar_sessao_caixa'), '[FALHA] fechar_sessao_caixa ausente!');
+assert.ok(m034.includes('CREATE OR REPLACE FUNCTION public.auditar_sessao_caixa_admin'), '[FALHA] auditar_sessao_caixa_admin ausente!');
+assert.ok(m034.includes('CREATE OR REPLACE FUNCTION public.listar_sessoes_caixa_admin'), '[FALHA] listar_sessoes_caixa_admin ausente!');
+
+console.log('  🔎 34.6 Verificando evolução de finalizar_venda_pdv com CASH_SESSION_REQUIRED...');
+assert.ok(m034.includes('CASH_SESSION_REQUIRED'), '[FALHA] Código CASH_SESSION_REQUIRED ausente em finalizar_venda_pdv!');
+assert.ok(m034.includes('INSERT INTO public.caixa_sessao_pagamentos'), '[FALHA] Vínculo em caixa_sessao_pagamentos ausente em finalizar_venda_pdv!');
+
+console.log('  🔎 34.7 Verificando ausência de tabelas paralelas de caixa e neutralidade contábil...');
+assert.ok(
+  !m034CodeOnly.includes('CREATE TABLE public.caixas_pdv') &&
+  !m034CodeOnly.includes('CREATE TABLE public.caixas_operadores') &&
+  !m034CodeOnly.includes('CREATE TABLE public.livro_caixa_paralelo'),
+  '[FALHA] Tabelas paralelas detectadas na migration 034!'
+);
+
+console.log('  🔎 34.8 Verificando grants fail-closed para anon/PUBLIC...');
+assert.ok(
+  m034.includes('REVOKE ALL ON public.caixa_sessoes FROM PUBLIC, anon') &&
+  m034.includes('REVOKE ALL ON public.caixa_sessao_movimentacoes FROM PUBLIC, anon') &&
+  m034.includes('REVOKE ALL ON public.caixa_sessao_pagamentos FROM PUBLIC, anon') &&
+  m034.includes('REVOKE ALL ON public.caixa_sessao_auditorias FROM PUBLIC, anon') &&
+  m034.includes('REVOKE ALL ON FUNCTION public.abrir_sessao_caixa(NUMERIC, TEXT, TEXT) FROM PUBLIC, anon;') &&
+  m034.includes('REVOKE ALL ON FUNCTION public.fechar_sessao_caixa(NUMERIC, TEXT, TEXT, BIGINT, TEXT) FROM PUBLIC, anon;'),
+  '[FALHA] Grants fail-closed da Frente R ausentes ou incompletos!'
+);
+
+console.log('  🔎 34.9 Verificando presença das estruturas da Frente R nos schemas mestres...');
+for (const [name, content] of [['install.sql', installFim], ['schema.sql', schemaFim]]) {
+  assert.ok(content.includes('public.caixa_sessoes'), `[FALHA] ${name} não contém caixa_sessoes!`);
+  assert.ok(content.includes('public.caixa_sessao_movimentacoes'), `[FALHA] ${name} não contém caixa_sessao_movimentacoes!`);
+  assert.ok(content.includes('public.caixa_sessao_pagamentos'), `[FALHA] ${name} não contém caixa_sessao_pagamentos!`);
+  assert.ok(content.includes('public.abrir_sessao_caixa'), `[FALHA] ${name} não contém abrir_sessao_caixa!`);
+  assert.ok(content.includes('public.fechar_sessao_caixa'), `[FALHA] ${name} não contém fechar_sessao_caixa!`);
+}
+
+console.log('  🔎 34.10 Verificando frontend de Sessões de Caixa (admin.html, js/admin-caixa.js, js/admin.js, js/admin-pdv.js)...');
+const adminHtmlCaixa = fs.readFileSync('admin.html', 'utf-8');
+const adminCaixaJs = fs.readFileSync('js/admin-caixa.js', 'utf-8');
+const adminJsCaixa = fs.readFileSync('js/admin.js', 'utf-8');
+const adminPdvJsCaixa = fs.readFileSync('js/admin-pdv.js', 'utf-8');
+
+assert.ok(
+  adminHtmlCaixa.includes('id="tab-btn-caixa"') &&
+  adminHtmlCaixa.includes('id="admin-tab-caixa"') &&
+  adminHtmlCaixa.includes('js/admin-caixa.js') &&
+  adminCaixaJs.includes('consultar_sessao_caixa_atual') &&
+  adminCaixaJs.includes('abrir_sessao_caixa') &&
+  adminCaixaJs.includes('fechar_sessao_caixa') &&
+  adminCaixaJs.includes('registrar_movimentacao_caixa') &&
+  adminJsCaixa.includes('tab-btn-caixa') &&
+  adminJsCaixa.includes('carregarCaixaAdmin') &&
+  adminPdvJsCaixa.includes('CASH_SESSION_REQUIRED'),
+  '[FALHA] Frontend de Sessões de Caixa incompleto!'
+);
+console.log('    ✅ Migration 034, schemas mestre, R1–R16 e frontend de Caixa validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–34 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
 
 
 
