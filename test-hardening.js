@@ -3125,7 +3125,96 @@ assert.ok(
 );
 console.log('    ✅ Migration 028, scripts mestre, painel de Custos/Margens e simulador validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–28 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// --------------------------------------------------------------------------
+// FASE 29: Frente N - Alertas Proativos, Auditoria Avançada & Health-Check Global (029)
+// --------------------------------------------------------------------------
+console.log('\n🔎 FASE 29: Frente N - Alertas Proativos, Auditoria Avançada & Health-Check Global (029)...');
+
+const m029 = fs.readFileSync('supabase/migrations/029_alertas_auditoria_healthcheck_global.sql', 'utf-8');
+const m029CodeOnly = m029.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+
+console.log('  🔎 29.1 Verificando imutabilidade de 001–028 e estruturas da Frente N em 029...');
+assert.ok(
+  m029.includes('CREATE TABLE IF NOT EXISTS public.alertas_configuracoes') &&
+  m029.includes('CREATE TABLE IF NOT EXISTS public.alertas_operacionais') &&
+  m029.includes('CREATE TABLE IF NOT EXISTS public.alertas_reconhecimentos') &&
+  m029.includes('CREATE TABLE IF NOT EXISTS public.auditoria_operacional_eventos'),
+  '[FALHA] Tabelas canônicas da Frente N ausentes em 029!'
+);
+
+console.log('  🔎 29.2 Verificando triggers de auditoria e trigger append-only de segurança...');
+assert.ok(
+  m029.includes('CREATE TRIGGER trg_bloquear_mutacao_auditoria_operacional') &&
+  m029.includes('bloquear_mutacao_auditoria_operacional') &&
+  m029.includes('CREATE TRIGGER trg_audit_produtos_mutacao') &&
+  m029.includes('CREATE TRIGGER trg_audit_ingrediente_lotes_mutacao') &&
+  m029.includes('CREATE TRIGGER trg_audit_politicas_precificacao_mutacao'),
+  '[FALHA] Triggers de auditoria ou proteção append-only ausentes em 029!'
+);
+
+console.log('  🔎 29.3 Verificando as RPCs canônicas da Frente N...');
+assert.ok(
+  m029.includes('CREATE OR REPLACE FUNCTION public.obter_alertas_operacionais_admin(') &&
+  m029.includes('CREATE OR REPLACE FUNCTION public.obter_alertas_operacionais_operador(') &&
+  m029.includes('CREATE OR REPLACE FUNCTION public.reconhecer_alerta_operacional(') &&
+  m029.includes('CREATE OR REPLACE FUNCTION public.executar_healthcheck_global_admin(') &&
+  m029.includes('CREATE OR REPLACE FUNCTION public.salvar_configuracoes_alertas_admin(') &&
+  m029.includes('CREATE OR REPLACE FUNCTION public.listar_auditoria_operacional_admin('),
+  '[FALHA] Uma ou mais RPCs canônicas da Frente N ausentes em 029!'
+);
+
+console.log('  🔎 29.4 Verificando invariantes N1–N16 (zero efeito financeiro, sanitização operador, health-check read-only)...');
+assert.ok(
+  m029.includes('AUDITORIA_APPEND_ONLY') &&
+  m029.includes('Alerta já reconhecido previamente') &&
+  !m029CodeOnly.includes('INSERT INTO public.financeiro_lancamentos') &&
+  !m029CodeOnly.includes('INSERT INTO public.pedido_pagamentos') &&
+  !m029CodeOnly.includes('UPDATE public.ingrediente_saldos SET') &&
+  !m029CodeOnly.includes('UPDATE public.pedidos SET status'),
+  '[FALHA] Invariantes N1-N16 violadas em 029!'
+);
+
+console.log('  🔎 29.5 Verificando grants fail-closed para anon/PUBLIC nas tabelas e RPCs da Frente N...');
+assert.ok(
+  m029.includes('REVOKE ALL ON public.alertas_configuracoes FROM PUBLIC, anon, authenticated;') &&
+  m029.includes('REVOKE ALL ON public.alertas_operacionais FROM PUBLIC, anon, authenticated;') &&
+  m029.includes('REVOKE ALL ON public.alertas_reconhecimentos FROM PUBLIC, anon, authenticated;') &&
+  m029.includes('REVOKE ALL ON public.auditoria_operacional_eventos FROM PUBLIC, anon, authenticated;') &&
+  m029.includes('REVOKE ALL ON FUNCTION public.obter_alertas_operacionais_admin(TEXT, TEXT) FROM PUBLIC, anon;') &&
+  m029.includes('REVOKE ALL ON FUNCTION public.obter_alertas_operacionais_operador() FROM PUBLIC, anon;') &&
+  m029.includes('REVOKE ALL ON FUNCTION public.executar_healthcheck_global_admin() FROM PUBLIC, anon;') &&
+  m029.includes('REVOKE ALL ON FUNCTION public.listar_auditoria_operacional_admin(TEXT, TEXT, INT, INT) FROM PUBLIC, anon;'),
+  '[FALHA] Grants fail-closed das tabelas e RPCs da Frente N ausentes!'
+);
+
+console.log('  🔎 29.6 Verificando presença das estruturas da Frente N nos schemas mestres (install.sql e schema.sql)...');
+for (const [name, content] of [['install.sql', installFim], ['schema.sql', schemaFim]]) {
+  assert.ok(content.includes('public.alertas_operacionais'), `[FALHA] ${name} não contém alertas_operacionais!`);
+  assert.ok(content.includes('public.auditoria_operacional_eventos'), `[FALHA] ${name} não contém auditoria_operacional_eventos!`);
+  assert.ok(content.includes('public.executar_healthcheck_global_admin'), `[FALHA] ${name} não contém executar_healthcheck_global_admin!`);
+  assert.ok(content.includes('public.obter_alertas_operacionais_admin'), `[FALHA] ${name} não contém obter_alertas_operacionais_admin!`);
+  assert.ok(content.includes('public.obter_alertas_operacionais_operador'), `[FALHA] ${name} não contém obter_alertas_operacionais_operador!`);
+}
+
+console.log('  🔎 29.7 Verificando frontend de Alertas & Auditoria (admin.html, js/admin-alertas.js e js/admin.js)...');
+const adminHtmlAlertas = fs.readFileSync('admin.html', 'utf-8');
+const adminAlertasJs = fs.readFileSync('js/admin-alertas.js', 'utf-8');
+const adminJsAlertas = fs.readFileSync('js/admin.js', 'utf-8');
+assert.ok(
+  adminHtmlAlertas.includes('id="tab-btn-alertas"') &&
+  adminHtmlAlertas.includes('id="admin-tab-alertas"') &&
+  adminHtmlAlertas.includes('js/admin-alertas.js') &&
+  adminAlertasJs.includes('executar_healthcheck_global_admin') &&
+  adminAlertasJs.includes('obter_alertas_operacionais_admin') &&
+  adminAlertasJs.includes('obter_alertas_operacionais_operador') &&
+  adminAlertasJs.includes('reconhecer_alerta_operacional') &&
+  adminJsAlertas.includes('tab-btn-alertas') &&
+  adminJsAlertas.includes('carregarAlertasAdmin'),
+  '[FALHA] Frontend de Alertas & Auditoria incompleto!'
+);
+console.log('    ✅ Migration 029, scripts mestre, painel de Alertas, Health-Check e Auditoria validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–29 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
 
 
 

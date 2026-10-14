@@ -35,7 +35,8 @@ function configurarAcessoAdminPorNivel() {
         'tab-btn-compras',
         'tab-btn-crm',
         'tab-btn-fidelidade',
-        'tab-btn-logistica'
+        'tab-btn-logistica',
+        'tab-btn-alertas'
     ];
 
     const tituloAdmin = document.querySelector('#admin-section h2');
@@ -113,6 +114,7 @@ function mudarTabAdmin(tab) {
     if(tab === 'crm' && typeof carregarCRMAdmin === 'function') carregarCRMAdmin();
     if(tab === 'fidelidade' && typeof carregarFidelidadeCampanhasAdmin === 'function') carregarFidelidadeCampanhasAdmin();
     if(tab === 'custos' && typeof carregarCustosAdmin === 'function') carregarCustosAdmin();
+    if(tab === 'alertas' && typeof carregarAlertasAdmin === 'function') carregarAlertasAdmin();
 }
 
 // ==========================================================================

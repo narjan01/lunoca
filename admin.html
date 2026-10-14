@@ -82,6 +82,7 @@
           <button id="tab-btn-estoque" onclick="mudarTabAdmin('estoque')"><i class="fa-solid fa-boxes-stacked"></i> Estoque</button>
           <button id="tab-btn-fichatecnica" onclick="mudarTabAdmin('fichatecnica')"><i class="fa-solid fa-mortar-pestle"></i> Ficha Técnica & CMV</button>
           <button id="tab-btn-custos" onclick="mudarTabAdmin('custos')"><i class="fa-solid fa-calculator"></i> Custos & Margens</button>
+          <button id="tab-btn-alertas" onclick="mudarTabAdmin('alertas')"><i class="fa-solid fa-triangle-exclamation"></i> Alertas & Auditoria</button>
           <button id="tab-btn-compras" onclick="mudarTabAdmin('compras')"><i class="fa-solid fa-truck-ramp-box"></i> Compras & Insumos</button>
           <button id="tab-btn-tesouraria" onclick="mudarTabAdmin('tesouraria')"><i class="fa-solid fa-vault"></i> Tesouraria & Fluxo</button>
           <button id="tab-btn-financeiro" onclick="mudarTabAdmin('financeiro')"><i class="fa-solid fa-chart-line"></i> Financeiro</button>
@@ -695,6 +696,30 @@
             </div>
           </div>
           <div id="custos-conteudo-dinamico"></div>
+        </div>
+
+        <!-- ABA: Alertas Proativos, Auditoria & Health-Check Global (Frente N) -->
+        <div id="admin-tab-alertas" class="admin-tab" style="display:none;">
+          <div style="background:#ffffff; padding:16px; border-radius:14px; border:1px solid #e2e8f0; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <div>
+              <h3 style="margin:0; font-size:17px; color:#0f172a; display:flex; align-items:center; gap:8px;">
+                <i class="fa-solid fa-triangle-exclamation" style="color:#ef4444;"></i> Alertas Proativos & Auditoria Global
+              </h3>
+              <p style="margin:4px 0 0; font-size:12px; color:#64748b;">
+                Health-Check Global &bull; Alertas Operacionais &bull; Auditoria Append-Only &bull; Configurações
+              </p>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <button id="btn-subaba-alertas-painel" class="btn-periodo-dash btn-subaba-alertas active" onclick="mudarSubAbaAlertas('painel')">Alertas Ativos</button>
+              <button id="btn-subaba-alertas-healthcheck" class="btn-periodo-dash btn-subaba-alertas" onclick="mudarSubAbaAlertas('healthcheck')">Health-Check</button>
+              <button id="btn-subaba-alertas-auditoria" class="btn-periodo-dash btn-subaba-alertas" onclick="mudarSubAbaAlertas('auditoria')">Auditoria</button>
+              <button id="btn-subaba-alertas-config" class="btn-periodo-dash btn-subaba-alertas" onclick="mudarSubAbaAlertas('config')">Configurações</button>
+              <button onclick="carregarAlertasAdmin()" class="btn-outline" style="padding:6px 14px; font-size:12px; border-radius:8px;">
+                <i class="fa-solid fa-rotate-right"></i> Atualizar
+              </button>
+            </div>
+          </div>
+          <div id="alertas-conteudo-dinamico"></div>
         </div>
       </div>
     </div>
@@ -1358,6 +1383,7 @@
   <script src="js/admin-fidelidade.js?v=3.8.0"></script>
   <script src="js/admin-logistica.js?v=4.0.0"></script>
   <script src="js/admin-custos.js?v=4.1.0"></script>
+  <script src="js/admin-alertas.js?v=4.2.0"></script>
   <script type="module" src="js/whatsapp-helper.js?v=3.2.0"></script>
 
   <script>
