@@ -3427,7 +3427,89 @@ assert.ok(
 );
 console.log('    ✅ Migration 031, scripts mestre, segurança de PIN, quitação e portal validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–31 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// ==============================================================================
+// FASE 32: FRENTE Q — PDV RÁPIDO & PRONTA ENTREGA (MIGRATION 032)
+// ==============================================================================
+console.log('\n============================================================');
+console.log('🧪 FASE 32: FRENTE Q — PDV Rápido & Pronta Entrega (Migration 032)');
+console.log('============================================================');
+
+console.log('  🔎 32.1 Verificando integridade da migration 032_pdv_rapido_pronta_entrega.sql...');
+assert.ok(fs.existsSync('supabase/migrations/032_pdv_rapido_pronta_entrega.sql'), '[FALHA] Migration 032 não encontrada!');
+const m032 = fs.readFileSync('supabase/migrations/032_pdv_rapido_pronta_entrega.sql', 'utf-8');
+assert.ok(m032.length > 5000, '[FALHA] Migration 032 vazia ou truncada!');
+
+console.log('  🔎 32.2 Verificando congelamento absoluto das migrations anteriores (001–031)...');
+for (let i = 1; i <= 31; i++) {
+  const num = String(i).padStart(3, '0');
+  const files = fs.readdirSync('supabase/migrations').filter(f => f.startsWith(num + '_'));
+  assert.equal(files.length, 1, `[FALHA] Migration base ${num} ausente ou duplicada!`);
+}
+console.log('    ✅ Migrations 001–031 intocadas e imutáveis.');
+
+console.log('  🔎 32.3 Verificando tabelas de produto pronto e rastreabilidade...');
+assert.ok(m032.includes('CREATE TABLE IF NOT EXISTS public.produto_pronto_lotes'), '[FALHA] Tabela produto_pronto_lotes ausente!');
+assert.ok(m032.includes('CREATE TABLE IF NOT EXISTS public.produto_pronto_lote_consumos_ingrediente'), '[FALHA] Tabela produto_pronto_lote_consumos_ingrediente ausente!');
+assert.ok(m032.includes('CREATE TABLE IF NOT EXISTS public.produto_pronto_movimentacoes'), '[FALHA] Tabela produto_pronto_movimentacoes ausente!');
+assert.ok(m032.includes('CREATE TABLE IF NOT EXISTS public.pedido_consumos_produto_pronto'), '[FALHA] Tabela pedido_consumos_produto_pronto ausente!');
+
+console.log('  🔎 32.4 Verificando RPCs canônicas do PDV e FEFO...');
+assert.ok(m032.includes('CREATE OR REPLACE FUNCTION public.registrar_producao_produto_pronto'), '[FALHA] registrar_producao_produto_pronto ausente!');
+assert.ok(m032.includes('CREATE OR REPLACE FUNCTION public.listar_catalogo_pdv'), '[FALHA] listar_catalogo_pdv ausente!');
+assert.ok(m032.includes('CREATE OR REPLACE FUNCTION public.finalizar_venda_pdv'), '[FALHA] finalizar_venda_pdv ausente!');
+assert.ok(m032.includes('CREATE OR REPLACE FUNCTION public.obter_estoque_produto_pronto_admin'), '[FALHA] obter_estoque_produto_pronto_admin ausente!');
+assert.ok(m032.includes('CREATE OR REPLACE FUNCTION public.rastrear_lote_produto_pronto_admin'), '[FALHA] rastrear_lote_produto_pronto_admin ausente!');
+
+console.log('  🔎 32.5 Verificando invariantes de banco (zero tabelas paralelas de vendas/pagamentos, FOR UPDATE, FEFO)...');
+const m032CodeOnly = m032.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+assert.ok(
+  !m032CodeOnly.includes('CREATE TABLE public.vendas_balcao') &&
+  !m032CodeOnly.includes('CREATE TABLE public.pagamentos_balcao') &&
+  !m032CodeOnly.includes('CREATE TABLE public.pedidos_balcao') &&
+  !m032CodeOnly.includes('CREATE TABLE public.pedidos_pdv'),
+  '[FALHA] Tabelas paralelas detectadas na migration 032!'
+);
+assert.ok(m032.includes('FOR UPDATE'), '[FALHA] Trava FOR UPDATE ausente para concorrência de estoque PT!');
+assert.ok(m032.includes('ORDER BY l.data_validade ASC, l.id ASC'), '[FALHA] Alocação FEFO de produto pronto ausente ou incorreta!');
+assert.ok(m032.includes('canal') && m032.includes("'balcao'"), '[FALHA] Canal canônico balcao ausente!');
+assert.ok(m032.includes("'42501'"), '[FALHA] Triggers append-only com SQLSTATE 42501 ausentes!');
+
+console.log('  🔎 32.6 Verificando grants fail-closed para anon/PUBLIC...');
+assert.ok(
+  m032.includes('REVOKE ALL ON public.produto_pronto_lotes FROM PUBLIC, anon') &&
+  m032.includes('REVOKE ALL ON public.produto_pronto_lote_consumos_ingrediente FROM PUBLIC, anon') &&
+  m032.includes('REVOKE ALL ON public.produto_pronto_movimentacoes FROM PUBLIC, anon') &&
+  m032.includes('REVOKE ALL ON public.pedido_consumos_produto_pronto FROM PUBLIC, anon') &&
+  m032.includes('REVOKE ALL ON FUNCTION public.finalizar_venda_pdv(JSONB, BIGINT, TEXT, NUMERIC, TEXT, TEXT, TEXT) FROM PUBLIC, anon;') &&
+  m032.includes('REVOKE ALL ON FUNCTION public.listar_catalogo_pdv() FROM PUBLIC, anon;'),
+  '[FALHA] Grants fail-closed da Frente Q ausentes ou incompletos!'
+);
+
+console.log('  🔎 32.7 Verificando presença das estruturas da Frente Q nos schemas mestres...');
+for (const [name, content] of [['install.sql', installFim], ['schema.sql', schemaFim]]) {
+  assert.ok(content.includes('public.produto_pronto_lotes'), `[FALHA] ${name} não contém produto_pronto_lotes!`);
+  assert.ok(content.includes('public.produto_pronto_lote_consumos_ingrediente'), `[FALHA] ${name} não contém produto_pronto_lote_consumos_ingrediente!`);
+  assert.ok(content.includes('public.finalizar_venda_pdv'), `[FALHA] ${name} não contém finalizar_venda_pdv!`);
+  assert.ok(content.includes('public.listar_catalogo_pdv'), `[FALHA] ${name} não contém listar_catalogo_pdv!`);
+}
+
+console.log('  🔎 32.8 Verificando frontend de PDV Rápido & Pronta Entrega (admin.html, js/admin-pdv.js, js/admin.js)...');
+const adminHtmlPdv = fs.readFileSync('admin.html', 'utf-8');
+const adminPdvJs = fs.readFileSync('js/admin-pdv.js', 'utf-8');
+const adminJsPdv = fs.readFileSync('js/admin.js', 'utf-8');
+assert.ok(
+  adminHtmlPdv.includes('id="tab-btn-pdv"') &&
+  adminHtmlPdv.includes('id="admin-tab-pdv"') &&
+  adminHtmlPdv.includes('js/admin-pdv.js') &&
+  adminPdvJs.includes('listar_catalogo_pdv') &&
+  adminPdvJs.includes('finalizar_venda_pdv') &&
+  adminJsPdv.includes('tab-btn-pdv') &&
+  adminJsPdv.includes('carregarPdvAdmin'),
+  '[FALHA] Frontend de PDV Rápido & Pronta Entrega incompleto!'
+);
+console.log('    ✅ Migration 032, schemas mestre, FEFO, quitação PDV e frontend validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–32 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
 
 
 

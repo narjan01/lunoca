@@ -37,6 +37,7 @@ function configurarAcessoAdminPorNivel() {
         'tab-btn-fidelidade',
         'tab-btn-logistica',
         'tab-btn-retirada',
+        'tab-btn-pdv',
         'tab-btn-alertas',
         'tab-btn-equipe'
     ];
@@ -96,6 +97,7 @@ function mudarTabAdmin(tab) {
     if(tab === 'producao' && typeof carregarProducaoAdmin === 'function') carregarProducaoAdmin();
     if(tab === 'logistica' && typeof carregarLogisticaAdmin === 'function') carregarLogisticaAdmin();
     if(tab === 'retirada' && typeof carregarRetiradaAdmin === 'function') carregarRetiradaAdmin();
+    if(tab === 'pdv' && typeof carregarPdvAdmin === 'function') carregarPdvAdmin();
     if(tab === 'pedidos') {
         if (typeof carregarCentralEncomendas === 'function') {
             carregarCentralEncomendas();
