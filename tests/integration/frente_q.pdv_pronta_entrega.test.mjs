@@ -17,7 +17,7 @@
 // Q13: Cliente identificado integra CRM e acumula pontos de fidelidade (Frente I)
 // Q14: Consumidor avulso não cria cliente nem persiste dados pessoais falsos
 // Q15: Operador não vê custo industrial de produção (sanitização server-side)
-// Q16: Ingredientes + produto pronto + ledgers mantêm integridade append-only (SQLSTATE 42501)
+// Q16: Ingredientes + produto pronto + ledgers reconciliam matematicamente (identidade física e Frente L)
 // ==============================================================================
 
 import { test, before, after } from 'node:test';
@@ -638,27 +638,142 @@ test('Q10: Pagamento PDV gera registro canônico em public.pedido_pagamentos', a
 // ==============================================================================
 // Q11: Efeitos financeiros reconciliam com motor canônico sem duplicidade
 // ==============================================================================
-test('Q11: Saldo do pedido é zerado e valor_pago é preenchido', async () => {
-  const c = await newClient(OPER_UID);
+test('Q11: Pagamento PDV produz efeitos financeiros canônicos sem duplicidade e distingue externo de credito_cliente', async () => {
+  const cOper = await newClient(OPER_UID);
+  const cAdmin = await newClient(ADMIN_UID);
 
-  const res = await rpc(c, 'finalizar_venda_pdv', {
+  // 1. Pagamento Externo (PIX) no PDV -> pedido_pagamentos + financeiro_lancamentos (receita)
+  const resPix = await rpc(cOper, 'finalizar_venda_pdv', {
     p_itens: [{ produto_id: prodBrownieId, quantidade: 2 }],
     p_forma_pagamento: 'pix',
-    p_chave_idempotencia: 'teste-q11-reconc'
+    p_chave_idempotencia: 'teste-q11-canon-pix'
   });
-  assert.equal(res.success, true);
+  assert.equal(resPix.success, true);
+  const pedidoPixId = resPix.pedido_id;
 
-  const { rows } = await admin.query(
-    `SELECT total, saldo, valor_pago, status_financeiro FROM public.pedidos WHERE id = $1`,
-    [res.pedido_id]
+  // Verifica quitação canônica em public.pedidos
+  const { rows: pedPix } = await admin.query(
+    `SELECT total, saldo, valor_pago, status_financeiro, canal, status_operacional
+     FROM public.pedidos WHERE id = $1`,
+    [pedidoPixId]
   );
-  assert.equal(Number(rows[0].total), 36.00);
-  assert.equal(Number(rows[0].saldo), 0.00);
-  assert.equal(Number(rows[0].valor_pago), 36.00);
-  assert.equal(rows[0].status_financeiro, 'pago');
+  assert.equal(Number(pedPix[0].total), 36.00);
+  assert.equal(Number(pedPix[0].saldo), 0.00);
+  assert.equal(Number(pedPix[0].valor_pago), 36.00);
+  assert.equal(pedPix[0].status_financeiro, 'pago');
+  assert.equal(pedPix[0].canal, 'balcao');
+  assert.equal(pedPix[0].status_operacional, 'retirado');
 
-  await closeClient(c);
+  // Verifica registro em public.pedido_pagamentos
+  const { rows: pagsPix } = await admin.query(
+    `SELECT id, pedido_id, valor, metodo, status FROM public.pedido_pagamentos WHERE pedido_id = $1`,
+    [pedidoPixId]
+  );
+  assert.equal(pagsPix.length, 1, 'Deve existir exatamente 1 registro de pagamento');
+  assert.equal(Number(pagsPix[0].valor), 36.00);
+  assert.equal(pagsPix[0].metodo, 'pix');
+  assert.equal(pagsPix[0].status, 'aprovado');
+  const pagId = pagsPix[0].id;
+
+  // Verifica efeito financeiro canônico no DRE (public.financeiro_lancamentos)
+  const { rows: lancsPix } = await admin.query(
+    `SELECT id, tipo, categoria, valor, forma_pagamento, origem_tipo, origem_id, evento
+     FROM public.financeiro_lancamentos WHERE pedido_id = $1`,
+    [pedidoPixId]
+  );
+  assert.equal(lancsPix.length, 1, 'Deve existir exatamente 1 lançamento de receita no DRE');
+  assert.equal(lancsPix[0].tipo, 'receita');
+  assert.equal(lancsPix[0].categoria, 'Vendas');
+  assert.equal(Number(lancsPix[0].valor), 36.00);
+  assert.equal(lancsPix[0].forma_pagamento, 'pix');
+  assert.equal(lancsPix[0].origem_tipo, 'pedido_pagamento');
+  assert.equal(Number(lancsPix[0].origem_id), Number(pagId));
+
+  // 2. Retry com mesma chave de idempotência -> Não duplica pagamentos nem financeiro
+  const resRetry = await rpc(cOper, 'finalizar_venda_pdv', {
+    p_itens: [{ produto_id: prodBrownieId, quantidade: 2 }],
+    p_forma_pagamento: 'pix',
+    p_chave_idempotencia: 'teste-q11-canon-pix'
+  });
+  assert.equal(resRetry.success, true);
+  assert.equal(resRetry.ja_processado, true);
+  assert.equal(resRetry.pedido_id, pedidoPixId);
+
+  // Invariante de não-duplicação: contagem em pedido_pagamentos e financeiro_lancamentos permanece 1
+  const { rows: cntPags } = await admin.query(
+    `SELECT COUNT(*)::int AS count FROM public.pedido_pagamentos WHERE pedido_id = $1`,
+    [pedidoPixId]
+  );
+  assert.equal(cntPags[0].count, 1, 'Retry de venda PDV não pode duplicar pedido_pagamentos');
+
+  const { rows: cntLancs } = await admin.query(
+    `SELECT COUNT(*)::int AS count FROM public.financeiro_lancamentos WHERE pedido_id = $1`,
+    [pedidoPixId]
+  );
+  assert.equal(cntLancs[0].count, 1, 'Retry de venda PDV não pode duplicar financeiro_lancamentos');
+
+  // 3. Pagamento via credito_cliente -> Movimento de carteira SEM entrada externa de caixa
+  await rpc(cAdmin, 'ajustar_credito_cliente_admin', {
+    p_cliente_id: cliAId,
+    p_tipo: 'credito',
+    p_valor: 50.00,
+    p_motivo: 'Carga de crédito para teste Q11',
+    p_request_id: 'q11-init-credito'
+  });
+
+  const { rows: novoPed } = await admin.query(`
+    INSERT INTO public.pedidos (
+      cliente_id_rel, nome_cliente, canal, modalidade_entrega, subtotal, total, saldo, valor_pago,
+      status_comercial, status_operacional, status_financeiro, status, data_pedido, data_entrega
+    ) VALUES (
+      $1, 'Cliente Balcão Cadastrado', 'balcao', 'retirada', 18.00, 18.00, 18.00, 0.00,
+      'confirmado', 'pronto', 'nao_pago', 'Confirmado', CURRENT_DATE, CURRENT_DATE
+    ) RETURNING id;
+  `, [cliAId]);
+  const pedCredId = novoPed[0].id;
+
+  const usoCredRes = await rpc(cOper, 'utilizar_credito_cliente_pedido', {
+    p_pedido_id: pedCredId,
+    p_valor: 18.00
+  });
+  assert.equal(usoCredRes.success, true);
+
+  // Verifica débito no livro-razão da carteira (cliente_credito_movimentacoes)
+  const { rows: movsCred } = await admin.query(
+    `SELECT id, tipo, origem, valor FROM public.cliente_credito_movimentacoes
+     WHERE cliente_id = $1 AND pedido_id = $2`,
+    [cliAId, pedCredId]
+  );
+  assert.equal(movsCred.length, 1, 'Deve registrar débito na carteira do cliente');
+  assert.equal(movsCred[0].tipo, 'debito');
+  assert.equal(movsCred[0].origem, 'uso_pedido');
+  assert.equal(Number(movsCred[0].valor), 18.00);
+
+  // Verifica pagamento canônico registrado como 'credito_cliente'
+  const { rows: pagsCred } = await admin.query(
+    `SELECT id, valor, metodo, status FROM public.pedido_pagamentos WHERE pedido_id = $1`,
+    [pedCredId]
+  );
+  assert.equal(pagsCred.length, 1);
+  assert.equal(pagsCred[0].metodo, 'credito_cliente');
+  assert.equal(Number(pagsCred[0].valor), 18.00);
+
+  // Invariante canônica fundamental: Pagamento externo != credito_cliente
+  // credito_cliente NÃO gera lançamento de receita de caixa em financeiro_lancamentos
+  const { rows: lancsCred } = await admin.query(
+    `SELECT COUNT(*)::int AS count FROM public.financeiro_lancamentos WHERE pedido_id = $1`,
+    [pedCredId]
+  );
+  assert.equal(
+    lancsCred[0].count,
+    0,
+    'Uso de saldo de carteira (credito_cliente) não pode criar lançamento de receita externa no DRE'
+  );
+
+  await closeClient(cOper);
+  await closeClient(cAdmin);
 });
+
 
 // ==============================================================================
 // Q12: Venda termina em status 'retirado' e 'concluido'
@@ -786,17 +901,147 @@ test('Q15: Operador recebe custo_unitario_producao como NULL no estoque', async 
 });
 
 // ==============================================================================
-// Q16: Ingredientes + produto pronto + ledgers mantêm integridade append-only (42501)
+// Q16: Ingredientes + produto pronto + ledgers reconciliam matematicamente
 // ==============================================================================
-test('Q16: Livros-razão de produto pronto barram mutação com SQLSTATE 42501', async () => {
-  // Obter um registro de movimentação de produto pronto
-  const { rows: movs } = await admin.query(
-    `SELECT id FROM public.produto_pronto_movimentacoes LIMIT 1`
-  );
-  assert.ok(movs.length > 0);
-  const movId = movs[0].id;
+test('Q16: Reconciliação matemática exata de lote PT com ledger e invariante MP Frente L', async () => {
+  const cAdmin = await newClient(ADMIN_UID);
+  const cOper = await newClient(OPER_UID);
 
-  // Tentar atualizar
+  // Setup de produto exclusivo para isolamento estrito de FEFO e lotes no teste Q16
+  const resProd = await admin.query(
+    `INSERT INTO public.produtos (nome, preco, estoque_fisico, ativo, controlar_estoque)
+     VALUES ('Torta Especial Q16 Reconciliação', 45.00, 20, true, true)
+     RETURNING id`
+  );
+  const prodQ16Id = Number(resProd.rows[0].id);
+
+  await admin.query(`
+    INSERT INTO public.produto_ingredientes (produto_id, ingrediente_id, quantidade)
+    VALUES
+      (${prodQ16Id}, ${ingCacauId}, 20.000),
+      (${prodQ16Id}, ${ingManteigaId}, 15.000);
+  `);
+
+  // 1. Snapshot da invariante de matéria-prima (Frente L) antes da produção
+  const { rows: mpAntes } = await admin.query(`
+    SELECT
+      s.ingrediente_id,
+      s.saldo_atual,
+      COALESCE(SUM(l.quantidade_atual), 0) AS soma_lotes
+    FROM public.ingrediente_saldos s
+    LEFT JOIN public.ingrediente_lotes l ON l.ingrediente_id = s.ingrediente_id
+    WHERE s.ingrediente_id IN (${ingCacauId}, ${ingManteigaId})
+    GROUP BY s.ingrediente_id, s.saldo_atual
+    ORDER BY s.ingrediente_id ASC;
+  `);
+  for (const r of mpAntes) {
+    assert.equal(
+      Number(r.saldo_atual),
+      Number(r.soma_lotes),
+      `Invariante prévia Frente L deve ser válida para ingrediente ${r.ingrediente_id}`
+    );
+  }
+
+  // 2. Produção de 10 unidades de Produto Pronto (PT)
+  const codLoteQ16 = 'PT-RECONC-Q16-' + Date.now();
+  const prodRes = await rpc(cAdmin, 'registrar_producao_produto_pronto', {
+    p_produto_id: prodQ16Id,
+    p_quantidade_produzida: 10,
+    p_data_validade: addDaysISO(7),
+    p_codigo_lote: codLoteQ16
+  });
+  assert.equal(prodRes.success, true);
+  const lotePtId = prodRes.lote_id;
+
+  // Verifica saldo do lote logo após produção: deve ser exatamente 10
+  const { rows: lotePosProd } = await admin.query(
+    `SELECT quantidade_disponivel FROM public.produto_pronto_lotes WHERE id = $1`,
+    [lotePtId]
+  );
+  assert.equal(Number(lotePosProd[0].quantidade_disponivel), 10.00);
+
+  // 3. Venda PDV de 3 unidades (consome do lote por FEFO)
+  const vendaRes = await rpc(cOper, 'finalizar_venda_pdv', {
+    p_itens: [{ produto_id: prodQ16Id, quantidade: 3 }],
+    p_forma_pagamento: 'pix',
+    p_chave_idempotencia: 'teste-q16-venda-3'
+  });
+  assert.equal(vendaRes.success, true);
+
+  // Saldo do lote deve ser 7 (10 - 3)
+  const { rows: lotePosVenda } = await admin.query(
+    `SELECT quantidade_disponivel FROM public.produto_pronto_lotes WHERE id = $1`,
+    [lotePtId]
+  );
+  assert.equal(Number(lotePosVenda[0].quantidade_disponivel), 7.00);
+
+  // 4. Registro de Perda de 2 unidades
+  const perdaRes = await rpc(cOper, 'registrar_perda_produto_pronto', {
+    p_lote_id: lotePtId,
+    p_quantidade: 2,
+    p_tipo_perda: 'PERDA_AVARIA',
+    p_justificativa: 'Unidades danificadas durante montagem da vitrine'
+  });
+  assert.equal(perdaRes.success, true);
+
+  // Saldo do lote deve ser 5 (7 - 2)
+  const { rows: lotePosPerda } = await admin.query(
+    `SELECT quantidade_disponivel FROM public.produto_pronto_lotes WHERE id = $1`,
+    [lotePtId]
+  );
+  assert.equal(Number(lotePosPerda[0].quantidade_disponivel), 5.00);
+
+  // 5. Reconciliação Matemática: Ledger Líquido vs Saldo do Lote
+  // quantidade_disponivel = Σ ENTRADA_PRODUCAO - Σ VENDA_PDV - Σ PERDA_AVARIA - Σ VENCIMENTO ± Σ AJUSTE_BALANCO
+  const { rows: movsPt } = await admin.query(
+    `SELECT id, tipo_movimentacao, direcao, quantidade
+     FROM public.produto_pronto_movimentacoes
+     WHERE lote_id = $1
+     ORDER BY id ASC`,
+    [lotePtId]
+  );
+  assert.equal(movsPt.length, 3, 'Deve haver 3 movimentações no livro-razão (ENTRADA, VENDA, PERDA)');
+
+  let ledgerLiquido = 0;
+  for (const mov of movsPt) {
+    const qtd = Number(mov.quantidade);
+    if (mov.direcao === 'ENTRADA') {
+      ledgerLiquido += qtd;
+    } else if (mov.direcao === 'SAIDA') {
+      ledgerLiquido -= qtd;
+    }
+  }
+
+  assert.equal(ledgerLiquido, 5.00, 'Ledger líquido deve somar exatamente 5 (+10 -3 -2)');
+  assert.equal(
+    Number(lotePosPerda[0].quantidade_disponivel),
+    ledgerLiquido,
+    'Saldo do lote deve ser identicamente igual ao saldo do ledger líquido'
+  );
+
+  // 6. Prova da invariante da Frente L após consumo de insumos MP -> PT:
+  // SUM(ingrediente_lotes.quantidade_atual) = ingrediente_saldos.saldo_atual
+  const { rows: mpDepois } = await admin.query(`
+    SELECT
+      s.ingrediente_id,
+      s.saldo_atual,
+      COALESCE(SUM(l.quantidade_atual), 0) AS soma_lotes
+    FROM public.ingrediente_saldos s
+    LEFT JOIN public.ingrediente_lotes l ON l.ingrediente_id = s.ingrediente_id
+    WHERE s.ingrediente_id IN (${ingCacauId}, ${ingManteigaId})
+    GROUP BY s.ingrediente_id, s.saldo_atual
+    ORDER BY s.ingrediente_id ASC;
+  `);
+  for (const r of mpDepois) {
+    assert.equal(
+      Number(r.saldo_atual),
+      Number(r.soma_lotes),
+      `Invariante Frente L SUM(lotes) == saldo_atual violada para ingrediente ${r.ingrediente_id} após produção PT`
+    );
+  }
+
+  // 7. Manter verificação append-only: mutação em produto_pronto_movimentacoes é barrada
+  const movId = movsPt[0].id;
   await assert.rejects(
     async () => {
       await admin.query(`UPDATE public.produto_pronto_movimentacoes SET quantidade = 999 WHERE id = $1`, [movId]);
@@ -808,7 +1053,6 @@ test('Q16: Livros-razão de produto pronto barram mutação com SQLSTATE 42501',
     }
   );
 
-  // Tentar deletar
   await assert.rejects(
     async () => {
       await admin.query(`DELETE FROM public.produto_pronto_movimentacoes WHERE id = $1`, [movId]);
@@ -821,7 +1065,8 @@ test('Q16: Livros-razão de produto pronto barram mutação com SQLSTATE 42501',
 
   // Testar consumo_produto_pronto imutabilidade
   const { rows: consumos } = await admin.query(
-    `SELECT id FROM public.pedido_consumos_produto_pronto LIMIT 1`
+    `SELECT id FROM public.pedido_consumos_produto_pronto WHERE lote_id = $1 LIMIT 1`,
+    [lotePtId]
   );
   if (consumos.length > 0) {
     await assert.rejects(
@@ -835,4 +1080,8 @@ test('Q16: Livros-razão de produto pronto barram mutação com SQLSTATE 42501',
       }
     );
   }
+
+  await closeClient(cAdmin);
+  await closeClient(cOper);
 });
+

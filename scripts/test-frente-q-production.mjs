@@ -6,11 +6,11 @@
 // PQ-2:  As 7 RPCs canônicas da Frente Q instaladas com SECURITY DEFINER
 // PQ-3:  Triggers append-only de segurança ativos nas 3 tabelas de livro-razão (42501)
 // PQ-4:  Zero tabelas paralelas de vendas ou pagamentos no catálogo de esquemas
-// PQ-5:  RPC listar_catalogo_pdv operacional retornando produtos e saldo de balcão
+// PQ-5:  Catálogo operacional de PDV e sanitização server-side de custos para operador
 // PQ-6:  Produção de produto pronto consome insumo e gera rastreabilidade MP -> PT
 // PQ-7:  Venda PDV realiza alocação FEFO de lote e liquidação com canal 'balcao'
 // PQ-8:  Idempotência estrutural via p_chave_idempotencia protege retry contra duplicação
-// PQ-9:  Sanitização server-side de custo industrial para perfis de operador
+// PQ-9:  Pagamento PDV reconciliado com motor financeiro e sem duplicidade
 // PQ-10: Grants fail-closed confirmados para anon e PUBLIC nas tabelas e RPCs
 // ==============================================================================
 import assert from 'node:assert/strict';
@@ -98,14 +98,61 @@ async function main() {
   assert.equal(pq4.length, 0, 'Não deve existir nenhuma tabela paralela de balcão');
   console.log('✅ APROVADO');
 
-  // PQ-5: RPC listar_catalogo_pdv operacional retornando produtos e saldo de balcão
-  process.stdout.write('⏳ PQ-5: RPC listar_catalogo_pdv operacional retornando produtos e saldo... ');
+  // PQ-5: Catálogo operacional de PDV e sanitização server-side de custos para operador
+  process.stdout.write('⏳ PQ-5: Catálogo operacional e sanitização de custos para operador... ');
   const pq5 = await query(`
     SELECT public.listar_catalogo_pdv() AS res;
   `);
   assert.ok(pq5.length === 1, 'Deve retornar resultado de listar_catalogo_pdv');
   assert.equal(pq5[0].res.success, true, 'success deve ser true');
   assert.ok(Array.isArray(pq5[0].res.produtos), 'Retorno deve conter array de produtos');
+
+  // Sanitização server-side de custo para operador em obter_estoque_produto_pronto_admin
+  await query(`
+    DO $$
+    DECLARE
+      v_oper_uid UUID;
+      v_res JSONB;
+      v_elem JSONB;
+      v_lote_id BIGINT;
+      v_prod_id BIGINT;
+    BEGIN
+      SELECT id INTO v_oper_uid FROM public.profiles WHERE nivel = 'admin' AND ativo = true LIMIT 1;
+      PERFORM set_config('request.jwt.claims', json_build_object('role', 'authenticated', 'sub', v_oper_uid::text)::text, true);
+
+      SELECT id INTO v_oper_uid FROM public.profiles WHERE nivel = 'cliente' AND ativo = true LIMIT 1;
+      UPDATE public.profiles SET nivel = 'operador' WHERE id = v_oper_uid;
+
+      SELECT id INTO v_prod_id FROM public.produtos WHERE ativo = true LIMIT 1;
+      INSERT INTO public.produto_pronto_lotes (
+        produto_id, codigo_lote, quantidade_inicial, quantidade_disponivel,
+        data_producao, data_validade, bloqueado_qualidade, custo_unitario_producao
+      ) VALUES (
+        v_prod_id, 'TEST-PQ5-L1', 10, 10, CURRENT_DATE, CURRENT_DATE + 5, false, 15.50
+      ) RETURNING id INTO v_lote_id;
+
+      PERFORM set_config('request.jwt.claims', json_build_object('role', 'authenticated', 'sub', v_oper_uid::text)::text, true);
+
+      v_res := public.obter_estoque_produto_pronto_admin();
+      IF (v_res->>'success')::boolean IS NOT TRUE THEN
+        RAISE EXCEPTION 'Erro ao consultar estoque de produto pronto: %', v_res;
+      END IF;
+
+      FOR v_elem IN SELECT * FROM jsonb_array_elements(v_res->'lotes') LOOP
+        IF v_elem->>'custo_unitario_producao' IS NOT NULL THEN
+          RAISE EXCEPTION 'Custo de produção vazou para o operador!';
+        END IF;
+      END LOOP;
+
+      RAISE EXCEPTION 'PROBE_PQ5_ROLLBACK_OK';
+    EXCEPTION
+      WHEN OTHERS THEN
+        IF SQLERRM <> 'PROBE_PQ5_ROLLBACK_OK' THEN
+          RAISE;
+        END IF;
+    END;
+    $$;
+  `);
   console.log('✅ APROVADO');
 
   // PQ-6: Produção de produto pronto consome insumo e gera rastreabilidade MP -> PT em transação
@@ -317,49 +364,93 @@ async function main() {
   `);
   console.log('✅ APROVADO');
 
-  // PQ-9: Sanitização server-side de custo industrial para perfis de operador
-  process.stdout.write('⏳ PQ-9: Sanitização server-side de custo industrial para perfis de operador... ');
+  // PQ-9: Pagamento PDV reconciliado com motor financeiro e sem duplicidade
+  process.stdout.write('⏳ PQ-9: Pagamento PDV reconciliado com motor financeiro e sem duplicidade... ');
   const pq9 = await query(`
     DO $$
     DECLARE
-      v_oper_uid UUID;
-      v_res JSONB;
-      v_elem JSONB;
-      v_lote_id BIGINT;
+      v_admin_uid UUID;
       v_prod_id BIGINT;
+      v_lote_id BIGINT;
+      v_chave TEXT := 'idemp_pq9_' || floor(random() * 100000)::text;
+      v_res1 JSONB;
+      v_res2 JSONB;
+      v_ped_id BIGINT;
+      v_cnt_pags INT;
+      v_cnt_lancs INT;
     BEGIN
-      -- Busca um admin ativo para autorizar a alteração temporária do perfil de teste
-      SELECT id INTO v_oper_uid FROM public.profiles WHERE nivel = 'admin' AND ativo = true LIMIT 1;
-      PERFORM set_config('request.jwt.claims', json_build_object('role', 'authenticated', 'sub', v_oper_uid::text)::text, true);
-
-      -- Seleciona um perfil de cliente existente e temporariamente define nivel = 'operador'
-      SELECT id INTO v_oper_uid FROM public.profiles WHERE nivel = 'cliente' AND ativo = true LIMIT 1;
-      UPDATE public.profiles SET nivel = 'operador' WHERE id = v_oper_uid;
-
-      -- Cria um lote com custo para garantir que o array lotes contenha item
+      SELECT id INTO v_admin_uid FROM public.profiles WHERE nivel = 'admin' AND ativo = true LIMIT 1;
       SELECT id INTO v_prod_id FROM public.produtos WHERE ativo = true LIMIT 1;
+
       INSERT INTO public.produto_pronto_lotes (
         produto_id, codigo_lote, quantidade_inicial, quantidade_disponivel,
-        data_producao, data_validade, bloqueado_qualidade, custo_unitario_producao
+        data_producao, data_validade, bloqueado_qualidade
       ) VALUES (
-        v_prod_id, 'TEST-PQ9-L1', 10, 10, CURRENT_DATE, CURRENT_DATE + 5, false, 15.50
+        v_prod_id, 'TEST-PQ9-L1', 10, 10, CURRENT_DATE, CURRENT_DATE + 5, false
       ) RETURNING id INTO v_lote_id;
 
-      -- Simula chamada como operador via claims canônicas
-      PERFORM set_config('request.jwt.claims', json_build_object('role', 'authenticated', 'sub', v_oper_uid::text)::text, true);
+      PERFORM set_config('request.jwt.claim.sub', v_admin_uid::text, true);
 
-      v_res := public.obter_estoque_produto_pronto_admin();
-      IF (v_res->>'success')::boolean IS NOT TRUE THEN
-        RAISE EXCEPTION 'Erro ao consultar estoque de produto pronto: %', v_res;
+      -- 1. Primeira finalização de venda com pagamento PIX
+      v_res1 := public.finalizar_venda_pdv(
+        p_itens := jsonb_build_array(jsonb_build_object('produto_id', v_prod_id, 'quantidade', 2)),
+        p_cliente_id_rel := NULL::bigint,
+        p_forma_pagamento := 'pix'::text,
+        p_desconto := 0.00::numeric,
+        p_motivo_desconto := NULL::text,
+        p_chave_idempotencia := v_chave::text,
+        p_observacoes := NULL::text
+      );
+
+      IF (v_res1->>'success')::boolean IS NOT TRUE THEN
+        RAISE EXCEPTION 'Falha em finalizar_venda_pdv no probe PQ-9: %', v_res1;
       END IF;
 
-      -- Nenhum lote retornado deve conter custo_unitario_producao não-nulo para operador
-      FOR v_elem IN SELECT * FROM jsonb_array_elements(v_res->'lotes') LOOP
-        IF v_elem->>'custo_unitario_producao' IS NOT NULL THEN
-          RAISE EXCEPTION 'Custo de produção vazou para o operador!';
-        END IF;
-      END LOOP;
+      v_ped_id := (v_res1->>'pedido_id')::bigint;
 
+      -- Validação de pedido_pagamentos (deve existir exatamente 1)
+      SELECT COUNT(*) INTO v_cnt_pags FROM public.pedido_pagamentos WHERE pedido_id = v_ped_id;
+      IF v_cnt_pags <> 1 THEN
+        RAISE EXCEPTION 'Esperado 1 pedido_pagamento, encontrado %', v_cnt_pags;
+      END IF;
+
+      -- Validação de financeiro_lancamentos no motor financeiro (deve existir exatamente 1 receita)
+      SELECT COUNT(*) INTO v_cnt_lancs
+      FROM public.financeiro_lancamentos
+      WHERE pedido_id = v_ped_id AND tipo = 'receita' AND origem_tipo = 'pedido_pagamento';
+      IF v_cnt_lancs <> 1 THEN
+        RAISE EXCEPTION 'Esperado 1 financeiro_lancamentos de receita, encontrado %', v_cnt_lancs;
+      END IF;
+
+      -- 2. Retry com a mesma chave de idempotência
+      v_res2 := public.finalizar_venda_pdv(
+        p_itens := jsonb_build_array(jsonb_build_object('produto_id', v_prod_id, 'quantidade', 2)),
+        p_cliente_id_rel := NULL::bigint,
+        p_forma_pagamento := 'pix'::text,
+        p_desconto := 0.00::numeric,
+        p_motivo_desconto := NULL::text,
+        p_chave_idempotencia := v_chave::text,
+        p_observacoes := NULL::text
+      );
+
+      IF (v_res2->>'ja_processado')::boolean IS NOT TRUE OR (v_res2->>'pedido_id')::bigint <> v_ped_id THEN
+        RAISE EXCEPTION 'Idempotência no PQ-9 falhou ao retornar o pedido original!';
+      END IF;
+
+      -- Invariante canônica: nenhum registro financeiro duplicado no retry
+      SELECT COUNT(*) INTO v_cnt_pags FROM public.pedido_pagamentos WHERE pedido_id = v_ped_id;
+      IF v_cnt_pags <> 1 THEN
+        RAISE EXCEPTION 'Duplicação financeira detectada em pedido_pagamentos após retry: %', v_cnt_pags;
+      END IF;
+
+      SELECT COUNT(*) INTO v_cnt_lancs
+      FROM public.financeiro_lancamentos
+      WHERE pedido_id = v_ped_id AND tipo = 'receita' AND origem_tipo = 'pedido_pagamento';
+      IF v_cnt_lancs <> 1 THEN
+        RAISE EXCEPTION 'Duplicação financeira detectada em financeiro_lancamentos após retry: %', v_cnt_lancs;
+      END IF;
+
+      -- Rollback limpo
       RAISE EXCEPTION 'PROBE_PQ9_ROLLBACK_OK';
     EXCEPTION
       WHEN OTHERS THEN
