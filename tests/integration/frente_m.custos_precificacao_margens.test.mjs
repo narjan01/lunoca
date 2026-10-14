@@ -112,7 +112,7 @@ async function criarPedidoBase({
       pagamento, itens
     ) VALUES (
       'Cliente Custos M', 'clim@lunoca.test', '5585998012002', $1, CURRENT_DATE, '17:00:00',
-      'retirada', NULL, $2, $3, $4,
+      'retirada', 'Retirada na Loja', $2, $3, $4,
       $5, 'pago', $6, 'Confirmado',
       $7, '[{"nome":"Torta Cacau Nobre","quantidade":1,"preco":150}]'::jsonb
     ) RETURNING id`,
@@ -262,17 +262,26 @@ test('M1: custo histórico usa lote efetivamente consumido (pedido_consumos_lote
   // 1. Criar compra e receber lote com custo de R$ 0.12/g
   const comp = await rpc(admin, 'criar_compra', {
     p_fornecedor_id: fornId,
-    p_itens: [{ ingrediente_id: ingCacauId, quantidade: 1000, preco_unitario: 0.12 }]
+    p_itens: JSON.stringify([
+      {
+        ingrediente_id: ingCacauId,
+        quantidade: 1000,
+        custo_unitario: 0.12,
+        codigo_lote: 'LOTE-M1-001',
+        data_validade: addDaysISO(60)
+      }
+    ]),
+    p_numero_nota: 'NF-M1-001',
+    p_data_compra: addDaysISO(0),
+    p_observacoes: 'Recebimento de teste M1'
   });
-  await rpc(admin, 'receber_compra_com_lotes', {
-    p_compra_id: comp.compra_id,
-    p_lotes: [{
-      compra_item_id: comp.itens_compra[0].id,
-      codigo_lote: 'LOTE-M1-001',
-      data_validade: addDaysISO(60),
-      quantidade: 1000
-    }]
+  assert.equal(comp.success, true);
+  const compraId = Number(comp.compra_id);
+
+  const rec = await rpc(admin, 'receber_compra', {
+    p_compra_id: compraId
   });
+  assert.equal(rec.success, true);
 
   // 2. Criar pedido e consumir 300g do lote
   const pid = await criarPedidoBase({ quantidade: 1 });
@@ -304,17 +313,25 @@ test('M2: mudança futura de CMP não altera pedido histórico já calculado', a
   // Nova compra futura muito mais cara (R$ 0.40/g) que altera o CMP
   const compCara = await rpc(admin, 'criar_compra', {
     p_fornecedor_id: fornId,
-    p_itens: [{ ingrediente_id: ingCacauId, quantidade: 2000, preco_unitario: 0.40 }]
+    p_itens: JSON.stringify([
+      {
+        ingrediente_id: ingCacauId,
+        quantidade: 2000,
+        custo_unitario: 0.40,
+        codigo_lote: 'LOTE-M2-CARO',
+        data_validade: addDaysISO(90)
+      }
+    ]),
+    p_numero_nota: 'NF-M2-001',
+    p_data_compra: addDaysISO(0),
+    p_observacoes: 'Recebimento caro M2'
   });
-  await rpc(admin, 'receber_compra_com_lotes', {
-    p_compra_id: compCara.compra_id,
-    p_lotes: [{
-      compra_item_id: compCara.itens_compra[0].id,
-      codigo_lote: 'LOTE-M2-CARO',
-      data_validade: addDaysISO(90),
-      quantidade: 2000
-    }]
+  assert.equal(compCara.success, true);
+
+  const recCara = await rpc(admin, 'receber_compra', {
+    p_compra_id: compCara.compra_id
   });
+  assert.equal(recCara.success, true);
 
   // Consultar o pedido histórico após alteração do CMP de mercado
   const margemHistorica = await rpc(admin, 'obter_margem_pedido_admin', { p_pedido_id: pid });
@@ -369,11 +386,13 @@ test('M5: custo adicional POR_UNIDADE é multiplicado pela quantidade de itens',
   await setIdentity(admin, ADMIN_UID);
 
   // Adicionar topper por unidade: R$ 3.00
+  await setIdentity(admin, 'service_role');
   await admin.query(
     `INSERT INTO public.produto_custos_adicionais (produto_id, nome, categoria, tipo_aplicacao, valor, ativo)
      VALUES ($1, 'Topper com Nome', 'decoracao', 'POR_UNIDADE', 3.00, true)`,
     [prodId]
   );
+  await setIdentity(admin, ADMIN_UID);
 
   const pid = await criarPedidoBase({ quantidade: 3 }); // 3 unidades
   const calc = await rpc(admin, 'calcular_custo_real_pedido_admin', { p_pedido_id: pid });
@@ -435,7 +454,15 @@ test('M8: credito_cliente usado como meio de pagamento não altera a margem da v
   const pidPix = await criarPedidoBase({ subtotal: 150.00, metodoPagamento: 'pix' });
   const calcPix = await rpc(admin, 'calcular_custo_real_pedido_admin', { p_pedido_id: pidPix });
 
-  const pidCredito = await criarPedidoBase({ subtotal: 150.00, metodoPagamento: 'credito_cliente' });
+  const pidCredito = await criarPedidoBase({ subtotal: 150.00, metodoPagamento: 'outro' });
+  await setIdentity(admin, 'service_role');
+  await admin.query(
+    `INSERT INTO public.pedido_pagamentos (pedido_id, valor, metodo, status)
+     VALUES ($1, 150.00, 'credito_cliente', 'aprovado')`,
+    [pidCredito]
+  );
+  await setIdentity(admin, ADMIN_UID);
+
   const calcCredito = await rpc(admin, 'calcular_custo_real_pedido_admin', { p_pedido_id: pidCredito });
 
   // Margem e receita líquida são exatamente idênticas
@@ -485,11 +512,11 @@ test('M10: pedido cancelado antes da produção é rejeitado por calcular_custo_
 // M11: Simulação de preço não altera o preço no catálogo de produtos (produtos.preco)
 // ==============================================================================
 test('M11: simulação de preço não altera o preço no catálogo de produtos (produtos.preco)', async () => {
-  await setIdentity(admin, ADMIN_UID);
-
+  await setIdentity(admin, 'service_role');
   const { rows: pre } = await admin.query('SELECT preco FROM public.produtos WHERE id = $1', [prodId]);
   const precoAntes = Number(pre[0].preco);
 
+  await setIdentity(admin, ADMIN_UID);
   const sim = await rpc(admin, 'simular_preco_produto_admin', {
     p_produto_id: prodId,
     p_margem_alvo: 50.00
@@ -497,6 +524,7 @@ test('M11: simulação de preço não altera o preço no catálogo de produtos (
   assert.equal(sim.success, true);
   assert.ok(Number(sim.preco_sugerido_margem_alvo) > 0);
 
+  await setIdentity(admin, 'service_role');
   const { rows: pos } = await admin.query('SELECT preco FROM public.produtos WHERE id = $1', [prodId]);
   const precoDepois = Number(pos[0].preco);
 
@@ -510,13 +538,17 @@ test('M11: simulação de preço não altera o preço no catálogo de produtos (
 test('M12: alteração de preço continua restrita à governança da Frente A (apenas admin)', async () => {
   const oper = await newClient(OPER_UID);
 
-  // Operador tentando atualizar preço de produto diretamente no catálogo recebe 42501
+  // Operador tentando atualizar preço de produto diretamente no catálogo é bloqueado com 42501 (permission denied)
   await assert.rejects(
     async () => {
       await oper.query('UPDATE public.produtos SET preco = 250.00 WHERE id = $1', [prodId]);
     },
-    (err) => err.code === '42501' || err.message.includes('Apenas admins')
+    (err) => err.code === '42501' || err.message.includes('permission denied')
   );
+
+  await setIdentity(admin, 'service_role');
+  const { rows: [p] } = await admin.query('SELECT preco FROM public.produtos WHERE id = $1', [prodId]);
+  assert.equal(Number(p.preco), 150.00, 'Preço do produto não pode ser alterado por operador');
 
   await closeClient(oper);
 });
@@ -604,18 +636,19 @@ test('M15: margem do pedido reconcilia matematicamente componente por componente
 // M16: Cálculo de custo e margem possui efeito financeiro ZERO no caixa e no DRE
 // ==============================================================================
 test('M16: cálculo de custo e margem possui efeito financeiro ZERO no caixa e no DRE', async () => {
-  await setIdentity(admin, ADMIN_UID);
-
+  await setIdentity(admin, 'service_role');
   const { rows: lancAntes } = await admin.query('SELECT COUNT(*) AS total FROM public.financeiro_lancamentos');
   const { rows: pagAntes } = await admin.query('SELECT COUNT(*) AS total FROM public.pedido_pagamentos');
   const countLancAntes = Number(lancAntes[0].total);
   const countPagAntes = Number(pagAntes[0].total);
 
+  await setIdentity(admin, ADMIN_UID);
   const pid = await criarPedidoBase({ subtotal: 150.00 });
   await rpc(admin, 'calcular_custo_real_pedido_admin', { p_pedido_id: pid });
   await rpc(admin, 'simular_preco_produto_admin', { p_produto_id: prodId, p_margem_alvo: 45 });
   await rpc(admin, 'obter_dashboard_margens_admin', {});
 
+  await setIdentity(admin, 'service_role');
   const { rows: lancDepois } = await admin.query('SELECT COUNT(*) AS total FROM public.financeiro_lancamentos');
   const { rows: pagDepois } = await admin.query('SELECT COUNT(*) AS total FROM public.pedido_pagamentos');
   const countLancDepois = Number(lancDepois[0].total);

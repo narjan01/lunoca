@@ -173,6 +173,11 @@ BEGIN
   END IF;
 
   IF TG_OP = 'UPDATE' THEN
+    -- Permite atualização interna da RPC durante a consolidação matemática do cálculo
+    IF current_setting('lunoca.allow_custo_real_mutation', true) = 'true' THEN
+      RETURN NEW;
+    END IF;
+
     -- Permite única e exclusivamente transicionar status de 'finalizado' para 'substituido' ao gerar nova versão
     IF OLD.status = 'finalizado' AND NEW.status = 'substituido' AND
        NEW.id = OLD.id AND NEW.pedido_id = OLD.pedido_id AND NEW.versao = OLD.versao AND
@@ -830,6 +835,7 @@ BEGIN
   END IF;
 
   -- Atualizar registro do cabeçalho com os valores consolidados exatos
+  PERFORM set_config('lunoca.allow_custo_real_mutation', 'true', true);
   UPDATE public.pedido_custos_realizados
   SET
     custo_ingredientes_real = v_custo_insumos,
@@ -844,6 +850,7 @@ BEGIN
     margem_contribuicao_percentual = v_margem_pct,
     calculado_em = NOW()
   WHERE id = v_custo_realizado_id;
+  PERFORM set_config('lunoca.allow_custo_real_mutation', 'false', true);
 
   RETURN jsonb_build_object(
     'success', true,
