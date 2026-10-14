@@ -219,32 +219,17 @@ CREATE TRIGGER trg_audit_politicas_precificacao_mutacao
   EXECUTE FUNCTION public._audit_politicas_precificacao_mutacao();
 
 -- ------------------------------------------------------------------------------
--- 6. RPC: SINCRONIZAR E OBTER ALERTAS OPERACIONAIS (ADMINISTRADOR)
+-- 6. RPC: PROCESSAMENTO AUTÔNOMO PROATIVO DE ALERTAS OPERACIONAIS (WORKER/CRON)
 -- ------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.obter_alertas_operacionais_admin(
-  p_tipo TEXT DEFAULT NULL,
-  p_nivel TEXT DEFAULT NULL
-)
+-- Executada de forma autônoma e periódica por crons ou trabalhadores em background,
+-- materializando e resolvendo alertas mesmo sem qualquer usuário com o painel aberto.
+CREATE OR REPLACE FUNCTION public.processar_alertas_operacionais()
 RETURNS JSONB AS $$
 DECLARE
-  v_caller_id UUID;
   v_cfg RECORD;
-  v_criticos INT := 0;
-  v_atencao INT := 0;
-  v_operacionais INT := 0;
-  v_info INT := 0;
-  v_alertas JSONB := '[]'::jsonb;
-  v_rec RECORD;
+  v_resolvidos INT := 0;
+  v_total_ativos INT := 0;
 BEGIN
-  v_caller_id := auth.uid();
-  IF v_caller_id IS NULL OR NOT public.is_admin() THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'Apenas administradores podem acessar o painel completo de alertas e diagnósticos.',
-      'code', 'PERMISSION_DENIED'
-    );
-  END IF;
-
   -- Obter configurações ativas
   SELECT * INTO v_cfg FROM public.alertas_configuracoes WHERE id = 1;
   IF NOT FOUND THEN
@@ -280,6 +265,8 @@ BEGIN
     nivel = EXCLUDED.nivel,
     descricao = EXCLUDED.descricao,
     dados_contexto = EXCLUDED.dados_contexto,
+    status = CASE WHEN public.alertas_operacionais.status = 'RESOLVIDO' THEN 'ATIVO' ELSE public.alertas_operacionais.status END,
+    resolvido_em = CASE WHEN public.alertas_operacionais.status = 'RESOLVIDO' THEN NULL ELSE public.alertas_operacionais.resolvido_em END,
     atualizado_em = NOW();
 
   -- 2. Detecção: LOTE_VENCIDO (lotes vencidos ainda com saldo físico positivo)
@@ -310,6 +297,8 @@ BEGIN
     nivel = 'CRITICO',
     descricao = EXCLUDED.descricao,
     dados_contexto = EXCLUDED.dados_contexto,
+    status = CASE WHEN public.alertas_operacionais.status = 'RESOLVIDO' THEN 'ATIVO' ELSE public.alertas_operacionais.status END,
+    resolvido_em = CASE WHEN public.alertas_operacionais.status = 'RESOLVIDO' THEN NULL ELSE public.alertas_operacionais.resolvido_em END,
     atualizado_em = NOW();
 
   -- 3. Detecção: LOTE_VENCIMENTO (lotes válidos próximos da validade FEFO)
@@ -341,6 +330,8 @@ BEGIN
     nivel = 'ATENCAO',
     descricao = EXCLUDED.descricao,
     dados_contexto = EXCLUDED.dados_contexto,
+    status = CASE WHEN public.alertas_operacionais.status = 'RESOLVIDO' THEN 'ATIVO' ELSE public.alertas_operacionais.status END,
+    resolvido_em = CASE WHEN public.alertas_operacionais.status = 'RESOLVIDO' THEN NULL ELSE public.alertas_operacionais.resolvido_em END,
     atualizado_em = NOW();
 
   -- 4. Detecção: ATRASO_PEDIDO (pedidos confirmados/em produção com entrega iminente ou atrasada)
@@ -379,6 +370,8 @@ BEGIN
     nivel = EXCLUDED.nivel,
     descricao = EXCLUDED.descricao,
     dados_contexto = EXCLUDED.dados_contexto,
+    status = CASE WHEN public.alertas_operacionais.status = 'RESOLVIDO' THEN 'ATIVO' ELSE public.alertas_operacionais.status END,
+    resolvido_em = CASE WHEN public.alertas_operacionais.status = 'RESOLVIDO' THEN NULL ELSE public.alertas_operacionais.resolvido_em END,
     atualizado_em = NOW();
 
   -- 5. Detecção: MARGEM_CRITICA (pedidos calculados com margem < margem_minima_alvo)
@@ -408,6 +401,8 @@ BEGIN
     nivel = EXCLUDED.nivel,
     descricao = EXCLUDED.descricao,
     dados_contexto = EXCLUDED.dados_contexto,
+    status = CASE WHEN public.alertas_operacionais.status = 'RESOLVIDO' THEN 'ATIVO' ELSE public.alertas_operacionais.status END,
+    resolvido_em = CASE WHEN public.alertas_operacionais.status = 'RESOLVIDO' THEN NULL ELSE public.alertas_operacionais.resolvido_em END,
     atualizado_em = NOW();
 
   -- 6. Detecção: QUALIDADE_RETIDA (itens com checkpoint de qualidade REPROVADO não resolvidos)
@@ -445,54 +440,124 @@ BEGIN
     nivel = 'CRITICO',
     descricao = EXCLUDED.descricao,
     dados_contexto = EXCLUDED.dados_contexto,
+    status = CASE WHEN public.alertas_operacionais.status = 'RESOLVIDO' THEN 'ATIVO' ELSE public.alertas_operacionais.status END,
+    resolvido_em = CASE WHEN public.alertas_operacionais.status = 'RESOLVIDO' THEN NULL ELSE public.alertas_operacionais.resolvido_em END,
     atualizado_em = NOW();
 
-  -- Resolver automaticamente alertas cuja causa raiz foi eliminada
+  -- RESOLUÇÃO AUTOMÁTICA (a condição de risco deixou de existir no mundo real)
   -- 1) Rupturas resolvidas
-  UPDATE public.alertas_operacionais a
-  SET status = 'RESOLVIDO', resolvido_em = NOW()
-  WHERE a.tipo_alerta = 'RUPTURA_ESTOQUE'
-    AND a.status IN ('ATIVO', 'RECONHECIDO')
-    AND EXISTS (
-      SELECT 1 FROM public.ingredientes i
-      LEFT JOIN public.ingrediente_saldos s ON s.ingrediente_id = i.id
-      WHERE i.id::TEXT = a.origem_id
-        AND COALESCE(s.saldo_atual, i.estoque_qtd, 0) > i.estoque_minimo
-    );
+  WITH resolvidas AS (
+    UPDATE public.alertas_operacionais a
+    SET status = 'RESOLVIDO', resolvido_em = NOW()
+    WHERE a.tipo_alerta = 'RUPTURA_ESTOQUE'
+      AND a.status IN ('ATIVO', 'RECONHECIDO')
+      AND EXISTS (
+        SELECT 1 FROM public.ingredientes i
+        LEFT JOIN public.ingrediente_saldos s ON s.ingrediente_id = i.id
+        WHERE i.id::TEXT = a.origem_id
+          AND COALESCE(s.saldo_atual, i.estoque_qtd, 0) > i.estoque_minimo
+      )
+    RETURNING a.id
+  )
+  SELECT v_resolvidos + count(*) INTO v_resolvidos FROM resolvidas;
 
   -- 2) Lotes vencidos com saldo zerado
-  UPDATE public.alertas_operacionais a
-  SET status = 'RESOLVIDO', resolvido_em = NOW()
-  WHERE a.tipo_alerta IN ('LOTE_VENCIDO', 'LOTE_VENCIMENTO')
-    AND a.status IN ('ATIVO', 'RECONHECIDO')
-    AND EXISTS (
-      SELECT 1 FROM public.ingrediente_lotes l
-      WHERE l.id::TEXT = a.origem_id
-        AND l.quantidade_atual <= 0
-    );
+  WITH resolvidas AS (
+    UPDATE public.alertas_operacionais a
+    SET status = 'RESOLVIDO', resolvido_em = NOW()
+    WHERE a.tipo_alerta IN ('LOTE_VENCIDO', 'LOTE_VENCIMENTO')
+      AND a.status IN ('ATIVO', 'RECONHECIDO')
+      AND EXISTS (
+        SELECT 1 FROM public.ingrediente_lotes l
+        WHERE l.id::TEXT = a.origem_id
+          AND l.quantidade_atual <= 0
+      )
+    RETURNING a.id
+  )
+  SELECT v_resolvidos + count(*) INTO v_resolvidos FROM resolvidas;
 
   -- 3) Pedidos atrasados que foram entregues ou cancelados
-  UPDATE public.alertas_operacionais a
-  SET status = 'RESOLVIDO', resolvido_em = NOW()
-  WHERE a.tipo_alerta = 'ATRASO_PEDIDO'
-    AND a.status IN ('ATIVO', 'RECONHECIDO')
-    AND EXISTS (
-      SELECT 1 FROM public.pedidos p
-      WHERE p.id::TEXT = a.origem_id
-        AND (p.status_operacional = 'entregue' OR p.status_comercial = 'cancelado')
-    );
+  WITH resolvidas AS (
+    UPDATE public.alertas_operacionais a
+    SET status = 'RESOLVIDO', resolvido_em = NOW()
+    WHERE a.tipo_alerta = 'ATRASO_PEDIDO'
+      AND a.status IN ('ATIVO', 'RECONHECIDO')
+      AND EXISTS (
+        SELECT 1 FROM public.pedidos p
+        WHERE p.id::TEXT = a.origem_id
+          AND (p.status_operacional IN ('entregue', 'retirado') OR p.status_comercial = 'cancelado')
+      )
+    RETURNING a.id
+  )
+  SELECT v_resolvidos + count(*) INTO v_resolvidos FROM resolvidas;
 
   -- 4) Qualidade retida liberada por nova inspeção
-  UPDATE public.alertas_operacionais a
-  SET status = 'RESOLVIDO', resolvido_em = NOW()
-  WHERE a.tipo_alerta = 'QUALIDADE_RETIDA'
-    AND a.status IN ('ATIVO', 'RECONHECIDO')
-    AND EXISTS (
-      SELECT 1 FROM public.producao_controles_qualidade q
-      JOIN public.producao_controles_qualidade q2
-        ON q2.pedido_id = q.pedido_id AND q2.etapa = q.etapa AND q2.resultado = 'APROVADO' AND q2.registrado_em > q.registrado_em
-      WHERE q.id::TEXT = a.origem_id
+  WITH resolvidas AS (
+    UPDATE public.alertas_operacionais a
+    SET status = 'RESOLVIDO', resolvido_em = NOW()
+    WHERE a.tipo_alerta = 'QUALIDADE_RETIDA'
+      AND a.status IN ('ATIVO', 'RECONHECIDO')
+      AND EXISTS (
+        SELECT 1 FROM public.producao_controles_qualidade q
+        JOIN public.producao_controles_qualidade q2
+          ON q2.pedido_id = q.pedido_id AND q2.etapa = q.etapa AND q2.resultado = 'APROVADO' AND q2.registrado_em > q.registrado_em
+        WHERE q.id::TEXT = a.origem_id
+      )
+    RETURNING a.id
+  )
+  SELECT v_resolvidos + count(*) INTO v_resolvidos FROM resolvidas;
+
+  SELECT count(*) INTO v_total_ativos FROM public.alertas_operacionais WHERE status IN ('ATIVO', 'RECONHECIDO');
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'processado_em', NOW(),
+    'resolvidos', v_resolvidos,
+    'total_ativos', v_total_ativos
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+
+REVOKE ALL ON FUNCTION public.processar_alertas_operacionais() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.processar_alertas_operacionais() TO authenticated, service_role;
+
+-- ------------------------------------------------------------------------------
+-- 6.1 RPC: SINCRONIZAR E OBTER ALERTAS OPERACIONAIS (ADMINISTRADOR)
+-- ------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.obter_alertas_operacionais_admin(
+  p_tipo TEXT DEFAULT NULL,
+  p_nivel TEXT DEFAULT NULL
+)
+RETURNS JSONB AS $$
+DECLARE
+  v_caller_id UUID;
+  v_cfg RECORD;
+  v_criticos INT := 0;
+  v_atencao INT := 0;
+  v_operacionais INT := 0;
+  v_info INT := 0;
+  v_alertas JSONB := '[]'::jsonb;
+BEGIN
+  v_caller_id := auth.uid();
+  IF v_caller_id IS NULL OR NOT public.is_admin() THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Apenas administradores podem acessar o painel completo de alertas e diagnósticos.',
+      'code', 'PERMISSION_DENIED'
     );
+  END IF;
+
+  -- Processamento proativo autônomo de alertas
+  PERFORM public.processar_alertas_operacionais();
+
+  -- Obter configurações ativas
+  SELECT * INTO v_cfg FROM public.alertas_configuracoes WHERE id = 1;
+  IF NOT FOUND THEN
+    v_cfg.dias_aviso_validade := 7;
+    v_cfg.margem_minima_alvo := 30.00;
+    v_cfg.antecedencia_atraso_minutos := 120;
+    v_cfg.ativo := true;
+  END IF;
 
   -- Contagem de métricas agregadas dos alertas não-resolvidos
   SELECT
@@ -578,6 +643,9 @@ BEGIN
       'code', 'UNAUTHENTICATED'
     );
   END IF;
+
+  -- Processamento proativo autônomo de alertas
+  PERFORM public.processar_alertas_operacionais();
 
   -- Seleciona somente alertas operacionais de chão de fábrica/produção
   -- Oculta estritamente MARGEM_CRITICA, SISTEMICO e DIVERGENCIA_INVENTARIO

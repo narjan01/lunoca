@@ -3152,8 +3152,9 @@ assert.ok(
   '[FALHA] Triggers de auditoria ou proteção append-only ausentes em 029!'
 );
 
-console.log('  🔎 29.3 Verificando as RPCs canônicas da Frente N...');
+console.log('  🔎 29.3 Verificando as RPCs canônicas da Frente N (incluindo processamento autônomo proativo)...');
 assert.ok(
+  m029.includes('CREATE OR REPLACE FUNCTION public.processar_alertas_operacionais()') &&
   m029.includes('CREATE OR REPLACE FUNCTION public.obter_alertas_operacionais_admin(') &&
   m029.includes('CREATE OR REPLACE FUNCTION public.obter_alertas_operacionais_operador(') &&
   m029.includes('CREATE OR REPLACE FUNCTION public.reconhecer_alerta_operacional(') &&
@@ -3180,6 +3181,7 @@ assert.ok(
   m029.includes('REVOKE ALL ON public.alertas_operacionais FROM PUBLIC, anon, authenticated;') &&
   m029.includes('REVOKE ALL ON public.alertas_reconhecimentos FROM PUBLIC, anon, authenticated;') &&
   m029.includes('REVOKE ALL ON public.auditoria_operacional_eventos FROM PUBLIC, anon, authenticated;') &&
+  m029.includes('REVOKE ALL ON FUNCTION public.processar_alertas_operacionais() FROM PUBLIC, anon;') &&
   m029.includes('REVOKE ALL ON FUNCTION public.obter_alertas_operacionais_admin(TEXT, TEXT) FROM PUBLIC, anon;') &&
   m029.includes('REVOKE ALL ON FUNCTION public.obter_alertas_operacionais_operador() FROM PUBLIC, anon;') &&
   m029.includes('REVOKE ALL ON FUNCTION public.executar_healthcheck_global_admin() FROM PUBLIC, anon;') &&
@@ -3190,6 +3192,7 @@ assert.ok(
 console.log('  🔎 29.6 Verificando presença das estruturas da Frente N nos schemas mestres (install.sql e schema.sql)...');
 for (const [name, content] of [['install.sql', installFim], ['schema.sql', schemaFim]]) {
   assert.ok(content.includes('public.alertas_operacionais'), `[FALHA] ${name} não contém alertas_operacionais!`);
+  assert.ok(content.includes('public.processar_alertas_operacionais'), `[FALHA] ${name} não contém processar_alertas_operacionais!`);
   assert.ok(content.includes('public.auditoria_operacional_eventos'), `[FALHA] ${name} não contém auditoria_operacional_eventos!`);
   assert.ok(content.includes('public.executar_healthcheck_global_admin'), `[FALHA] ${name} não contém executar_healthcheck_global_admin!`);
   assert.ok(content.includes('public.obter_alertas_operacionais_admin'), `[FALHA] ${name} não contém obter_alertas_operacionais_admin!`);
@@ -3212,7 +3215,18 @@ assert.ok(
   adminJsAlertas.includes('carregarAlertasAdmin'),
   '[FALHA] Frontend de Alertas & Auditoria incompleto!'
 );
-console.log('    ✅ Migration 029, scripts mestre, painel de Alertas, Health-Check e Auditoria validados com sucesso.');
+
+console.log('  🔎 29.8 Verificando Modelo B de detecção proativa autônoma nos crons (expire-orders.js e processar-alertas.js)...');
+const cronExpireOrders = fs.readFileSync('functions/api/cron/expire-orders.js', 'utf-8');
+const cronProcessarAlertas = fs.readFileSync('functions/api/cron/processar-alertas.js', 'utf-8');
+assert.ok(
+  cronExpireOrders.includes('processar_alertas_operacionais') &&
+  cronExpireOrders.includes('CRON_SECRET') &&
+  cronProcessarAlertas.includes('processar_alertas_operacionais') &&
+  cronProcessarAlertas.includes('CRON_SECRET'),
+  '[FALHA] Pipeline de cron de processamento proativo de alertas incompleto!'
+);
+console.log('    ✅ Migration 029, scripts mestre, Modelo B autônomo, painel de Alertas, Health-Check e Auditoria validados com sucesso.');
 
 console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–29 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
 

@@ -267,7 +267,7 @@ test('N4: pedido em risco de atraso gera alerta operacional de bancada', async (
       status_comercial, status_financeiro, status_operacional, status,
       pagamento, itens
     ) VALUES (
-      'Cliente Atraso N', 'atraso@lunoca.test', '5585998013003', $1, CURRENT_DATE, '10:00:00',
+      'Cliente Atraso N', 'atraso@lunoca.test', '5585998013003', $1, (CURRENT_DATE - 1), '10:00:00',
       'retirada', 'Loja', 120.00, 120.00,
       'confirmado', 'pago', 'aguardando_producao', 'Confirmado',
       'pix', '[{"nome":"Bolo de Morango Especial","quantidade":1,"preco":120}]'::jsonb
@@ -451,17 +451,22 @@ test('N11: triggers automáticos gravam auditoria em alterações de catálogo e
 });
 
 // ==============================================================================
-// N12: Reconhecimento de alerta é idempotente e auditável
+// N12: Reconhecimento de alerta é idempotente e auditável (RECONHECIDO != RESOLVIDO)
 // ==============================================================================
-test('N12: reconhecimento de alerta é idempotente e auditável', async () => {
+test('N12: reconhecimento de alerta é idempotente e auditável (RECONHECIDO != RESOLVIDO)', async () => {
   await setIdentity(admin, ADMIN_UID);
 
-  // Obter um alerta ativo
-  const list = await rpc(admin, 'obter_alertas_operacionais_admin', {});
+  // 1. Processamento autônomo proativo gera alertas (Modelo B)
+  const procAutonomo = await rpc(admin, 'processar_alertas_operacionais', {});
+  assert.equal(procAutonomo.success, true);
+  assert.ok(procAutonomo.total_ativos > 0);
+
+  // 2. Obter um alerta de ruptura ativo
+  const list = await rpc(admin, 'obter_alertas_operacionais_admin', { p_tipo: 'RUPTURA_ESTOQUE' });
   assert.ok(list.alertas.length > 0);
   const alertaId = list.alertas[0].id;
 
-  // Primeiro reconhecimento
+  // 3. Primeiro reconhecimento humano (toma ciência, mas o risco continua!)
   const rec1 = await rpc(admin, 'reconhecer_alerta_operacional', {
     p_alerta_id: alertaId,
     p_motivo: 'Ciente do alerta operacional para providências'
@@ -469,13 +474,49 @@ test('N12: reconhecimento de alerta é idempotente e auditável', async () => {
   assert.equal(rec1.success, true);
   assert.equal(rec1.idempotente, false);
 
-  // Segundo reconhecimento pelo mesmo usuário (idempotente)
+  // O alerta agora é RECONHECIDO, mas NÃO RESOLVIDO
+  const listRec = await rpc(admin, 'obter_alertas_operacionais_admin', { p_tipo: 'RUPTURA_ESTOQUE' });
+  const aRec = listRec.alertas.find((a) => a.id === alertaId);
+  assert.ok(aRec, 'Alerta reconhecido continua visível na lista ativa');
+  assert.equal(aRec.status, 'RECONHECIDO');
+  assert.equal(aRec.resolvido_em, null, 'Alerta reconhecido não deve ter resolvido_em preenchido');
+  assert.equal(aRec.reconhecido_por.length, 1);
+
+  // 4. Segundo reconhecimento redundante (idempotência)
   const rec2 = await rpc(admin, 'reconhecer_alerta_operacional', {
     p_alerta_id: alertaId,
     p_motivo: 'Tentativa redundante'
   });
   assert.equal(rec2.success, true);
   assert.equal(rec2.idempotente, true);
+
+  // 5. Novo ciclo autônomo com o estoque ainda baixo: alerta permanece RECONHECIDO
+  await rpc(admin, 'processar_alertas_operacionais', {});
+  const listAindaAtivo = await rpc(admin, 'obter_alertas_operacionais_admin', { p_tipo: 'RUPTURA_ESTOQUE' });
+  const aAindaAtivo = listAindaAtivo.alertas.find((a) => a.id === alertaId);
+  assert.ok(aAindaAtivo);
+  assert.equal(aAindaAtivo.status, 'RECONHECIDO');
+
+  // 6. Resolução da causa raiz: reabastecer estoque para acima do mínimo
+  await setIdentity(admin, 'service_role');
+  await admin.query('UPDATE public.ingrediente_saldos SET saldo_atual = 2000 WHERE ingrediente_id = $1', [ingMorangoId]);
+  await admin.query('UPDATE public.ingredientes SET estoque_qtd = 2000 WHERE id = $1', [ingMorangoId]);
+
+  // 7. Próximo ciclo autônomo (cron) resolve o alerta proativamente
+  await setIdentity(admin, ADMIN_UID);
+  const procPosResolucao = await rpc(admin, 'processar_alertas_operacionais', {});
+  assert.equal(procPosResolucao.success, true);
+
+  // Na lista de alertas ativos não-resolvidos, ele não deve mais constar
+  const listPos = await rpc(admin, 'obter_alertas_operacionais_admin', { p_tipo: 'RUPTURA_ESTOQUE' });
+  const aPos = listPos.alertas.find((a) => a.id === alertaId);
+  assert.equal(aPos, undefined, 'Alerta resolvido não deve mais constar na lista de pendências ativas');
+
+  // Consulta com service_role confirma que foi marcado como RESOLVIDO no banco
+  await setIdentity(admin, 'service_role');
+  const checkResolvido = await admin.query('SELECT status, resolvido_em FROM public.alertas_operacionais WHERE id = $1', [alertaId]);
+  assert.equal(checkResolvido.rows[0].status, 'RESOLVIDO');
+  assert.ok(checkResolvido.rows[0].resolvido_em !== null, 'Alerta resolvido deve ter resolvido_em preenchido');
 });
 
 // ==============================================================================

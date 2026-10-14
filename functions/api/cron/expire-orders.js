@@ -133,6 +133,23 @@ async function processExpiredOrders(context) {
     });
     const orcData = await orcRes.json().catch(() => ({}));
 
+    // 3. Processamento autônomo proativo de alertas operacionais (Frente N / Modelo B)
+    let alertasData = null;
+    try {
+      const alertasRes = await fetch(`${supabaseUrl}/rest/v1/rpc/processar_alertas_operacionais`, {
+        method: 'POST',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${serviceKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})
+      });
+      alertasData = await alertasRes.json().catch(() => ({}));
+    } catch (eAlertas) {
+      console.warn('[Expire Orders] Falha ao processar alertas operacionais de forma autônoma:', eAlertas);
+    }
+
     return json({
       success: true,
       processados: rpcData?.processados ?? 0,
@@ -140,6 +157,9 @@ async function processExpiredOrders(context) {
       enviados_para_revisao: rpcData?.enviados_para_revisao ?? 0,
       orcamentos_expirados: orcData?.expirados_count ?? 0,
       orcamentos_ids: orcData?.orcamentos_ids ?? [],
+      alertas_processados: alertasData?.success === true,
+      alertas_resolvidos: alertasData?.resolvidos ?? 0,
+      alertas_total_ativos: alertasData?.total_ativos ?? 0,
       timestamp: rpcData?.timestamp || new Date().toISOString()
     }, 200, corsHeaders);
 

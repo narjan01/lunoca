@@ -42,7 +42,7 @@ async function main() {
   }
   console.log('✅ APROVADO');
 
-  // PN-2: Existência das 6 RPCs canônicas da Frente N com SECURITY DEFINER
+  // PN-2: Existência das 7 RPCs canônicas da Frente N com SECURITY DEFINER
   process.stdout.write('⏳ PN-2: RPCs canônicas da Frente N instaladas com SECURITY DEFINER... ');
   const pn2 = await query(`
     SELECT DISTINCT proname, prosecdef
@@ -50,6 +50,7 @@ async function main() {
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public'
       AND proname IN (
+        'processar_alertas_operacionais',
         'obter_alertas_operacionais_admin',
         'obter_alertas_operacionais_operador',
         'reconhecer_alerta_operacional',
@@ -59,7 +60,7 @@ async function main() {
       )
     ORDER BY proname;
   `);
-  assert.equal(pn2.length, 6, 'Esperado 6 funções canônicas da Frente N instaladas');
+  assert.equal(pn2.length, 7, 'Esperado 7 funções canônicas da Frente N instaladas');
   for (const f of pn2) {
     assert.equal(f.prosecdef, true, `Função ${f.proname} deve ter SECURITY DEFINER`);
   }
