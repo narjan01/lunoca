@@ -3509,7 +3509,30 @@ assert.ok(
 );
 console.log('    ✅ Migration 032, schemas mestre, FEFO, quitação PDV e frontend validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–32 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// ==============================================================================
+// 🩹 FASE 33: Hotfix Orçamentos Admin (Migration 033)
+// ==============================================================================
+console.log('\n============================================================');
+console.log('🩹 FASE 33: Hotfix Orçamentos Admin (Migration 033)...');
+console.log('============================================================');
+console.log('  🔎 33.1 Verificando integridade da migration 033_hotfix_orcamentos_admin.sql...');
+const m033 = fs.readFileSync('supabase/migrations/033_hotfix_orcamentos_admin.sql', 'utf-8');
+const m033CodeOnly = m033.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+assert.ok(m033.includes('CREATE OR REPLACE FUNCTION public.buscar_orcamentos_admin'), '[FALHA] buscar_orcamentos_admin ausente em 033!');
+assert.ok(!m033CodeOnly.includes('p_novo_status'), '[FALHA] Referência incorreta a p_novo_status ainda presente em 033!');
+assert.ok(m033.includes("v_st TEXT := NULLIF(TRIM(COALESCE(p_status, '')), '');"), '[FALHA] Atribuição de v_st corrigida ausente em 033!');
+
+console.log('  🔎 33.2 Verificando grants fail-closed em 033...');
+assert.ok(m033.includes('REVOKE ALL ON FUNCTION public.buscar_orcamentos_admin FROM PUBLIC, anon;'), '[FALHA] REVOKE ALL ausente em 033!');
+assert.ok(m033.includes('GRANT EXECUTE ON FUNCTION public.buscar_orcamentos_admin TO authenticated, service_role;'), '[FALHA] GRANT ausente em 033!');
+
+console.log('  🔎 33.3 Verificando presença do hotfix nos schemas mestres...');
+assert.ok(!installFim.includes('COALESCE(p_novo_status'), '[FALHA] install.sql ainda contém referência a p_novo_status!');
+assert.ok(!schemaFim.includes('COALESCE(p_novo_status'), '[FALHA] schema.sql ainda contém referência a p_novo_status!');
+console.log('    ✅ Migration 033, schemas mestre e eliminação de p_novo_status validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–33 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+
 
 
 
