@@ -1212,7 +1212,7 @@ CREATE OR REPLACE FUNCTION public.buscar_orcamentos_admin(
 RETURNS JSONB AS $$
 DECLARE
   v_termo TEXT := NULLIF(TRIM(COALESCE(p_busca, '')), '');
-  v_st TEXT := NULLIF(TRIM(COALESCE(p_novo_status, p_status, '')), '');
+  v_st TEXT := NULLIF(TRIM(COALESCE(p_status, '')), '');
   v_total_registros INT;
   v_lista JSONB;
 BEGIN
