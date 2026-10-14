@@ -73,6 +73,7 @@
           <button id="tab-btn-dashboard" onclick="mudarTabAdmin('dashboard')"><i class="fa-solid fa-chart-pie"></i> Dashboard & DRE</button>
           <button id="tab-btn-producao" onclick="mudarTabAdmin('producao')"><i class="fa-solid fa-kitchen-set"></i> Produção & Fila</button>
           <button id="tab-btn-logistica" onclick="mudarTabAdmin('logistica')"><i class="fa-solid fa-truck-fast"></i> Logística & Rotas</button>
+          <button id="tab-btn-retirada" onclick="mudarTabAdmin('retirada')"><i class="fa-solid fa-store"></i> Balcão & Retirada</button>
           <button id="tab-btn-pedidos" onclick="mudarTabAdmin('pedidos')"><i class="fa-solid fa-receipt"></i> Pedidos</button>
           <button id="tab-btn-orcamentos" onclick="mudarTabAdmin('orcamentos')"><i class="fa-solid fa-file-invoice-dollar"></i> Orçamentos</button>
           <button id="tab-btn-crm" onclick="mudarTabAdmin('crm')"><i class="fa-solid fa-address-book"></i> Clientes & CRM</button>
@@ -725,6 +726,9 @@
 
         <!-- ABA: Equipe, Turnos, Escalas & Capacidade Real (Frente O) -->
         <div id="admin-tab-equipe" class="admin-tab" style="display:none;"></div>
+
+        <!-- ABA: Expedição, Balcão & Retirada Segura (Frente P) -->
+        <div id="admin-tab-retirada" class="admin-tab" style="display:none;"></div>
       </div>
     </div>
   </main>
@@ -1389,6 +1393,7 @@
   <script src="js/admin-custos.js?v=4.1.0"></script>
   <script src="js/admin-alertas.js?v=4.2.0"></script>
   <script type="module" src="js/admin-equipe.js?v=4.3.0"></script>
+  <script type="module" src="js/admin-retirada.js?v=4.4.0"></script>
   <script type="module" src="js/whatsapp-helper.js?v=3.2.0"></script>
 
   <script>

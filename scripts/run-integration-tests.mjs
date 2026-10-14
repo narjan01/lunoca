@@ -40,6 +40,7 @@ const testSuites = [
   'tests/integration/frente_m.custos_precificacao_margens.test.mjs',
   'tests/integration/frente_n.alertas_healthcheck.test.mjs',
   'tests/integration/frente_o.equipe_capacidade.test.mjs',
+  'tests/integration/frente_p.expedicao_retirada.test.mjs',
 ];
 
 console.log('🚀 Iniciando Runner Sequencial de Testes de Integração Lunoca...');

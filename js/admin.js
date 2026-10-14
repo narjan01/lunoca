@@ -36,6 +36,7 @@ function configurarAcessoAdminPorNivel() {
         'tab-btn-crm',
         'tab-btn-fidelidade',
         'tab-btn-logistica',
+        'tab-btn-retirada',
         'tab-btn-alertas',
         'tab-btn-equipe'
     ];
@@ -76,7 +77,7 @@ function configurarAcessoAdminPorNivel() {
 
 function mudarTabAdmin(tab) {
     // Bloqueio de segurança no frontend para Operadores
-    const abasPermitidasOperador = ['hoje', 'dashboard', 'producao', 'logistica', 'pedidos', 'orcamentos', 'calendario', 'produtos', 'estoque', 'fichatecnica', 'compras', 'crm', 'fidelidade', 'alertas', 'equipe'];
+    const abasPermitidasOperador = ['hoje', 'dashboard', 'producao', 'logistica', 'retirada', 'pedidos', 'orcamentos', 'calendario', 'produtos', 'estoque', 'fichatecnica', 'compras', 'crm', 'fidelidade', 'alertas', 'equipe'];
     if (usuarioAtual && usuarioAtual.nivel === 'operador' && !abasPermitidasOperador.includes(tab)) {
         mostrarToast('Acesso restrito ao Administrador.', 'aviso', 3000);
         return;
@@ -94,6 +95,7 @@ function mudarTabAdmin(tab) {
     if(tab === 'dashboard' && typeof carregarDashboardGerencial === 'function') carregarDashboardGerencial();
     if(tab === 'producao' && typeof carregarProducaoAdmin === 'function') carregarProducaoAdmin();
     if(tab === 'logistica' && typeof carregarLogisticaAdmin === 'function') carregarLogisticaAdmin();
+    if(tab === 'retirada' && typeof carregarRetiradaAdmin === 'function') carregarRetiradaAdmin();
     if(tab === 'pedidos') {
         if (typeof carregarCentralEncomendas === 'function') {
             carregarCentralEncomendas();

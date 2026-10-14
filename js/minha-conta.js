@@ -297,7 +297,12 @@ async function carregarMeusPedidosPortalUI() {
           '<button type="button" class="portal-btn portal-btn-outline" style="padding:6px 12px; font-size:0.8rem;" onclick="acompanharMinhaEntrega(' + Number(p.pedido_id) + ')">🚚 Acompanhar Entrega</button>' +
           '<div id="portal-tracking-pedido-' + Number(p.pedido_id) + '" style="display:none; margin-top:8px; padding:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; font-size:0.82rem;"></div>' +
         '</div>'
-      : '';
+      : (p.modalidade === 'retirada')
+        ? '<div style="margin-top:8px;">' +
+            '<button type="button" class="portal-btn portal-btn-outline" style="padding:6px 12px; font-size:0.8rem; border-color:#9333ea; color:#9333ea;" onclick="verMeuPinRetirada(' + Number(p.pedido_id) + ')">🏬 Código de Retirada (PIN)</button>' +
+            '<div id="portal-pin-pedido-' + Number(p.pedido_id) + '" style="display:none; margin-top:8px; padding:12px; background:#faf5ff; border:1px solid #e9d5ff; border-radius:8px; font-size:0.85rem;"></div>' +
+          '</div>'
+        : '';
 
     return '<div style="border:1px solid #e5e7eb; border-radius:12px; padding:14px; margin-bottom:12px;">' +
       '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">' +
@@ -309,6 +314,60 @@ async function carregarMeusPedidosPortalUI() {
       btnAcompanharEntrega +
     '</div>';
   }).join('');
+}
+
+async function verMeuPinRetirada(pedidoId) {
+  var box = document.getElementById('portal-pin-pedido-' + Number(pedidoId));
+  if (!box) return;
+  box.style.display = 'block';
+  box.innerHTML = '<span style="color:#6b7280;">Consultando código de retirada...</span>';
+
+  // 1. Tenta obter autorização existente
+  var resp = await supabaseClient.rpc('obter_minha_autorizacao_retirada', {
+    p_pedido_id: Number(pedidoId)
+  });
+
+  var aut = resp.data && resp.data.autorizacao;
+  if (!resp.error && resp.data && resp.data.tem_autorizacao_ativa && aut) {
+    renderizarBoxPin(box, pedidoId, aut.codigo_pin_mascarado || '******', aut.expira_em, false);
+    return;
+  }
+
+  // 2. Se não houver ativa, gera novo PIN
+  await gerarNovoPinRetirada(pedidoId);
+}
+
+async function gerarNovoPinRetirada(pedidoId) {
+  var box = document.getElementById('portal-pin-pedido-' + Number(pedidoId));
+  if (!box) return;
+  box.style.display = 'block';
+  box.innerHTML = '<span style="color:#6b7280;">Gerando novo código de retirada seguro...</span>';
+
+  var resp = await supabaseClient.rpc('gerar_autorizacao_retirada_cliente', {
+    p_pedido_id: Number(pedidoId)
+  });
+
+  if (resp.error || !resp.data || !resp.data.success) {
+    box.innerHTML = '<span style="color:#dc2626;">' + escPortal((resp.data && resp.data.error) || 'Não foi possível gerar o código.') + '</span>';
+    return;
+  }
+
+  renderizarBoxPin(box, pedidoId, resp.data.codigo_pin, resp.data.expira_em, true);
+}
+
+function renderizarBoxPin(box, pedidoId, pin, expiraEm, isRevelado) {
+  var dtExp = expiraEm ? new Date(expiraEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
+  box.innerHTML =
+    '<div style="text-align:center;">' +
+      '<div style="font-size:0.75rem; text-transform:uppercase; color:#6b21a8; font-weight:700; letter-spacing:0.05em; margin-bottom:4px;">Seu Código de Retirada no Balcão</div>' +
+      '<div style="font-size:1.8rem; font-weight:800; letter-spacing:0.35em; color:#581c87; background:#fff; padding:10px 16px; border-radius:8px; border:2px dashed #c084fc; display:inline-block; margin:6px 0;">' +
+        escPortal(pin) +
+      '</div>' +
+      '<div style="font-size:0.75rem; color:#6b7280; margin-top:4px;">Apresente este PIN ao atendente no momento da retirada. Válido até <strong>' + escPortal(dtExp) + '</strong>.</div>' +
+      '<div style="margin-top:8px;">' +
+        '<button type="button" class="portal-btn" style="padding:4px 10px; font-size:0.75rem; background:#f3e8ff; color:#6b21a8; border:1px solid #d8b4fe;" onclick="gerarNovoPinRetirada(' + Number(pedidoId) + ')">🔄 Gerar Novo Código</button>' +
+      '</div>' +
+    '</div>';
 }
 
 async function acompanharMinhaEntrega(pedidoId) {

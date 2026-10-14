@@ -3332,7 +3332,103 @@ assert.ok(
 );
 console.log('    ✅ Migration 030, scripts mestre, regras de não-sobreposição, painel de Equipe e Capacidade validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–30 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+console.log('\n==============================================================================');
+console.log('FASE 31: Expedição Integrada, Check-out de Balcão e Retirada Presencial Segura (Frente P)');
+console.log('==============================================================================\n');
+
+console.log('  🔎 31.1 Verificando integridade forward-only da Migration 031...');
+const m031Path = 'supabase/migrations/031_expedicao_pdv_retirada_segura.sql';
+assert.ok(fs.existsSync(m031Path), '[FALHA] Arquivo da Migration 031 não encontrado!');
+const m031 = fs.readFileSync(m031Path, 'utf-8');
+
+console.log('  🔎 31.2 Verificando criação das tabelas canônicas de retirada...');
+assert.ok(
+  m031.includes('CREATE TABLE IF NOT EXISTS public.retirada_configuracoes') &&
+  m031.includes('CREATE TABLE IF NOT EXISTS public.pedido_retirada_autorizacoes') &&
+  m031.includes('CREATE TABLE IF NOT EXISTS public.pedido_retirada_eventos'),
+  '[FALHA] Uma ou mais tabelas essenciais da Frente P ausentes em 031!'
+);
+
+console.log('  🔎 31.3 Verificando trigger append-only em pedido_retirada_eventos (42501)...');
+assert.ok(
+  m031.includes('trg_bloquear_mutacao_retirada_eventos') &&
+  m031.includes("ERRCODE = '42501'") &&
+  m031.includes('RETIRADA_EVENTOS_APPEND_ONLY'),
+  '[FALHA] Trigger append-only ou bloqueio 42501 ausente em 031!'
+);
+
+console.log('  🔎 31.4 Verificando segurança e hashing nativo do PIN...');
+assert.ok(
+  m031.includes('codigo_hash TEXT NOT NULL') &&
+  m031.includes('sha256') &&
+  m031.includes('encode(') &&
+  m031.includes('max_tentativas'),
+  '[FALHA] PIN não está estruturado para armazenamento seguro em hash ou controle de tentativas!'
+);
+
+console.log('  🔎 31.5 Verificando as 5 RPCs canônicas da Frente P...');
+assert.ok(
+  m031.includes('CREATE OR REPLACE FUNCTION public.gerar_autorizacao_retirada_cliente') &&
+  m031.includes('CREATE OR REPLACE FUNCTION public.obter_minha_autorizacao_retirada') &&
+  m031.includes('CREATE OR REPLACE FUNCTION public.validar_pin_retirada_balcao') &&
+  m031.includes('CREATE OR REPLACE FUNCTION public.finalizar_checkout_retirada_balcao') &&
+  m031.includes('CREATE OR REPLACE FUNCTION public.obter_painel_balcao_retiradas'),
+  '[FALHA] Uma ou mais RPCs canônicas da Frente P ausentes em 031!'
+);
+
+console.log('  🔎 31.6 Verificando invariantes P1–P16 (sem tabelas paralelas, motor financeiro canônico, quality hold)...');
+const m031CodeOnly = m031.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+assert.ok(
+  !m031CodeOnly.includes('CREATE TABLE public.vendas_balcao') &&
+  !m031CodeOnly.includes('CREATE TABLE public.pedidos_retirada') &&
+  !m031CodeOnly.includes('CREATE TABLE public.pagamentos_balcao') &&
+  m031.includes('public.registrar_pagamento_pedido') &&
+  m031.includes('QUALITY_HOLD_ACTIVE') &&
+  m031.includes("status_operacional = 'retirado'"),
+  '[FALHA] Invariantes P1–P16 violadas em 031 (tabelas paralelas ou desvio de motor detectados)!'
+);
+
+console.log('  🔎 31.7 Verificando grants fail-closed para anon/PUBLIC...');
+assert.ok(
+  m031.includes('REVOKE ALL ON public.retirada_configuracoes FROM PUBLIC, anon, authenticated;') &&
+  m031.includes('REVOKE ALL ON public.pedido_retirada_autorizacoes FROM PUBLIC, anon, authenticated;') &&
+  m031.includes('REVOKE ALL ON public.pedido_retirada_eventos FROM PUBLIC, anon, authenticated;') &&
+  m031.includes('REVOKE ALL ON FUNCTION public.validar_pin_retirada_balcao(BIGINT, TEXT) FROM PUBLIC, anon;') &&
+  m031.includes('REVOKE ALL ON FUNCTION public.finalizar_checkout_retirada_balcao(BIGINT, TEXT, BOOLEAN, TEXT, TEXT, TEXT) FROM PUBLIC, anon;') &&
+  m031.includes('REVOKE ALL ON FUNCTION public.obter_painel_balcao_retiradas(DATE) FROM PUBLIC, anon;'),
+  '[FALHA] Grants fail-closed da Frente P ausentes ou incompletos!'
+);
+
+console.log('  🔎 31.8 Verificando presença das estruturas da Frente P nos schemas mestres...');
+for (const [name, content] of [['install.sql', installFim], ['schema.sql', schemaFim]]) {
+  assert.ok(content.includes('public.retirada_configuracoes'), `[FALHA] ${name} não contém retirada_configuracoes!`);
+  assert.ok(content.includes('public.pedido_retirada_autorizacoes'), `[FALHA] ${name} não contém pedido_retirada_autorizacoes!`);
+  assert.ok(content.includes('public.pedido_retirada_eventos'), `[FALHA] ${name} não contém pedido_retirada_eventos!`);
+  assert.ok(content.includes('public.finalizar_checkout_retirada_balcao'), `[FALHA] ${name} não contém finalizar_checkout_retirada_balcao!`);
+  assert.ok(content.includes('public.obter_painel_balcao_retiradas'), `[FALHA] ${name} não contém obter_painel_balcao_retiradas!`);
+}
+
+console.log('  🔎 31.9 Verificando frontend de Balcão e Retirada (admin.html, js/admin-retirada.js, js/admin.js e js/minha-conta.js)...');
+const adminHtmlRetirada = fs.readFileSync('admin.html', 'utf-8');
+const adminRetiradaJs = fs.readFileSync('js/admin-retirada.js', 'utf-8');
+const adminJsRetirada = fs.readFileSync('js/admin.js', 'utf-8');
+const minhaContaJsRetirada = fs.readFileSync('js/minha-conta.js', 'utf-8');
+assert.ok(
+  adminHtmlRetirada.includes('id="tab-btn-retirada"') &&
+  adminHtmlRetirada.includes('id="admin-tab-retirada"') &&
+  adminHtmlRetirada.includes('js/admin-retirada.js') &&
+  adminRetiradaJs.includes('obter_painel_balcao_retiradas') &&
+  adminRetiradaJs.includes('finalizar_checkout_retirada_balcao') &&
+  adminJsRetirada.includes('tab-btn-retirada') &&
+  adminJsRetirada.includes('carregarRetiradaAdmin') &&
+  minhaContaJsRetirada.includes('verMeuPinRetirada') &&
+  minhaContaJsRetirada.includes('gerar_autorizacao_retirada_cliente'),
+  '[FALHA] Frontend de Balcão e Retirada incompleto!'
+);
+console.log('    ✅ Migration 031, scripts mestre, segurança de PIN, quitação e portal validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–31 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+
 
 
 
