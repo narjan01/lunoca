@@ -551,3 +551,66 @@ test('R16: Frente Q consome lote PT FEFO, registra quitação e atualiza status 
 
   await closeClient(cOperB);
 });
+
+// ------------------------------------------------------------------------------
+// R17: GOVERNANÇA DE OWNERSHIP (CASH_SESSION_NOT_OWNED)
+// ------------------------------------------------------------------------------
+test('R17: Operador ou Admin não pode movimentar nem fechar sessão de caixa de outro operador', async () => {
+  const cOperA = await newClient(OPER_A_UID);
+  const cOperB = await newClient(OPER_B_UID);
+
+  // Obter ID da sessão aberta do Operador B
+  const { rows: sessoesB } = await admin.query(
+    "SELECT id FROM public.caixa_sessoes WHERE operador_auth_id = $1 AND status = 'ABERTA' LIMIT 1;",
+    [OPER_B_UID]
+  );
+  assert.ok(sessoesB.length > 0);
+  const sessaoBId = sessoesB[0].id;
+
+  // Operador A tenta fazer sangria na sessão do Operador B passando p_sessao_id
+  const resSangriaAlheia = await rpc(cOperA, 'registrar_movimentacao_caixa', {
+    p_tipo: 'SANGRIA',
+    p_valor: 10.00,
+    p_motivo: 'Tentativa indevida de sangria na sessão de outro operador',
+    p_idempotency_key: 'sangria_alheia_fail',
+    p_sessao_id: sessaoBId
+  });
+  assert.equal(resSangriaAlheia.success, false);
+  assert.equal(resSangriaAlheia.code, 'CASH_SESSION_NOT_OWNED');
+
+  // Operador A tenta fechar a sessão do Operador B
+  const resFecharAlheia = await rpc(cOperA, 'fechar_sessao_caixa', {
+    p_valor_contado_dinheiro: 100.00,
+    p_sessao_id: sessaoBId
+  });
+  assert.equal(resFecharAlheia.success, false);
+  assert.equal(resFecharAlheia.code, 'CASH_SESSION_NOT_OWNED');
+
+  await closeClient(cOperA);
+  await closeClient(cOperB);
+});
+
+// ------------------------------------------------------------------------------
+// R18: RETRY DE PDV NÃO DUPLICA REGISTRO EM CAIXA_SESSAO_PAGAMENTOS (UNIQUE)
+// ------------------------------------------------------------------------------
+test('R18: Retry de finalizar_venda_pdv não gera vínculos adicionais em caixa_sessao_pagamentos', async () => {
+  const cOperB = await newClient(OPER_B_UID);
+
+  const { count: antesCount } = (await admin.query("SELECT COUNT(*)::int AS count FROM public.caixa_sessao_pagamentos;")).rows[0];
+
+  // Chamar novamente com a mesma chave de idempotência de R16
+  const retryRes = await rpc(cOperB, 'finalizar_venda_pdv', {
+    p_itens: [{ produto_id: prodBoloId, quantidade: 3 }],
+    p_forma_pagamento: 'dinheiro',
+    p_chave_idempotencia: 'pdv_r16_integridade'
+  });
+
+  assert.equal(retryRes.success, true);
+  assert.equal(retryRes.ja_processado, true);
+
+  const { count: depoisCount } = (await admin.query("SELECT COUNT(*)::int AS count FROM public.caixa_sessao_pagamentos;")).rows[0];
+  assert.equal(depoisCount, antesCount, 'Retry de venda PDV não pode adicionar novas linhas em caixa_sessao_pagamentos');
+
+  await closeClient(cOperB);
+});
+

@@ -3621,7 +3621,46 @@ assert.ok(
 );
 console.log('    ✅ Migration 034, schemas mestre, R1–R16 e frontend de Caixa validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–34 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// --------------------------------------------------------------------------
+// FASE 35: Hotfix PDV Histórico & Caixa Ownership (Migration 035)
+// --------------------------------------------------------------------------
+console.log('\n============================================================');
+console.log('🛡️ FASE 35: Hotfix PDV Histórico & Caixa Ownership (Migration 035)...');
+console.log('============================================================');
+
+const m035Path = 'supabase/migrations/035_hotfix_pdv_historico_caixa_ownership.sql';
+assert.ok(fs.existsSync(m035Path), '[FALHA] Migration 035 não encontrada!');
+const m035 = fs.readFileSync(m035Path, 'utf-8');
+
+console.log('  🔎 35.1 Verificando correção canônica de pedido_status_historico em finalizar_venda_pdv...');
+assert.ok(m035.includes('status_novo'), '[FALHA] Coluna canônica status_novo ausente na 035!');
+assert.ok(m035.includes('dimensao'), '[FALHA] Coluna canônica dimensao ausente na 035!');
+assert.ok(!m035.includes('novo_status'), '[FALHA] Coluna incorreta novo_status detectada na 035!');
+assert.ok(!m035.includes('tipo_status'), '[FALHA] Coluna incorreta tipo_status detectada na 035!');
+
+console.log('  🔎 35.2 Verificando travas de ownership CASH_SESSION_NOT_OWNED com FOR UPDATE...');
+assert.ok(m035.includes('CASH_SESSION_NOT_OWNED'), '[FALHA] Código CASH_SESSION_NOT_OWNED ausente na 035!');
+assert.ok(m035.includes('FOR UPDATE'), '[FALHA] Trava FOR UPDATE ausente na 035!');
+assert.ok(m035.includes('v_sessao.operador_auth_id <> v_caller_id'), '[FALHA] Verificação de operador_auth_id ausente na 035!');
+
+console.log('  🔎 35.3 Verificando vínculo de pagamento em caixa_sessao_pagamentos...');
+assert.ok(m035.includes('INSERT INTO public.caixa_sessao_pagamentos'), '[FALHA] Vínculo em caixa_sessao_pagamentos ausente em finalizar_venda_pdv!');
+
+console.log('  🔎 35.4 Verificando grants fail-closed em 035...');
+assert.ok(
+  m035.includes('REVOKE ALL ON FUNCTION public.registrar_movimentacao_caixa(TEXT, NUMERIC, TEXT, TEXT, BIGINT) FROM PUBLIC, anon;') &&
+  m035.includes('REVOKE ALL ON FUNCTION public.fechar_sessao_caixa(NUMERIC, TEXT, TEXT, BIGINT, TEXT) FROM PUBLIC, anon;') &&
+  m035.includes('REVOKE ALL ON FUNCTION public.finalizar_venda_pdv(JSONB, BIGINT, TEXT, NUMERIC, TEXT, TEXT, TEXT) FROM PUBLIC, anon;'),
+  '[FALHA] Grants fail-closed da Migration 035 ausentes!'
+);
+
+console.log('  🔎 35.5 Verificando presença da 035 nos schemas mestres...');
+for (const [name, content] of [['install.sql', fs.readFileSync('sql/install.sql', 'utf-8')], ['schema.sql', fs.readFileSync('sql/schema.sql', 'utf-8')]]) {
+  assert.ok(content.includes('CASH_SESSION_NOT_OWNED'), `[FALHA] ${name} não contém CASH_SESSION_NOT_OWNED!`);
+}
+console.log('    ✅ Migration 035, schemas mestre e contrato canônico validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–35 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
 
 
 

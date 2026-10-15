@@ -224,6 +224,23 @@ before(async () => {
       AND codigo_lote NOT IN ('LOTE-CACAU-01', 'LOTE-MANT-01');
   `);
   await admin.query(`SELECT set_config('lunoca.allow_lote_mutation', '', false);`);
+
+  // Sessão de caixa aberta para os operadores do PDV conforme novo contrato canônico da Frente R
+  const cOperSetup = await newClient(OPER_UID);
+  await rpc(cOperSetup, 'abrir_sessao_caixa', {
+    p_fundo_troco: 200.00,
+    p_terminal: 'PDV-Q-OPER',
+    p_observacoes: 'Sessão PDV para operador na suíte Frente Q'
+  });
+  await closeClient(cOperSetup);
+
+  const cAdminSetup = await newClient(ADMIN_UID);
+  await rpc(cAdminSetup, 'abrir_sessao_caixa', {
+    p_fundo_troco: 200.00,
+    p_terminal: 'PDV-Q-ADMIN',
+    p_observacoes: 'Sessão PDV para admin na suíte Frente Q'
+  });
+  await closeClient(cAdminSetup);
 });
 
 after(async () => {
@@ -723,11 +740,11 @@ test('Q11: Pagamento PDV produz efeitos financeiros canônicos sem duplicidade e
 
   const { rows: novoPed } = await admin.query(`
     INSERT INTO public.pedidos (
-      cliente_id_rel, nome_cliente, canal, modalidade_entrega, subtotal, total, saldo, valor_pago,
-      status_comercial, status_operacional, status_financeiro, status, data_pedido, data_entrega
+      cliente_id_rel, nome_cliente, canal, modalidade_entrega, endereco_entrega, subtotal, total, saldo, valor_pago,
+      status_comercial, status_operacional, status_financeiro, status, pagamento, itens, data_pedido, data_entrega
     ) VALUES (
-      $1, 'Cliente Balcão Cadastrado', 'balcao', 'retirada', 18.00, 18.00, 18.00, 0.00,
-      'confirmado', 'pronto', 'nao_pago', 'Confirmado', CURRENT_DATE, CURRENT_DATE
+      $1, 'Cliente Balcão Cadastrado', 'balcao', 'retirada', 'Balcão Lunoca - Pronta Entrega', 18.00, 18.00, 18.00, 0.00,
+      'confirmado', 'pronto', 'nao_pago', 'Confirmado', 'outro', '[]', CURRENT_DATE, CURRENT_DATE
     ) RETURNING id;
   `, [cliAId]);
   const pedCredId = novoPed[0].id;
