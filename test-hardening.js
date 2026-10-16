@@ -3855,9 +3855,35 @@ assert.ok(dispatcherJs.includes('whatsapp_obter_proximos_envios') && dispatcherJ
 assert.ok(webhookJs.includes('whatsapp_processar_webhook_status') && webhookJs.includes('chaveEvento'), '[FALHA] webhook.js incompleto!');
 console.log('    ✅ Migration 039, schemas mestre, WA1–WA18 e workers de mensageria validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–39 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+console.log('\n============================================================');
+console.log('🩺 FASE 40: Hotfix Checkout / Pix / WhatsApp E2E (Migration 040)...');
+console.log('============================================================');
+console.log('  🔎 40.1 Verificando integridade da migration 040_hotfix_checkout_pix_whatsapp_e2e.sql...');
+const m040 = fs.readFileSync('supabase/migrations/040_hotfix_checkout_pix_whatsapp_e2e.sql', 'utf-8');
 
+console.log('  🔎 40.2 Verificando resolução canônica de cliente_id_rel para BIGINT em whatsapp_enfileirar_transacional...');
+assert.ok(m040.includes('cliente_id_rel, telefone_cliente, nome_cliente, total,'), '[FALHA] Resolução de cliente_id_rel ausente em 040!');
+assert.ok(m040.includes('v_cli_id BIGINT;'), '[FALHA] Declaração de v_cli_id BIGINT ausente em 040!');
 
+console.log('  🔎 40.3 Verificando isolamento de exceção em trg_whatsapp_pedidos_fn (não-bloqueante no domínio financeiro)...');
+assert.ok(m040.includes('EXCEPTION WHEN OTHERS THEN'), '[FALHA] Bloco EXCEPTION WHEN OTHERS ausente na trigger de pedidos!');
+assert.ok(m040.includes('Falha não bloqueante ao enfileirar WhatsApp para pedido'), '[FALHA] Mensagem de alerta não bloqueante ausente!');
 
+console.log('  🔎 40.4 Verificando restrição de trigger em orçamentos para AFTER UPDATE OF status...');
+assert.ok(m040.includes('AFTER UPDATE OF status'), '[FALHA] Trigger de orçamentos deve disparar apenas em UPDATE OF status!');
 
+console.log('  🔎 40.5 Verificando grants fail-closed em 040...');
+assert.ok(
+  m040.includes('REVOKE ALL ON FUNCTION public.whatsapp_enfileirar_transacional(TEXT, BIGINT, BIGINT, TIMESTAMPTZ, JSONB) FROM PUBLIC, anon, authenticated;') &&
+  m040.includes('GRANT EXECUTE ON FUNCTION public.whatsapp_enfileirar_transacional(TEXT, BIGINT, BIGINT, TIMESTAMPTZ, JSONB) TO service_role;'),
+  '[FALHA] Grants fail-closed da Migration 040 ausentes ou incorretos!'
+);
+
+console.log('  🔎 40.6 Verificando presença do hotfix 040 nos schemas mestres...');
+for (const [name, content] of [['install.sql', fs.readFileSync('sql/install.sql', 'utf-8')], ['schema.sql', fs.readFileSync('sql/schema.sql', 'utf-8')]]) {
+  assert.ok(content.includes('Falha não bloqueante ao enfileirar WhatsApp para pedido'), `[FALHA] ${name} não contém o bloco não-bloqueante da 040!`);
+}
+console.log('    ✅ Migration 040, schemas mestre e governança de isolamento WhatsApp validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–40 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
 

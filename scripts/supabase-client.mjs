@@ -1,80 +1,73 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-// Parse .env manually
-let token = process.env.SUPABASE_ACCESS_TOKEN;
-let projectRef = process.env.SUPABASE_PROJECT_REF || 'xdnlkvbfaacrrhhuaxao';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '..');
 
-try {
-  const envPath = path.resolve('.env');
-  if (fs.existsSync(envPath)) {
-    const lines = fs.readFileSync(envPath, 'utf8').split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const idx = trimmed.indexOf('=');
-      if (idx !== -1) {
-        const k = trimmed.substring(0, idx).trim();
-        const v = trimmed.substring(idx + 1).trim();
-        if (k === 'SUPABASE_ACCESS_TOKEN' && !token) token = v;
-        if (k === 'SUPABASE_PROJECT_REF' && !projectRef) projectRef = v;
+// 1. Carregar variáveis de ambiente de .env se existir
+const envPath = path.join(ROOT, '.env');
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf-8');
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx !== -1) {
+      const k = trimmed.slice(0, eqIdx).trim();
+      let v = trimmed.slice(eqIdx + 1).trim();
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+        v = v.slice(1, -1);
       }
+      if (!process.env[k]) process.env[k] = v;
     }
   }
-} catch {}
-
-if (!token) {
-  throw new Error('SUPABASE_ACCESS_TOKEN is required in .env');
 }
+
+const SUPABASE_PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'xdnlkvbfaacrrhhuaxao';
+const SUPABASE_ACCESS_TOKEN = process.env.SUPABASE_ACCESS_TOKEN;
+const SUPABASE_DB_URL = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+
+let pgClient = null;
 
 export async function query(sql) {
-  const res = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/database/query`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ query: sql })
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`HTTP ${res.status}: ${errText}`);
+  // Opção A: Conexão direta via PostgreSQL (DATABASE_URL / SUPABASE_DB_URL)
+  if (SUPABASE_DB_URL) {
+    const { default: pg } = await import('pg');
+    if (!pgClient) {
+      pgClient = new pg.Client({
+        connectionString: SUPABASE_DB_URL,
+        ssl: { rejectUnauthorized: false }
+      });
+      await pgClient.connect();
+    }
+    const res = await pgClient.query(sql);
+    return res.rows;
   }
 
-  return res.json();
-}
+  // Opção B: Execução via Supabase Management API (SUPABASE_ACCESS_TOKEN)
+  if (SUPABASE_ACCESS_TOKEN) {
+    const res = await fetch(`https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_ACCESS_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ query: sql })
+    });
 
-// Se executado diretamente:
-if (process.argv[1]?.endsWith('supabase-client.mjs')) {
-  (async () => {
-    try {
-      const procs = await query(`
-        SELECT proname, pg_get_function_identity_arguments(oid) as args
-        FROM pg_proc
-        WHERE proname IN (
-          'ajustar_estoque_operacao',
-          'obter_preview_comunicacao',
-          'registrar_comunicacao_cliente',
-          'aprovar_orcamento_publico',
-          'listar_orcamentos_para_lembrete'
-        )
-        ORDER BY proname;
-      `);
-      console.log('Functions in production:');
-      console.table(procs);
-
-      const tables = await query(`
-        SELECT table_name
-        FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name IN ('comunicacoes_cliente', 'orcamento_comunicacoes')
-        ORDER BY table_name;
-      `);
-      console.log('Tables in production:');
-      console.table(tables);
-    } catch (e) {
-      console.error('Error:', e);
-      process.exit(1);
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Supabase Management API Query Failed (${res.status}): ${errText}`);
     }
-  })();
+
+    const data = await res.json();
+    return data;
+  }
+
+  throw new Error(
+    'Credenciais de banco ausentes: configure SUPABASE_ACCESS_TOKEN (para Management API) ' +
+    'ou DATABASE_URL / SUPABASE_DB_URL (para conexão direta PostgreSQL via pg) no arquivo .env ou variáveis de ambiente.\n' +
+    'Alternativamente, execute o SQL diretamente no Supabase SQL Editor.'
+  );
 }
