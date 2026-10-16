@@ -3660,7 +3660,105 @@ for (const [name, content] of [['install.sql', fs.readFileSync('sql/install.sql'
 }
 console.log('    ✅ Migration 035, schemas mestre e contrato canônico validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–35 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// ==============================================================================
+// 🍳 FASE 38: FRENTE 038 — KDS em Tempo Real / Produção de Cozinha (Bancada & Praças)
+// ==============================================================================
+console.log('\n============================================================');
+console.log('🍳 FASE 38: Frente 038 — KDS em Tempo Real / Produção (Migration 038)...');
+console.log('============================================================');
+
+const m038Path = 'supabase/migrations/038_kds_producao_tempo_real.sql';
+assert.ok(fs.existsSync(m038Path), '[FALHA] Migration 038 não encontrada!');
+const m038 = fs.readFileSync(m038Path, 'utf-8');
+const m038CodeOnly = m038.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+
+console.log('  🔎 38.1 Verificando as 5 tabelas canônicas do KDS...');
+assert.ok(m038.includes('CREATE TABLE IF NOT EXISTS public.produto_etapas_kds'), '[FALHA] Tabela produto_etapas_kds ausente!');
+assert.ok(m038.includes('CREATE TABLE IF NOT EXISTS public.pedido_producao_kds'), '[FALHA] Tabela pedido_producao_kds ausente!');
+assert.ok(m038.includes('CREATE TABLE IF NOT EXISTS public.pedido_item_producao_kds'), '[FALHA] Tabela pedido_item_producao_kds ausente!');
+assert.ok(m038.includes('CREATE TABLE IF NOT EXISTS public.pedido_item_kds_etapas'), '[FALHA] Tabela pedido_item_kds_etapas ausente!');
+assert.ok(m038.includes('CREATE TABLE IF NOT EXISTS public.pedido_kds_estagio_historico'), '[FALHA] Tabela pedido_kds_estagio_historico ausente!');
+
+console.log('  🔎 38.2 Verificando tipagem relacional e constraints canônicas (K1, K3, K4)...');
+assert.ok(m038.includes('pedido_id BIGINT NOT NULL REFERENCES public.pedidos(id)'), '[FALHA] pedido_id BIGINT ausente em pedido_producao_kds!');
+assert.ok(m038.includes('pedido_item_id BIGINT NOT NULL REFERENCES public.pedido_itens(id)'), '[FALHA] pedido_item_id BIGINT ausente em pedido_item_producao_kds!');
+assert.ok(m038.includes('praca_atual VARCHAR(30)'), '[FALHA] praca_atual ausente em pedido_item_producao_kds!');
+assert.ok(m038.includes('uq_produto_etapa_ordem'), '[FALHA] Constraint uq_produto_etapa_ordem ausente!');
+assert.ok(m038.includes('uq_produto_etapa_praca'), '[FALHA] Constraint uq_produto_etapa_praca ausente!');
+assert.ok(m038.includes("praca IN ('MASSA', 'FORNO', 'RECHEIO', 'DECORACAO', 'EMBALAGEM')"), '[FALHA] Constraint de praças válidas ausente!');
+assert.ok(!m038CodeOnly.includes('saiu_entrega'), '[FALHA] Violação de nomenclatura canônica: detectado saiu_entrega!');
+
+console.log('  🔎 38.3 Verificando trigger de auditoria append-only imutável (SQLSTATE 42501)...');
+assert.ok(m038.includes('trg_bloquear_mutacao_kds_historico'), '[FALHA] Trigger append-only trg_bloquear_mutacao_kds_historico ausente!');
+assert.ok(m038.includes("'42501'"), '[FALHA] SQLSTATE 42501 ausente no trigger de auditoria KDS!');
+
+console.log('  🔎 38.4 Verificando as 4 RPCs canônicas e travas de segurança...');
+assert.ok(m038.includes('CREATE OR REPLACE FUNCTION public.kds_inicializar_pedido'), '[FALHA] kds_inicializar_pedido ausente!');
+assert.ok(m038.includes('CREATE OR REPLACE FUNCTION public.kds_avancar_item'), '[FALHA] kds_avancar_item ausente!');
+assert.ok(m038.includes('CREATE OR REPLACE FUNCTION public.kds_marcar_urgencia'), '[FALHA] kds_marcar_urgencia ausente!');
+assert.ok(m038.includes('CREATE OR REPLACE FUNCTION public.kds_obter_painel'), '[FALHA] kds_obter_painel ausente!');
+assert.ok(m038.includes('FOR UPDATE'), '[FALHA] Trava FOR UPDATE ausente em kds_avancar_item!');
+assert.ok(m038.includes('auth.uid()'), '[FALHA] Autoria server-side via auth.uid() ausente nas RPCs de KDS!');
+assert.ok(!m038CodeOnly.includes('p_operador_id'), '[FALHA] Parâmetro inseguro p_operador_id detectado nas RPCs de KDS!');
+assert.ok(m038.includes('KDS_ROUTE_NOT_CONFIGURED'), '[FALHA] Fail-closed KDS_ROUTE_NOT_CONFIGURED ausente!');
+
+console.log('  🔎 38.5 Verificando publicação explícita em supabase_realtime...');
+assert.ok(m038.includes("pubname = 'supabase_realtime'") && m038.includes("ADD TABLE public.pedido_producao_kds"), '[FALHA] pedido_producao_kds não adicionada a supabase_realtime!');
+assert.ok(m038.includes("pubname = 'supabase_realtime'") && m038.includes("ADD TABLE public.pedido_item_producao_kds"), '[FALHA] pedido_item_producao_kds não adicionada a supabase_realtime!');
+
+console.log('  🔎 38.6 Verificando grants fail-closed para anon e PUBLIC...');
+assert.ok(m038.includes('REVOKE ALL ON FUNCTION public.kds_inicializar_pedido(BIGINT) FROM PUBLIC, anon, authenticated;'), '[FALHA] kds_inicializar_pedido deve ser estritamente interna/revogada!');
+assert.ok(m038.includes('REVOKE ALL ON FUNCTION public.kds_avancar_item(UUID, VARCHAR) FROM PUBLIC, anon;'), '[FALHA] kds_avancar_item deve ser revogada de PUBLIC e anon!');
+assert.ok(m038.includes('REVOKE ALL ON FUNCTION public.kds_marcar_urgencia(BIGINT, TEXT) FROM PUBLIC, anon;'), '[FALHA] kds_marcar_urgencia deve ser revogada de PUBLIC e anon!');
+assert.ok(m038.includes('REVOKE ALL ON FUNCTION public.kds_obter_painel(VARCHAR) FROM PUBLIC, anon;'), '[FALHA] kds_obter_painel deve ser revogada de PUBLIC e anon!');
+assert.ok(m038.includes('REVOKE ALL ON public.pedido_producao_kds FROM PUBLIC, anon;'), '[FALHA] pedido_producao_kds deve ter grants fail-closed!');
+assert.ok(m038.includes('REVOKE ALL ON public.pedido_item_producao_kds FROM PUBLIC, anon;'), '[FALHA] pedido_item_producao_kds deve ter grants fail-closed!');
+assert.ok(m038.includes('REVOKE ALL ON public.pedido_item_kds_etapas FROM PUBLIC, anon;'), '[FALHA] pedido_item_kds_etapas deve ter grants fail-closed!');
+assert.ok(m038.includes('REVOKE ALL ON public.pedido_kds_estagio_historico FROM PUBLIC, anon;'), '[FALHA] pedido_kds_estagio_historico deve ter grants fail-closed!');
+
+console.log('  🔎 38.7 Verificando presença das estruturas da Frente 038 nos schemas mestres...');
+for (const [name, content] of [['install.sql', fs.readFileSync('sql/install.sql', 'utf-8')], ['schema.sql', fs.readFileSync('sql/schema.sql', 'utf-8')]]) {
+  assert.ok(content.includes('public.produto_etapas_kds'), `[FALHA] ${name} não contém produto_etapas_kds!`);
+  assert.ok(content.includes('public.pedido_producao_kds'), `[FALHA] ${name} não contém pedido_producao_kds!`);
+  assert.ok(content.includes('public.pedido_item_producao_kds'), `[FALHA] ${name} não contém pedido_item_producao_kds!`);
+  assert.ok(content.includes('public.pedido_item_kds_etapas'), `[FALHA] ${name} não contém pedido_item_kds_etapas!`);
+  assert.ok(content.includes('public.pedido_kds_estagio_historico'), `[FALHA] ${name} não contém pedido_kds_estagio_historico!`);
+  assert.ok(content.includes('public.kds_avancar_item'), `[FALHA] ${name} não contém kds_avancar_item!`);
+  assert.ok(content.includes('public.kds_obter_painel'), `[FALHA] ${name} não contém kds_obter_painel!`);
+}
+
+console.log('  🔎 38.8 Verificando frontend de KDS (admin.html, js/admin-kds.js, js/admin.js)...');
+const adminHtmlKds = fs.readFileSync('admin.html', 'utf-8');
+const adminKdsJs = fs.readFileSync('js/admin-kds.js', 'utf-8');
+const adminJsKds = fs.readFileSync('js/admin.js', 'utf-8');
+
+assert.ok(
+  adminHtmlKds.includes('id="tab-btn-kds"') &&
+  adminHtmlKds.includes('id="admin-tab-kds"') &&
+  adminHtmlKds.includes('js/admin-kds.js') &&
+  adminHtmlKds.includes('kds-cards-container') &&
+  adminHtmlKds.includes('btn-kds-fullscreen') &&
+  adminHtmlKds.includes('data-kds-praca="TODAS"'),
+  '[FALHA] Elementos visuais de KDS ausentes em admin.html!'
+);
+assert.ok(
+  adminKdsJs.includes('carregarPainelKds') &&
+  adminKdsJs.includes('kdsAvancarItem') &&
+  adminKdsJs.includes('kdsMarcarUrgencia') &&
+  adminKdsJs.includes('inicializarKds') &&
+  adminKdsJs.includes('emitirAlertaSonoroSuave') &&
+  adminKdsJs.includes('AudioContext') &&
+  adminKdsJs.includes('min-height: 48px'),
+  '[FALHA] Lógica ou ergonomia de bancada ausente em js/admin-kds.js!'
+);
+assert.ok(
+  adminJsKds.includes('tab-btn-kds') &&
+  adminJsKds.includes('carregarKdsAdmin'),
+  '[FALHA] Roteamento de abas para KDS ausente em js/admin.js!'
+);
+console.log('    ✅ Migration 038, schemas mestre, K1–K18 e frontend de KDS Bancada validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–38 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
 
 
 

@@ -72,6 +72,7 @@
           <button id="tab-btn-hoje" class="active" onclick="mudarTabAdmin('hoje')"><i class="fa-solid fa-sun"></i> Hoje</button>
           <button id="tab-btn-dashboard" onclick="mudarTabAdmin('dashboard')"><i class="fa-solid fa-chart-pie"></i> Dashboard & DRE</button>
           <button id="tab-btn-producao" onclick="mudarTabAdmin('producao')"><i class="fa-solid fa-kitchen-set"></i> Produção & Fila</button>
+          <button id="tab-btn-kds" onclick="mudarTabAdmin('kds')"><i class="fa-solid fa-desktop" style="color:#0ea5e9;"></i> KDS Bancada</button>
           <button id="tab-btn-logistica" onclick="mudarTabAdmin('logistica')"><i class="fa-solid fa-truck-fast"></i> Logística & Rotas</button>
           <button id="tab-btn-retirada" onclick="mudarTabAdmin('retirada')"><i class="fa-solid fa-store"></i> Balcão & Retirada</button>
           <button id="tab-btn-pdv" onclick="mudarTabAdmin('pdv')"><i class="fa-solid fa-bolt" style="color:#f59e0b;"></i> PDV Balcão</button>
@@ -737,6 +738,47 @@
 
         <!-- ABA: Sessões de Caixa & Turnos PDV (Frente R) -->
         <div id="admin-tab-caixa" class="admin-tab" style="display:none;"></div>
+
+        <!-- ABA: KDS em Tempo Real / Produção de Cozinha (Frente 038) -->
+        <div id="admin-tab-kds" class="admin-tab" style="display:none;">
+          <div class="kds-header-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; background: #ffffff; padding: 14px 18px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="background: #e0f2fe; color: #0284c7; width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px;">
+                <i class="fa-solid fa-desktop"></i>
+              </div>
+              <div>
+                <h3 style="margin: 0; font-size: 17px; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                  KDS Cozinha & Praças
+                  <span id="kds-total-pedidos" style="font-size: 12px; font-weight: 600; background: #f1f5f9; color: #475569; padding: 2px 8px; border-radius: 20px;">0 pedidos</span>
+                </h3>
+                <span style="font-size: 12px; color: #64748b;">Monitor de bancada em tempo real com cronometragem de SLA por item</span>
+              </div>
+            </div>
+            
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <div class="kds-filter-toolbar" style="display: flex; gap: 4px; background: #f1f5f9; padding: 4px; border-radius: 8px;">
+                <button type="button" class="btn-outline active-filter" data-kds-praca="TODAS" style="padding: 6px 12px; font-size: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Todas</button>
+                <button type="button" class="btn-outline" data-kds-praca="MASSA" style="padding: 6px 12px; font-size: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Massa</button>
+                <button type="button" class="btn-outline" data-kds-praca="FORNO" style="padding: 6px 12px; font-size: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Forno</button>
+                <button type="button" class="btn-outline" data-kds-praca="RECHEIO" style="padding: 6px 12px; font-size: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Recheio</button>
+                <button type="button" class="btn-outline" data-kds-praca="DECORACAO" style="padding: 6px 12px; font-size: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Decoração</button>
+                <button type="button" class="btn-outline" data-kds-praca="EMBALAGEM" style="padding: 6px 12px; font-size: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Embalagem</button>
+              </div>
+
+              <button type="button" id="btn-kds-fullscreen" class="btn-outline" style="min-height: 38px; padding: 6px 14px; font-size: 13px; font-weight: 600; border-radius: 8px; border: 1px solid #cbd5e1; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                ⛶ Tela Cheia (Bancada)
+              </button>
+              <button type="button" onclick="window.carregarPainelKds()" class="btn-outline" style="min-height: 38px; padding: 6px 12px; font-size: 13px; border-radius: 8px; border: 1px solid #cbd5e1; cursor: pointer;" title="Reconciliar agora">
+                <i class="fa-solid fa-rotate-right"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Grade de Pedidos KDS Kanban -->
+          <div id="kds-cards-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; align-items: start;">
+            <!-- Preenchido dinamicamente por admin-kds.js -->
+          </div>
+        </div>
       </div>
     </div>
   </main>
@@ -1404,6 +1446,7 @@
   <script type="module" src="js/admin-retirada.js?v=4.4.0"></script>
   <script type="module" src="js/admin-pdv.js?v=4.6.0"></script>
   <script type="module" src="js/admin-caixa.js?v=4.7.0"></script>
+  <script type="module" src="js/admin-kds.js?v=4.8.0"></script>
   <script type="module" src="js/whatsapp-helper.js?v=3.2.0"></script>
 
   <script>
