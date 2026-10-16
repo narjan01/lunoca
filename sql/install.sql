@@ -33290,7 +33290,7 @@ BEGIN
   -- 3. Resolução dos dados de domínio
   IF p_pedido_id IS NOT NULL THEN
     SELECT 
-      cliente_id, telefone_cliente, nome_cliente, total, 
+      cliente_id_rel, telefone_cliente, nome_cliente, total, 
       to_char(data_entrega, 'DD/MM/YYYY'), hora_entrega::TEXT, endereco_entrega, valor_pago
     INTO 
       v_cli_id, v_tel_raw, v_nome_cli, v_total,
@@ -33774,45 +33774,49 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- Transição para PRONTO (aviso de retirada ou pedido pronto)
-  IF NEW.status_operacional = 'pronto' AND (OLD.status_operacional IS NULL OR OLD.status_operacional <> 'pronto') THEN
-    PERFORM public.whatsapp_enfileirar_transacional(
-      p_tipo := 'PEDIDO_PRONTO',
-      p_pedido_id := NEW.id
-    );
-  END IF;
+  BEGIN
+    -- Transição para PRONTO (aviso de retirada ou pedido pronto)
+    IF NEW.status_operacional = 'pronto' AND (OLD.status_operacional IS NULL OR OLD.status_operacional <> 'pronto') THEN
+      PERFORM public.whatsapp_enfileirar_transacional(
+        p_tipo := 'PEDIDO_PRONTO',
+        p_pedido_id := NEW.id
+      );
+    END IF;
 
-  -- Transição para SAIU_PARA_ENTREGA
-  IF NEW.status_operacional = 'saiu_para_entrega' AND (OLD.status_operacional IS NULL OR OLD.status_operacional <> 'saiu_para_entrega') THEN
-    PERFORM public.whatsapp_enfileirar_transacional(
-      p_tipo := 'SAIU_PARA_ENTREGA',
-      p_pedido_id := NEW.id
-    );
-  END IF;
+    -- Transição para SAIU_PARA_ENTREGA
+    IF NEW.status_operacional = 'saiu_para_entrega' AND (OLD.status_operacional IS NULL OR OLD.status_operacional <> 'saiu_para_entrega') THEN
+      PERFORM public.whatsapp_enfileirar_transacional(
+        p_tipo := 'SAIU_PARA_ENTREGA',
+        p_pedido_id := NEW.id
+      );
+    END IF;
 
-  -- Transição para ENTREGUE
-  IF NEW.status_operacional = 'entregue' AND (OLD.status_operacional IS NULL OR OLD.status_operacional <> 'entregue') THEN
-    PERFORM public.whatsapp_enfileirar_transacional(
-      p_tipo := 'PEDIDO_ENTREGUE',
-      p_pedido_id := NEW.id
-    );
-  END IF;
+    -- Transição para ENTREGUE
+    IF NEW.status_operacional = 'entregue' AND (OLD.status_operacional IS NULL OR OLD.status_operacional <> 'entregue') THEN
+      PERFORM public.whatsapp_enfileirar_transacional(
+        p_tipo := 'PEDIDO_ENTREGUE',
+        p_pedido_id := NEW.id
+      );
+    END IF;
 
-  -- Transição para RETIRADO
-  IF NEW.status_operacional = 'retirado' AND (OLD.status_operacional IS NULL OR OLD.status_operacional <> 'retirado') THEN
-    PERFORM public.whatsapp_enfileirar_transacional(
-      p_tipo := 'PEDIDO_RETIRADO',
-      p_pedido_id := NEW.id
-    );
-  END IF;
+    -- Transição para RETIRADO
+    IF NEW.status_operacional = 'retirado' AND (OLD.status_operacional IS NULL OR OLD.status_operacional <> 'retirado') THEN
+      PERFORM public.whatsapp_enfileirar_transacional(
+        p_tipo := 'PEDIDO_RETIRADO',
+        p_pedido_id := NEW.id
+      );
+    END IF;
 
-  -- Transição de status financeiro para PAGO
-  IF NEW.status_financeiro = 'pago' AND (OLD.status_financeiro IS NULL OR OLD.status_financeiro <> 'pago') THEN
-    PERFORM public.whatsapp_enfileirar_transacional(
-      p_tipo := 'PAGAMENTO_CONFIRMADO',
-      p_pedido_id := NEW.id
-    );
-  END IF;
+    -- Transição de status financeiro para PAGO
+    IF NEW.status_financeiro = 'pago' AND (OLD.status_financeiro IS NULL OR OLD.status_financeiro <> 'pago') THEN
+      PERFORM public.whatsapp_enfileirar_transacional(
+        p_tipo := 'PAGAMENTO_CONFIRMADO',
+        p_pedido_id := NEW.id
+      );
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'Falha não bloqueante ao enfileirar WhatsApp para pedido %: %', NEW.id, SQLERRM;
+  END;
 
   RETURN NEW;
 END;

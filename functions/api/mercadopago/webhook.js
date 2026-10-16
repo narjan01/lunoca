@@ -194,6 +194,20 @@ export async function onRequestPost(context) {
 
       const rpcResult = await rpcRes.json();
       console.log(`[Webhook] Pedido #${orderId} processado atomicamente (${payment.status}):`, rpcResult);
+
+      if (payment.status === 'approved') {
+        const baseUrl = env.APP_BASE_URL || 'https://lunocadoceria.com.br';
+        const triggerDispatcher = fetch(`${baseUrl}/api/whatsapp/dispatcher`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${serviceKey}`,
+            'Content-Type': 'application/json'
+          }
+        }).catch(() => {});
+        if (context.waitUntil) {
+          context.waitUntil(triggerDispatcher);
+        }
+      }
     }
 
     return new Response(JSON.stringify({ received: true }), {

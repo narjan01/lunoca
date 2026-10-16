@@ -259,6 +259,16 @@ async function enviarPedido() {
             }
         } catch (e) {}
 
+        // Limpa o carrinho local imediatamente após a criação do pedido no banco
+        try {
+            carrinho = [];
+            if (typeof salvarCarrinhoLocal === 'function') salvarCarrinhoLocal();
+            if (typeof atualizarBotaoCarrinho === 'function') atualizarBotaoCarrinho();
+            if (typeof renderizarItensCheckout === 'function') renderizarItensCheckout();
+        } catch (clearErr) {
+            console.warn('[Lunoca] Erro ao limpar carrinho:', clearErr);
+        }
+
         // ATENÇÃO: A baixa de estoque NÃO ocorre mais aqui de forma prematura.
         // O estoque só é baixado pelo servidor/webhook quando o pagamento for APROVADO.
 

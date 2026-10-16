@@ -226,6 +226,28 @@ export async function onRequestPost(context) {
       const pointOfInteraction = mpData.point_of_interaction || {};
       const txData = pointOfInteraction.transaction_data || {};
 
+      // Salva o mercado_pago_id e status inicial no pedido
+      const supabaseUrl = env.SUPABASE_URL || 'https://xdnlkvbfaacrrhhuaxao.supabase.co';
+      const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
+      if (supabaseUrl && serviceKey && mpData.id) {
+        try {
+          await fetch(`${supabaseUrl}/rest/v1/pedidos?id=eq.${pedidoId}`, {
+            method: 'PATCH',
+            headers: {
+              apikey: serviceKey,
+              Authorization: `Bearer ${serviceKey}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify({
+              mercado_pago_id: String(mpData.id),
+              mercado_pago_status: mpData.status || 'pending',
+              updated_at: new Date().toISOString()
+            })
+          });
+        } catch (_) {}
+      }
+
       return new Response(JSON.stringify({
         success: true,
         type: 'pix',
