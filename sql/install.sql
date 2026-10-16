@@ -33303,7 +33303,7 @@ BEGIN
     END IF;
   ELSE
     SELECT 
-      cliente_id, telefone_cliente, nome_cliente, total, token_publico
+      cliente_id, cliente_telefone, cliente_nome, total, token_publico
     INTO 
       v_cli_id, v_tel_raw, v_nome_cli, v_total, v_token_pub
     FROM public.orcamentos 
@@ -33825,16 +33825,11 @@ ON public.pedidos
 FOR EACH ROW
 EXECUTE FUNCTION public.trg_whatsapp_pedidos_fn();
 
--- 11.2 Transições em Orçamentos (Enviado, Aprovado)
+-- 11.2 Transições em Orçamentos (Aprovado)
 CREATE OR REPLACE FUNCTION public.trg_whatsapp_orcamentos_fn()
 RETURNS TRIGGER AS $$
 BEGIN
-  IF TG_OP = 'INSERT' THEN
-    PERFORM public.whatsapp_enfileirar_transacional(
-      p_tipo := 'ORCAMENTO_ENVIADO',
-      p_orcamento_id := NEW.id
-    );
-  ELSIF TG_OP = 'UPDATE' THEN
+  IF TG_OP = 'UPDATE' THEN
     IF NEW.status = 'aprovado' AND (OLD.status IS NULL OR OLD.status <> 'aprovado') THEN
       PERFORM public.whatsapp_enfileirar_transacional(
         p_tipo := 'ORCAMENTO_APROVADO',
@@ -33849,7 +33844,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth, extensions;
 
 DROP TRIGGER IF EXISTS trg_whatsapp_orcamentos ON public.orcamentos;
 CREATE TRIGGER trg_whatsapp_orcamentos
-AFTER INSERT OR UPDATE OF status
+AFTER UPDATE OF status
 ON public.orcamentos
 FOR EACH ROW
 EXECUTE FUNCTION public.trg_whatsapp_orcamentos_fn();
