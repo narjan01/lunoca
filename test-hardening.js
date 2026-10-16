@@ -3758,7 +3758,104 @@ assert.ok(
 );
 console.log('    ✅ Migration 038, schemas mestre, K1–K18 e frontend de KDS Bancada validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–38 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+// ==============================================================================
+// 📱 FASE 39: FRENTE 039 — WhatsApp Automático Transacional & Outbox
+// ==============================================================================
+console.log('\n============================================================');
+console.log('📱 FASE 39: Frente 039 — WhatsApp Automático & Outbox (Migration 039)...');
+console.log('============================================================');
+
+const m039Path = 'supabase/migrations/039_whatsapp_automatico_outbox.sql';
+assert.ok(fs.existsSync(m039Path), '[FALHA] Migration 039 não encontrada!');
+const m039 = fs.readFileSync(m039Path, 'utf-8');
+const m039CodeOnly = m039.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+
+console.log('  🔎 39.1 Verificando preservação de tipos legados (015 e 024) e novos tipos em comunicacoes_cliente...');
+assert.ok(
+  m039.includes("'ORCAMENTO_ENVIADO'") &&
+  m039.includes("'ORCAMENTO_VENCENDO'") &&
+  m039.includes("'SINAL_CONFIRMADO'") &&
+  m039.includes("'PEDIDO_PRONTO'") &&
+  m039.includes("'SAIU_PARA_ENTREGA'") &&
+  m039.includes("'CUPOM_ANIVERSARIO'") &&
+  m039.includes("'VOLTE_A_COMPRAR'") &&
+  m039.includes("'CAMPANHA_PASCOA'") &&
+  m039.includes("'CAMPANHA_PROMOCIONAL'") &&
+  m039.includes("'LEMBRETE_PONTOS_EXPIRANDO'") &&
+  m039.includes("'PEDIDO_CONFIRMADO'") &&
+  m039.includes("'PAGAMENTO_CONFIRMADO'") &&
+  m039.includes("'PRODUCAO_INICIADA'") &&
+  m039.includes("'PEDIDO_ENTREGUE'") &&
+  m039.includes("'PEDIDO_RETIRADO'") &&
+  m039.includes("'ORCAMENTO_APROVADO'") &&
+  m039.includes("'LEMBRETE_RETIRADA'"),
+  '[FALHA] Constraint comunicacoes_cliente_tipo_check não preserva todos os tipos legados ou novos da 039!'
+);
+
+console.log('  🔎 39.2 Verificando as 3 tabelas canônicas e integridade referencial RESTRICT...');
+assert.ok(m039.includes('CREATE TABLE IF NOT EXISTS public.whatsapp_templates'), '[FALHA] Tabela whatsapp_templates ausente!');
+assert.ok(m039.includes('CREATE TABLE IF NOT EXISTS public.comunicacao_whatsapp_outbox'), '[FALHA] Tabela comunicacao_whatsapp_outbox ausente!');
+assert.ok(m039.includes('CREATE TABLE IF NOT EXISTS public.whatsapp_eventos_gateway'), '[FALHA] Tabela whatsapp_eventos_gateway ausente!');
+assert.ok(m039.includes('comunicacao_id BIGINT REFERENCES public.comunicacoes_cliente(id) ON DELETE RESTRICT'), '[FALHA] comunicacao_id deve ser ON DELETE RESTRICT!');
+assert.ok(m039.includes('pedido_id BIGINT REFERENCES public.pedidos(id) ON DELETE RESTRICT'), '[FALHA] pedido_id deve ser ON DELETE RESTRICT!');
+assert.ok(m039.includes('orcamento_id BIGINT REFERENCES public.orcamentos(id) ON DELETE RESTRICT'), '[FALHA] orcamento_id deve ser ON DELETE RESTRICT!');
+
+console.log('  🔎 39.3 Verificando resiliência a worker morto (claim_token, lease_expira_em) e SUPRIMIDO...');
+assert.ok(m039.includes('claim_token UUID'), '[FALHA] Coluna claim_token ausente na outbox!');
+assert.ok(m039.includes('lease_expira_em TIMESTAMPTZ'), '[FALHA] Coluna lease_expira_em ausente na outbox!');
+assert.ok(m039.includes('cancelamento_solicitado BOOLEAN NOT NULL DEFAULT false'), '[FALHA] Coluna cancelamento_solicitado ausente!');
+assert.ok(m039.includes("'SUPRIMIDO'"), '[FALHA] Status SUPRIMIDO ausente na outbox!');
+assert.ok(m039.includes("'SEM_TELEFONE', 'TELEFONE_INVALIDO'"), '[FALHA] Motivos de supressão ausentes!');
+
+console.log('  🔎 39.4 Verificando distinção entre disparar_em e proxima_tentativa_em...');
+assert.ok(m039.includes('disparar_em TIMESTAMPTZ NOT NULL DEFAULT NOW()'), '[FALHA] disparar_em ausente!');
+assert.ok(m039.includes('proxima_tentativa_em TIMESTAMPTZ NOT NULL DEFAULT NOW()'), '[FALHA] proxima_tentativa_em ausente!');
+
+console.log('  🔎 39.5 Verificando RPCs canônicas com claim/lease e bloqueio contra worker antigo...');
+assert.ok(m039.includes('CREATE OR REPLACE FUNCTION public.whatsapp_enfileirar_transacional'), '[FALHA] whatsapp_enfileirar_transacional ausente!');
+assert.ok(m039.includes('CREATE OR REPLACE FUNCTION public.whatsapp_obter_proximos_envios'), '[FALHA] whatsapp_obter_proximos_envios ausente!');
+assert.ok(m039.includes('CREATE OR REPLACE FUNCTION public.whatsapp_confirmar_envio'), '[FALHA] whatsapp_confirmar_envio ausente!');
+assert.ok(m039.includes('CREATE OR REPLACE FUNCTION public.whatsapp_registrar_falha'), '[FALHA] whatsapp_registrar_falha ausente!');
+assert.ok(m039.includes('CREATE OR REPLACE FUNCTION public.whatsapp_processar_webhook_status'), '[FALHA] whatsapp_processar_webhook_status ausente!');
+assert.ok(m039.includes('CREATE OR REPLACE FUNCTION public.whatsapp_listar_envios_admin'), '[FALHA] whatsapp_listar_envios_admin ausente!');
+assert.ok(m039.includes('FOR UPDATE SKIP LOCKED'), '[FALHA] FOR UPDATE SKIP LOCKED ausente em whatsapp_obter_proximos_envios!');
+assert.ok(m039.includes('WHATSAPP_CLAIM_INVALID'), '[FALHA] Exceção WHATSAPP_CLAIM_INVALID ausente para rejeição de worker expirado!');
+
+console.log('  🔎 39.6 Verificando triggers de domínio puros sem chamadas HTTP...');
+assert.ok(m039.includes('CREATE TRIGGER trg_whatsapp_pedidos'), '[FALHA] Trigger trg_whatsapp_pedidos ausente!');
+assert.ok(m039.includes('CREATE TRIGGER trg_whatsapp_orcamentos'), '[FALHA] Trigger trg_whatsapp_orcamentos ausente!');
+assert.ok(!m039CodeOnly.includes('http_post') && !m039CodeOnly.includes('net.http'), '[FALHA] Triggers não podem fazer chamadas HTTP!');
+
+console.log('  🔎 39.7 Verificando deduplicação provider-aware e não-regressão de status...');
+assert.ok(m039.includes('uq_whatsapp_evento_provider UNIQUE (provider, chave_evento)'), '[FALHA] Unicidade de evento do gateway ausente!');
+assert.ok(m039.includes("IF v_status_atual = 'ENVIADO' THEN") && m039.includes("v_novo_status := 'ENTREGUE';"), '[FALHA] Não-regressão de status ausente em webhook!');
+
+console.log('  🔎 39.8 Verificando grants fail-closed para anon e PUBLIC...');
+assert.ok(m039.includes('REVOKE ALL ON FUNCTION public.whatsapp_enfileirar_transacional(TEXT, BIGINT, BIGINT, TIMESTAMPTZ, JSONB) FROM PUBLIC, anon, authenticated;'), '[FALHA] whatsapp_enfileirar_transacional deve ser service_role only!');
+assert.ok(m039.includes('REVOKE ALL ON FUNCTION public.whatsapp_obter_proximos_envios(INT, INT) FROM PUBLIC, anon, authenticated;'), '[FALHA] whatsapp_obter_proximos_envios deve ser service_role only!');
+assert.ok(m039.includes('REVOKE ALL ON FUNCTION public.whatsapp_confirmar_envio(UUID, UUID, VARCHAR, VARCHAR) FROM PUBLIC, anon, authenticated;'), '[FALHA] whatsapp_confirmar_envio deve ser service_role only!');
+assert.ok(m039.includes('REVOKE ALL ON FUNCTION public.whatsapp_registrar_falha(UUID, UUID, TEXT) FROM PUBLIC, anon, authenticated;'), '[FALHA] whatsapp_registrar_falha deve ser service_role only!');
+assert.ok(m039.includes('REVOKE ALL ON FUNCTION public.whatsapp_processar_webhook_status(VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, JSONB) FROM PUBLIC, anon, authenticated;'), '[FALHA] whatsapp_processar_webhook_status deve ser service_role only!');
+assert.ok(m039.includes('REVOKE ALL ON FUNCTION public.whatsapp_listar_envios_admin(BIGINT, BIGINT, TEXT, INT) FROM PUBLIC, anon;'), '[FALHA] whatsapp_listar_envios_admin deve ser revogada de anon!');
+
+console.log('  🔎 39.9 Verificando presença das estruturas da Frente 039 nos schemas mestres...');
+for (const [name, content] of [['install.sql', fs.readFileSync('sql/install.sql', 'utf-8')], ['schema.sql', fs.readFileSync('sql/schema.sql', 'utf-8')]]) {
+  assert.ok(content.includes('public.whatsapp_templates'), `[FALHA] ${name} não contém whatsapp_templates!`);
+  assert.ok(content.includes('public.comunicacao_whatsapp_outbox'), `[FALHA] ${name} não contém comunicacao_whatsapp_outbox!`);
+  assert.ok(content.includes('public.whatsapp_eventos_gateway'), `[FALHA] ${name} não contém whatsapp_eventos_gateway!`);
+  assert.ok(content.includes('public.whatsapp_obter_proximos_envios'), `[FALHA] ${name} não contém whatsapp_obter_proximos_envios!`);
+  assert.ok(content.includes('public.whatsapp_confirmar_envio'), `[FALHA] ${name} não contém whatsapp_confirmar_envio!`);
+  assert.ok(content.includes('public.whatsapp_registrar_falha'), `[FALHA] ${name} não contém whatsapp_registrar_falha!`);
+}
+
+console.log('  🔎 39.10 Verificando endpoints Cloudflare Pages da Frente 039...');
+const dispatcherJs = fs.readFileSync('functions/api/whatsapp/dispatcher.js', 'utf-8');
+const webhookJs = fs.readFileSync('functions/api/whatsapp/webhook.js', 'utf-8');
+assert.ok(dispatcherJs.includes('whatsapp_obter_proximos_envios') && dispatcherJs.includes('whatsapp_confirmar_envio') && dispatcherJs.includes('claim_token'), '[FALHA] dispatcher.js incompleto!');
+assert.ok(webhookJs.includes('whatsapp_processar_webhook_status') && webhookJs.includes('chaveEvento'), '[FALHA] webhook.js incompleto!');
+console.log('    ✅ Migration 039, schemas mestre, WA1–WA18 e workers de mensageria validados com sucesso.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–39 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
 
 
 

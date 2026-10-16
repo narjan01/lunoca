@@ -44,6 +44,7 @@ const testSuites = [
   'tests/integration/frente_q.pdv_pronta_entrega.test.mjs',
   'tests/integration/frente_r.caixa_sessoes.test.mjs',
   'tests/integration/frente_kds_producao.test.mjs',
+  'tests/integration/frente_whatsapp_outbox.test.mjs',
   'tests/integration/rpc_runtime_contract.test.mjs',
 ];
 
