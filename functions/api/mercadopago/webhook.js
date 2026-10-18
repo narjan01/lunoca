@@ -95,31 +95,25 @@ export async function onRequestPost(context) {
       });
     }
 
-    // 1. Validação Criptográfica HMAC da Assinatura (Fail-Closed)
+    // 1. Validação Criptográfica HMAC da Assinatura
     const webhookSecret = env.MERCADO_PAGO_WEBHOOK_SECRET;
-    if (!webhookSecret) {
-      console.error('[Webhook] Falha de Configuração: MERCADO_PAGO_WEBHOOK_SECRET ausente.');
-      return new Response(JSON.stringify({
-        error: 'Configuração do webhook ausente no servidor (MERCADO_PAGO_WEBHOOK_SECRET).'
-      }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
+    if (webhookSecret) {
+      const isValidSignature = await isWebhookSignatureValid({
+        request,
+        bodyRaw,
+        paymentId,
+        secret: webhookSecret,
       });
-    }
 
-    const isValidSignature = await isWebhookSignatureValid({
-      request,
-      bodyRaw,
-      paymentId,
-      secret: webhookSecret,
-    });
-
-    if (!isValidSignature) {
-      console.warn('[Webhook] Assinatura HMAC rejeitada para paymentId:', paymentId);
-      return new Response(JSON.stringify({ error: 'Assinatura inválida.' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      if (!isValidSignature) {
+        console.warn('[Webhook] Assinatura HMAC rejeitada para paymentId:', paymentId);
+        return new Response(JSON.stringify({ error: 'Assinatura inválida.' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    } else {
+      console.warn('[Webhook] MERCADO_PAGO_WEBHOOK_SECRET não configurado. Validação HMAC em modo de transição.');
     }
 
     // 2. Consulta detalhes oficiais do pagamento na API do Mercado Pago
