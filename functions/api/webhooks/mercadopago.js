@@ -5,4 +5,9 @@
 // quanto para o padrão /api/webhooks/mercadopago configurado no painel do gateway.
 // ==============================================================================
 
-export { onRequestPost, onRequestOptions } from '../mercadopago/webhook.js';
+import { handleCorsOptions } from '../_cors.js';
+export { onRequestPost } from '../mercadopago/webhook.js';
+
+export async function onRequestOptions(context) {
+  return handleCorsOptions(context.request, context.env);
+}
