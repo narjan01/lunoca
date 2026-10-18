@@ -870,7 +870,10 @@
             } else if (data.status === 'approved' && !data.synced) {
               const statusBox = document.getElementById('mp-pix-status-box');
               if (statusBox) {
-                statusBox.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="color: #0284c7;"></i> <span>Pagamento recebido! Sincronizando com a cozinha...</span>';
+                statusBox.style.background = '#ecfdf5';
+                statusBox.style.borderColor = '#6ee7b7';
+                statusBox.style.color = '#065f46';
+                statusBox.innerHTML = '<i class="fa-solid fa-circle-check" style="color: #10b981; font-size: 16px;"></i> <span><strong>Pagamento Aprovado no Mercado Pago!</strong> Finalizando confirmação do seu pedido...</span>';
               }
             }
           }

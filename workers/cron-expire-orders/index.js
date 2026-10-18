@@ -22,6 +22,8 @@ async function disparar(env, origem) {
     console.error('[cron] CRON_SECRET ou APP_BASE_URL ausente; abortando (fail-closed).');
     return { success: false, error: 'config ausente' };
   }
+
+  // 1. Expiração de pedidos & holds vencidos
   const res = await fetch(`${env.APP_BASE_URL}/api/cron/expire-orders`, {
     method: 'POST',
     headers: {
@@ -32,6 +34,24 @@ async function disparar(env, origem) {
     body: JSON.stringify({ limite: 200 })
   });
   const data = await res.json().catch(() => ({}));
-  console.log(`[cron:${origem}] status=${res.status}`, JSON.stringify(data));
-  return { status: res.status, ...data };
+  console.log(`[cron:${origem}:expire] status=${res.status}`, JSON.stringify(data));
+
+  // 2. Dispatcher assíncrono de WhatsApp Outbox
+  let dataWa = null;
+  try {
+    const resWa = await fetch(`${env.APP_BASE_URL}/api/whatsapp/dispatcher`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.CRON_SECRET}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'lunoca-cron-worker'
+      }
+    });
+    dataWa = await resWa.json().catch(() => ({}));
+    console.log(`[cron:${origem}:whatsapp] status=${resWa.status}`, JSON.stringify(dataWa));
+  } catch (errWa) {
+    console.warn(`[cron:${origem}:whatsapp] Erro de conexão com dispatcher:`, errWa.message);
+  }
+
+  return { status: res.status, expire: data, whatsapp: dataWa };
 }

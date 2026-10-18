@@ -17,12 +17,18 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   const corsHeaders = getCorsHeaders(request, env);
 
-  // Validação de segurança: cron secret ou service token
+  // Validação de segurança: aceita tanto o CRON_SECRET do worker agendado quanto a service_role key do webhook interno
   const authHeader = request.headers.get('Authorization') || '';
-  const cronSecret = env.CRON_SECRET || env.SUPABASE_SERVICE_ROLE_KEY || '';
-  const expectedBearer = `Bearer ${cronSecret}`;
+  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const cronSecret = env.CRON_SECRET || '';
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-  if (!cronSecret || authHeader !== expectedBearer) {
+  const isAuthorized = Boolean(
+    (cronSecret && bearerToken === cronSecret) ||
+    (serviceKey && bearerToken === serviceKey)
+  );
+
+  if (!isAuthorized) {
     return new Response(JSON.stringify({ success: false, error: 'UNAUTHORIZED' }), {
       status: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -30,7 +36,6 @@ export async function onRequestPost(context) {
   }
 
   const supabaseUrl = env.SUPABASE_URL || '';
-  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || '';
   if (!supabaseUrl || !serviceKey) {
     return new Response(JSON.stringify({ success: false, error: 'SUPABASE_CONFIG_MISSING' }), {
       status: 500,
@@ -68,9 +73,10 @@ export async function onRequestPost(context) {
       });
     }
 
-    const evolutionUrl = env.EVOLUTION_API_URL ? env.EVOLUTION_API_URL.replace(/\/+$/, '') : null;
-    const evolutionKey = env.EVOLUTION_API_KEY || null;
-    const evolutionInstance = env.EVOLUTION_INSTANCE_NAME || 'lunoca';
+    const rawUrl = env.EVOLUTION_API_URL || env.WHATSAPP_API_URL || 'https://lunoca-whatsapp.onrender.com';
+    const evolutionUrl = rawUrl ? rawUrl.replace(/\/+$/, '') : null;
+    const evolutionKey = env.EVOLUTION_API_KEY || env.AUTHENTICATION_API_KEY || env.WHATSAPP_API_KEY || null;
+    const evolutionInstance = env.EVOLUTION_INSTANCE_NAME || env.WHATSAPP_INSTANCE_NAME || 'lunoca-whatsapp';
 
     let sucessos = 0;
     let falhas = 0;
