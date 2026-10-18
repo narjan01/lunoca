@@ -334,6 +334,16 @@ function renderizarCardEncomendaHtml(p, isTimeline = false) {
             <i class="fa-solid fa-hand-holding-dollar"></i> Receber Saldo
           </button>` : ''}
 
+        ${(p.status_operacional === 'aguardando_producao' || p.status_operacional === 'em_producao') ? `
+          <button onclick="mudarTabAdmin('kds')" class="btn-outline" style="padding:5px 10px; font-size:12px; color:#0284c7; border-color:#7dd3fc; border-radius:8px; background:#f0f9ff;" title="Acompanhar produção no KDS">
+            <i class="fa-solid fa-desktop"></i> Ver no KDS
+          </button>` : ''}
+
+        ${p.modalidade_entrega === 'retirada' ? `
+          <button onclick="mudarTabAdmin('retirada')" class="btn-outline" style="padding:5px 10px; font-size:12px; color:#6b2d5c; border-color:#d8b4e2; border-radius:8px; background:#faf5f8;" title="Acompanhar no Balcão de Retirada">
+            <i class="fa-solid fa-store"></i> Balcão
+          </button>` : ''}
+
         <button onclick="abrirModalReagendar('${p.id}', '${p.data_entrega}', '${p.hora_entrega || ''}')" class="btn-outline" style="padding:5px 10px; font-size:12px; color:#6366f1; border-color:#c7d2fe; border-radius:8px;" title="Alterar data/hora da entrega">
           <i class="fa-regular fa-calendar"></i> Reagendar
         </button>

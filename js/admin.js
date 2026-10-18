@@ -125,11 +125,79 @@ function mudarTabAdmin(tab) {
     if(tab === 'custos' && typeof carregarCustosAdmin === 'function') carregarCustosAdmin();
     if(tab === 'alertas' && typeof carregarAlertasAdmin === 'function') carregarAlertasAdmin();
     if(tab === 'equipe' && typeof carregarEquipeAdmin === 'function') carregarEquipeAdmin();
+
+    // Atualiza contadores dos badges dinâmicos ao alternar abas
+    atualizarBadgesMenuAdmin();
 }
 
 // ==========================================================================
-// Gestão de Usuários & Níveis de Acesso (Cliente, Operador, Admin)
+// BADGES DINÂMICOS E SINCRONIZAÇÃO EM TEMPO REAL NO MENU ADMIN
 // ==========================================================================
+var liveBadgesTimer = null;
+
+async function atualizarBadgesMenuAdmin(mostrarFeedback = false) {
+    if (!usuarioAtual || (usuarioAtual.nivel !== 'admin' && usuarioAtual.nivel !== 'operador')) return;
+    try {
+        // 1. Pedidos ativos/pendentes
+        const { count: countPedidos } = await supabaseClient
+            .from('pedidos')
+            .select('*', { count: 'exact', head: true })
+            .neq('status_comercial', 'cancelado')
+            .in('status_operacional', ['aguardando_producao', 'em_producao', 'pronto']);
+        
+        const badgePed = document.getElementById('badge-tab-pedidos');
+        if (badgePed) {
+            const num = countPedidos || 0;
+            badgePed.textContent = num;
+            badgePed.style.display = num > 0 ? 'inline-block' : 'none';
+        }
+
+        // 2. KDS - Itens em produção
+        const { count: countKds } = await supabaseClient
+            .from('pedido_producao_kds')
+            .select('*', { count: 'exact', head: true })
+            .eq('ativo', true);
+
+        const badgeKds = document.getElementById('badge-tab-kds');
+        if (badgeKds) {
+            const numKds = countKds || 0;
+            badgeKds.textContent = numKds;
+            badgeKds.style.display = numKds > 0 ? 'inline-block' : 'none';
+        }
+
+        // 3. Balcão & Retirada - Prontos para retirada
+        const { count: countRet } = await supabaseClient
+            .from('pedidos')
+            .select('*', { count: 'exact', head: true })
+            .eq('modalidade_entrega', 'retirada')
+            .neq('status_comercial', 'cancelado')
+            .in('status_operacional', ['pronto', 'aguardando_retirada']);
+
+        const badgeRet = document.getElementById('badge-tab-retirada');
+        if (badgeRet) {
+            const numRet = countRet || 0;
+            badgeRet.textContent = numRet;
+            badgeRet.style.display = numRet > 0 ? 'inline-block' : 'none';
+        }
+
+        if (mostrarFeedback && typeof mostrarToast === 'function') {
+            mostrarToast('Indicadores sincronizados com sucesso!', 'sucesso', 2000);
+        }
+    } catch (err) {
+        console.warn('[Admin Badges] Falha ao atualizar badges do menu:', err);
+    }
+}
+
+function iniciarSincronizacaoLiveAdmin() {
+    if (liveBadgesTimer) clearInterval(liveBadgesTimer);
+    atualizarBadgesMenuAdmin();
+    liveBadgesTimer = setInterval(() => {
+        atualizarBadgesMenuAdmin();
+    }, 25000);
+}
+
+window.atualizarBadgesMenuAdmin = atualizarBadgesMenuAdmin;
+window.iniciarSincronizacaoLiveAdmin = iniciarSincronizacaoLiveAdmin;
 async function carregarUsuariosAdmin() {
     const listaEl = document.getElementById('lista-usuarios-admin');
     if (!listaEl) return;

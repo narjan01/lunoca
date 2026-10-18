@@ -113,7 +113,7 @@ export async function onRequestPost(context) {
         });
       }
     } else {
-      console.warn('[Webhook] MERCADO_PAGO_WEBHOOK_SECRET não configurado. Validação HMAC em modo de transição.');
+      console.warn('[Webhook] MERCADO_PAGO_WEBHOOK_SECRET não configurado no ambiente.');
     }
 
     // 2. Consulta detalhes oficiais do pagamento na API do Mercado Pago

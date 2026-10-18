@@ -67,17 +67,27 @@
     <!-- Container Principal do Painel -->
     <div id="admin-main-content" style="display:none;">
       <div id="admin-section" class="screen active" style="display:block;">
-        <h2 style="margin-top:0;"><i class="fa-solid fa-screwdriver-wrench" style="color:var(--primary)"></i> Painel de Controle</h2>
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+          <h2 style="margin:0;"><i class="fa-solid fa-screwdriver-wrench" style="color:var(--primary)"></i> Painel de Controle</h2>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span id="indicador-live-admin" style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:#059669; background:#ecfdf5; border:1px solid #a7f3d0; padding:4px 10px; border-radius:20px;">
+              <span style="width:8px; height:8px; border-radius:50%; background:#10b981; display:inline-block; animation:pulse 2s infinite;"></span> Ao Vivo
+            </span>
+            <button onclick="if(typeof atualizarBadgesMenuAdmin === 'function') atualizarBadgesMenuAdmin(true)" class="btn-outline" style="padding:4px 8px; border-radius:8px; font-size:12px; cursor:pointer;" title="Sincronizar agora">
+              <i class="fa-solid fa-rotate-right"></i>
+            </button>
+          </div>
+        </div>
         <div class="admin-nav">
           <button id="tab-btn-hoje" class="active" onclick="mudarTabAdmin('hoje')"><i class="fa-solid fa-sun"></i> Hoje</button>
           <button id="tab-btn-dashboard" onclick="mudarTabAdmin('dashboard')"><i class="fa-solid fa-chart-pie"></i> Dashboard & DRE</button>
           <button id="tab-btn-producao" onclick="mudarTabAdmin('producao')"><i class="fa-solid fa-kitchen-set"></i> Produção & Fila</button>
-          <button id="tab-btn-kds" onclick="mudarTabAdmin('kds')"><i class="fa-solid fa-desktop" style="color:#0ea5e9;"></i> KDS Bancada</button>
+          <button id="tab-btn-kds" onclick="mudarTabAdmin('kds')"><i class="fa-solid fa-desktop" style="color:#0ea5e9;"></i> KDS Bancada <span id="badge-tab-kds" style="display:none; background:#0ea5e9; color:#fff; border-radius:10px; padding:1px 6px; font-size:11px; margin-left:4px; font-weight:700;"></span></button>
           <button id="tab-btn-logistica" onclick="mudarTabAdmin('logistica')"><i class="fa-solid fa-truck-fast"></i> Logística & Rotas</button>
-          <button id="tab-btn-retirada" onclick="mudarTabAdmin('retirada')"><i class="fa-solid fa-store"></i> Balcão & Retirada</button>
+          <button id="tab-btn-retirada" onclick="mudarTabAdmin('retirada')"><i class="fa-solid fa-store"></i> Balcão & Retirada <span id="badge-tab-retirada" style="display:none; background:#10b981; color:#fff; border-radius:10px; padding:1px 6px; font-size:11px; margin-left:4px; font-weight:700;"></span></button>
           <button id="tab-btn-pdv" onclick="mudarTabAdmin('pdv')"><i class="fa-solid fa-bolt" style="color:#f59e0b;"></i> PDV Balcão</button>
           <button id="tab-btn-caixa" onclick="mudarTabAdmin('caixa')"><i class="fa-solid fa-cash-register" style="color:#10b981;"></i> Sessões de Caixa</button>
-          <button id="tab-btn-pedidos" onclick="mudarTabAdmin('pedidos')"><i class="fa-solid fa-receipt"></i> Pedidos</button>
+          <button id="tab-btn-pedidos" onclick="mudarTabAdmin('pedidos')"><i class="fa-solid fa-receipt"></i> Pedidos <span id="badge-tab-pedidos" style="display:none; background:#6b2d5c; color:#fff; border-radius:10px; padding:1px 6px; font-size:11px; margin-left:4px; font-weight:700;"></span></button>
           <button id="tab-btn-orcamentos" onclick="mudarTabAdmin('orcamentos')"><i class="fa-solid fa-file-invoice-dollar"></i> Orçamentos</button>
           <button id="tab-btn-crm" onclick="mudarTabAdmin('crm')"><i class="fa-solid fa-address-book"></i> Clientes & CRM</button>
           <button id="tab-btn-fidelidade" onclick="mudarTabAdmin('fidelidade')"><i class="fa-solid fa-gift"></i> Fidelidade & Campanhas</button>
@@ -1624,6 +1634,7 @@
 
         if (typeof carregarProdutosServidor === 'function') await carregarProdutosServidor();
         if (typeof configurarAcessoAdminPorNivel === 'function') configurarAcessoAdminPorNivel();
+        if (typeof iniciarSincronizacaoLiveAdmin === 'function') iniciarSincronizacaoLiveAdmin();
         if (typeof carregarDashboardHoje === 'function') {
           mudarTabAdmin('hoje');
           await carregarDashboardHoje();

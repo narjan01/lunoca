@@ -9,11 +9,13 @@
 let retiradaPedidosCache = [];
 let retiradaFiltroAtual = 'todos';
 let retiradaBuscaTexto = '';
-let retiradaDataAtual = new Date().toISOString().slice(0, 10);
+let retiradaDataAtual = null; // null = todos os pedidos pendentes/agendados
 
 export async function carregarRetiradaAdmin() {
   const container = document.getElementById('admin-tab-retirada');
   if (!container) return;
+
+  const hojeIso = new Date().toISOString().slice(0, 10);
 
   container.innerHTML = `
     <div class="retirada-admin-header" style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
@@ -22,11 +24,17 @@ export async function carregarRetiradaAdmin() {
           <i class="fa-solid fa-store" style="color: var(--primary, #6b2d5c);"></i> Expedição & Balcão de Retirada
         </h2>
         <p style="margin: 0.25rem 0 0; color: #666; font-size: 0.9rem;">
-          Check-out presencial, validação de PIN de retirada de uso único e quitação de saldo remanescente.
+          Check-out presencial, validação de PIN de retirada e quitação de saldo remanescente.
         </p>
       </div>
       <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
-        <input type="date" id="filtro-retirada-data" value="${retiradaDataAtual}" class="form-control" style="padding: 0.45rem 0.75rem; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 0.9rem;">
+        <button id="btn-retirada-ver-todos" class="btn ${!retiradaDataAtual ? 'btn-primary' : 'btn-outline'}" style="padding: 0.45rem 0.8rem; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; ${!retiradaDataAtual ? 'background: #6b2d5c; color: #fff;' : 'background: #fff; color: #334155; border: 1px solid #cbd5e1;'}">
+          <i class="fa-solid fa-list-check"></i> Todos Pendentes
+        </button>
+        <button id="btn-retirada-ver-hoje" class="btn ${retiradaDataAtual === hojeIso ? 'btn-primary' : 'btn-outline'}" style="padding: 0.45rem 0.8rem; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; ${retiradaDataAtual === hojeIso ? 'background: #6b2d5c; color: #fff;' : 'background: #fff; color: #334155; border: 1px solid #cbd5e1;'}">
+          <i class="fa-solid fa-calendar-day"></i> Hoje
+        </button>
+        <input type="date" id="filtro-retirada-data" value="${retiradaDataAtual || ''}" class="form-control" style="padding: 0.45rem 0.75rem; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 0.9rem;" title="Filtrar por data específica">
         <button id="btn-atualizar-retirada" class="btn btn-outline" style="padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; border: 1px solid #cbd5e1; background: #fff;">
           <i class="fa-solid fa-rotate-right"></i> Atualizar
         </button>
@@ -51,9 +59,9 @@ export async function carregarRetiradaAdmin() {
         <div style="font-size: 0.75rem; color: #64748b;">Entregas de balcão concluídas</div>
       </div>
       <div style="background: #fff; padding: 1rem; border-radius: 10px; border-left: 4px solid #0ea5e9; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
-        <div style="font-size: 0.8rem; color: #64748b; font-weight: 600;">TOTAL RETIRADAS DO DIA</div>
+        <div style="font-size: 0.8rem; color: #64748b; font-weight: 600;">TOTAL RETIRADAS NO PAINEL</div>
         <div id="metrica-retirada-total" style="font-size: 1.7rem; font-weight: 700; color: #0284c7; margin-top: 4px;">0</div>
-        <div style="font-size: 0.75rem; color: #64748b;">Programados para a data</div>
+        <div style="font-size: 0.75rem; color: #64748b;">Pedidos visíveis no filtro</div>
       </div>
     </div>
 
@@ -107,11 +115,31 @@ function configurarEventosRetirada() {
     btnAtualizar.addEventListener('click', () => carregarDadosRetirada());
   }
 
+  const btnVerTodos = document.getElementById('btn-retirada-ver-todos');
+  if (btnVerTodos) {
+    btnVerTodos.addEventListener('click', () => {
+      retiradaDataAtual = null;
+      const dtInput = document.getElementById('filtro-retirada-data');
+      if (dtInput) dtInput.value = '';
+      carregarRetiradaAdmin();
+    });
+  }
+
+  const btnVerHoje = document.getElementById('btn-retirada-ver-hoje');
+  if (btnVerHoje) {
+    btnVerHoje.addEventListener('click', () => {
+      retiradaDataAtual = new Date().toISOString().slice(0, 10);
+      const dtInput = document.getElementById('filtro-retirada-data');
+      if (dtInput) dtInput.value = retiradaDataAtual;
+      carregarRetiradaAdmin();
+    });
+  }
+
   const dtFiltro = document.getElementById('filtro-retirada-data');
   if (dtFiltro) {
     dtFiltro.addEventListener('change', (e) => {
-      retiradaDataAtual = e.target.value;
-      carregarDadosRetirada();
+      retiradaDataAtual = e.target.value || null;
+      carregarRetiradaAdmin();
     });
   }
 
@@ -173,7 +201,24 @@ async function carregarDadosRetirada() {
       return;
     }
 
-    retiradaPedidosCache = data.pedidos || [];
+    retiradaPedidosCache = (data.pedidos || []).map(p => ({
+      id: p.pedido_id || p.id,
+      numero: p.numero || p.pedido_id || p.id,
+      cliente_nome: p.cliente_nome,
+      cliente_telefone: p.cliente_telefone,
+      data_entrega: p.data_entrega,
+      hora_entrega: p.horario_entrega || p.hora_entrega,
+      total: p.valor_total != null ? p.valor_total : (p.total != null ? p.total : 0),
+      saldo: p.saldo_devedor != null ? p.saldo_devedor : (p.saldo != null ? p.saldo : 0),
+      valor_pago: p.valor_pago != null ? p.valor_pago : 0,
+      status_comercial: p.status_comercial,
+      status_operacional: p.status_operacional,
+      status_financeiro: p.status_financeiro,
+      quality_hold_ativo: p.quality_hold_ativo,
+      possui_pin_ativo: p.possui_pin_ativo,
+      autorizacao_status: p.possui_pin_ativo ? 'ATIVA' : 'SEM_PIN'
+    }));
+
     atualizarMetricasRetirada(retiradaPedidosCache);
     renderizarTabelaRetirada();
   } catch (err) {
@@ -299,7 +344,8 @@ function renderizarTabelaRetirada() {
           <div style="font-size: 0.75rem; color: #64748b;">${escapeHtml(p.cliente_telefone || '')}</div>
         </td>
         <td style="padding: 0.75rem 1rem; color: #475569;">
-          ${p.hora_entrega ? String(p.hora_entrega).slice(0, 5) : '--:--'}
+          <div><i class="fa-regular fa-calendar"></i> ${p.data_entrega ? p.data_entrega.split('-').reverse().join('/') : '--'}</div>
+          <div style="font-size: 0.75rem; color: #64748b;"><i class="fa-regular fa-clock"></i> ${p.hora_entrega ? String(p.hora_entrega).slice(0, 5) : '--:--'}</div>
         </td>
         <td style="padding: 0.75rem 1rem;">${badgeStatus}</td>
         <td style="padding: 0.75rem 1rem;">${badgeFin}</td>
@@ -307,9 +353,13 @@ function renderizarTabelaRetirada() {
         <td style="padding: 0.75rem 1rem; text-align: right;">
           ${isRetirado
             ? `<span style="color: #10b981; font-weight: 600; font-size: 0.8rem;"><i class="fa-solid fa-circle-check"></i> Entregue</span>`
-            : `<button class="btn btn-sm btn-abrir-checkout" data-pedido-id="${p.id}" style="padding: 0.35rem 0.75rem; border-radius: 6px; background: ${isPronto ? '#6b2d5c' : '#94a3b8'}; color: #fff; border: none; cursor: ${isPronto ? 'pointer' : 'not-allowed'}; font-size: 0.8rem; font-weight: 600;" ${!isPronto ? 'disabled title="Pedido precisa estar Pronto"' : ''}>
-                <i class="fa-solid fa-cash-register"></i> Realizar Retirada
-              </button>`
+            : isPronto
+              ? `<button class="btn btn-sm btn-abrir-checkout" data-pedido-id="${p.id}" style="padding: 0.35rem 0.75rem; border-radius: 6px; background: #6b2d5c; color: #fff; border: none; cursor: pointer; font-size: 0.8rem; font-weight: 600;">
+                  <i class="fa-solid fa-cash-register"></i> Realizar Retirada
+                </button>`
+              : `<button type="button" onclick="if(typeof mudarTabAdmin==='function') mudarTabAdmin('kds')" class="btn btn-sm btn-outline" style="padding: 0.35rem 0.75rem; border-radius: 6px; color: #0284c7; border: 1px solid #7dd3fc; background: #f0f9ff; cursor: pointer; font-size: 0.8rem; font-weight: 600;" title="Avançar produção no KDS para liberar a retirada">
+                  <i class="fa-solid fa-desktop"></i> Ver no KDS
+                </button>`
           }
         </td>
       </tr>
