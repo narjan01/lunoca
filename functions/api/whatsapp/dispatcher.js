@@ -114,8 +114,9 @@ export async function onRequestPost(context) {
           },
           body: JSON.stringify({
             number: telefone_e164,
-            options: { delay: 1200, presence: 'composing' },
-            textMessage: { text: mensagem_texto }
+            text: mensagem_texto,
+            textMessage: { text: mensagem_texto },
+            options: { delay: 1200, presence: 'composing' }
           }),
           signal: controller.signal
         });

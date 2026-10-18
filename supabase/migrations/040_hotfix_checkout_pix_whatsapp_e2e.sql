@@ -50,6 +50,7 @@ DECLARE
   v_chave_idemp TEXT;
   v_status TEXT := 'PENDENTE';
   v_motivo_sup TEXT := NULL;
+  v_comunicacao_id BIGINT;
   v_outbox_id UUID;
   v_existente RECORD;
 BEGIN
@@ -164,28 +165,55 @@ BEGIN
     END IF;
   END IF;
 
-  -- 6. Inserção na Outbox
+  -- 6. Registra na verdade comercial comunicacoes_cliente (CRM histórico)
+  INSERT INTO public.comunicacoes_cliente (
+    orcamento_id, pedido_id, tipo, canal, destinatario,
+    mensagem_snapshot, status, chave_idempotencia, metadata
+  ) VALUES (
+    p_orcamento_id,
+    p_pedido_id,
+    p_tipo,
+    'whatsapp_automatico',
+    COALESCE(v_tel_norm, v_tel_raw, 'DESCONHECIDO'),
+    v_texto,
+    CASE WHEN v_status = 'SUPRIMIDO' THEN 'falhou' ELSE 'gerado' END,
+    v_chave_idemp,
+    jsonb_build_object(
+      'motivo_supressao', v_motivo_sup,
+      'template_codigo', COALESCE(v_tpl.codigo, p_tipo),
+      'template_versao', COALESCE(v_tpl.versao, 'v1')
+    )
+  )
+  ON CONFLICT (chave_idempotencia) DO UPDATE SET
+    updated_at = NOW()
+  RETURNING id INTO v_comunicacao_id;
+
+  -- 7. Inserção na Outbox técnica (transporte)
   INSERT INTO public.comunicacao_whatsapp_outbox (
+    comunicacao_id,
     chave_idempotencia,
     cliente_id,
     pedido_id,
     orcamento_id,
     template_codigo,
     template_versao,
+    categoria,
     telefone_e164_snapshot,
     mensagem_texto_snapshot,
-    payload_snapshot,
+    payload_renderizado,
     status,
     motivo_supressao,
     disparar_em,
     proxima_tentativa_em
   ) VALUES (
+    v_comunicacao_id,
     v_chave_idemp,
     v_cli_id,
     p_pedido_id,
     p_orcamento_id,
-    p_tipo,
+    COALESCE(v_tpl.codigo, p_tipo),
     COALESCE(v_tpl.versao, '1.0'),
+    COALESCE(v_tpl.categoria, 'TRANSACIONAL'),
     v_tel_norm,
     v_texto,
     v_payload,
@@ -196,24 +224,11 @@ BEGIN
   )
   RETURNING id INTO v_outbox_id;
 
-  -- 7. Registro de log de auditoria transacional
-  INSERT INTO public.comunicacao_whatsapp_logs (
-    outbox_id,
-    status_anterior,
-    status_novo,
-    origem,
-    detalhes
-  ) VALUES (
-    v_outbox_id,
-    NULL,
-    v_status,
-    'ENFILEIRAMENTO',
-    jsonb_build_object('tipo', p_tipo, 'motivo_supressao', v_motivo_sup)
-  );
-
   RETURN jsonb_build_object(
     'success', true,
+    'idempotente', false,
     'outbox_id', v_outbox_id,
+    'comunicacao_id', v_comunicacao_id,
     'status', v_status,
     'motivo_supressao', v_motivo_sup
   );
