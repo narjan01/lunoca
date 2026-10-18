@@ -33996,6 +33996,8 @@ GRANT EXECUTE ON FUNCTION public.whatsapp_listar_envios_admin(BIGINT, BIGINT, TE
 -- ------------------------------------------------------------------------------
 -- 1. CORREÇÃO EM WHATSAPP_ENFILEIRAR_TRANSACIONAL (GATE WA6 / WA7)
 -- ------------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.whatsapp_enfileirar_transacional(text, bigint, bigint, timestamptz, jsonb);
+
 CREATE OR REPLACE FUNCTION public.whatsapp_enfileirar_transacional(
   p_tipo TEXT,
   p_pedido_id BIGINT DEFAULT NULL,
