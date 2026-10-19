@@ -93,7 +93,9 @@ export async function onRequestPost(context) {
         id: produtoDB.id,
         nome: item.nome || produtoDB.nome,
         preco: precoReal,
-        quantidade: qtd
+        quantidade: qtd,
+        opcoes: Array.isArray(item.opcoes) ? item.opcoes : [],
+        personalizacoes: (item.personalizacoes && typeof item.personalizacoes === 'object') ? item.personalizacoes : {}
       });
     }
 

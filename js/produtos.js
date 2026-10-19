@@ -32,7 +32,8 @@ async function carregarProdutosServidor() {
       estoque_fisico: p.estoque_fisico,
       estoque_reservado: p.estoque_reservado,
       controlar_estoque: p.controlar_estoque,
-      pronta_entrega: p.pronta_entrega === true
+      pronta_entrega: p.pronta_entrega === true,
+      requer_aprovacao_personalizacao: p.requer_aprovacao_personalizacao === true
     }));
     
     renderizarProdutosApp();
@@ -214,7 +215,7 @@ function limparBuscaProdutos(resetarCategoria = false) {
   renderizarProdutosApp();
 }
 
-function abrirModalProduto(id) {
+async function abrirModalProduto(id) {
   const p = produtos.find(prod => String(prod.id) === String(id));
   if (!p) return;
 
@@ -267,8 +268,260 @@ function abrirModalProduto(id) {
   } else {
     containerOpcoes.style.display = 'none';
   }
+
+  // Personalização dinâmica & Briefing de Produção (Frente 043)
+  const containerPz = document.getElementById('modal-personalizacao-container');
+  const listaPz = document.getElementById('modal-personalizacao-campos');
+  const badgePz = document.getElementById('modal-personalizacao-badge');
+  window.personalizacaoCamposAtivos = [];
+  window.personalizacaoRespostasAtuais = {};
+
+  if (containerPz) containerPz.style.display = 'none';
+  if (listaPz) listaPz.innerHTML = '';
+
+  try {
+    const { data: pzData, error: pzErr } = await supabaseClient
+      .rpc('obter_personalizacao_produto', { p_produto_id: p.id });
+
+    if (!pzErr && pzData && pzData.success && Array.isArray(pzData.campos) && pzData.campos.length > 0) {
+      window.personalizacaoCamposAtivos = pzData.campos;
+      if (badgePz) {
+        badgePz.textContent = pzData.requer_aprovacao ? 'Revisão manual da confeitaria' : 'Briefing de produção';
+      }
+      renderizarCamposPersonalizacaoCliente(pzData.campos);
+      if (containerPz) containerPz.style.display = 'block';
+    }
+  } catch (errPz) {
+    console.warn('[Personalizacao] Erro ao carregar campos:', errPz);
+  }
   
   document.getElementById('modal-produto').style.display = 'flex';
+}
+
+function renderizarCamposPersonalizacaoCliente(campos) {
+  const listaPz = document.getElementById('modal-personalizacao-campos');
+  if (!listaPz) return;
+
+  window.personalizacaoRespostasAtuais = {};
+  let html = '';
+
+  for (const c of campos) {
+    const labelEsc = escapeHTML(c.label);
+    const obgMarker = c.obrigatorio ? '<span style="color:#e11d48; margin-left:2px;">*</span>' : '';
+    const placeholderEsc = c.placeholder ? escapeHTML(c.placeholder) : '';
+    const ajudaEsc = c.texto_ajuda ? `<div style="font-size:11px; color:#64748b; margin-top:2px;">${escapeHTML(c.texto_ajuda)}</div>` : '';
+    const cfg = c.config_json || {};
+
+    if (c.tipo === 'TEXTO') {
+      html += `
+        <div>
+          <label style="font-size:12px; font-weight:600; color:#334155; display:block; margin-bottom:3px;">${labelEsc} ${obgMarker}</label>
+          <input type="text" id="pz-input-${c.codigo}" placeholder="${placeholderEsc}" style="width:100%; font-size:13px; padding:7px 10px; border:1px solid #cbd5e1; border-radius:8px;">
+          ${ajudaEsc}
+        </div>
+      `;
+    } else if (c.tipo === 'TEXTO_LONGO') {
+      html += `
+        <div>
+          <label style="font-size:12px; font-weight:600; color:#334155; display:block; margin-bottom:3px;">${labelEsc} ${obgMarker}</label>
+          <textarea id="pz-input-${c.codigo}" rows="2" placeholder="${placeholderEsc}" style="width:100%; font-size:13px; padding:7px 10px; border:1px solid #cbd5e1; border-radius:8px; resize:vertical;"></textarea>
+          ${ajudaEsc}
+        </div>
+      `;
+    } else if (c.tipo === 'COR') {
+      window.personalizacaoRespostasAtuais[c.codigo] = '#be185d';
+      html += `
+        <div>
+          <label style="font-size:12px; font-weight:600; color:#334155; display:block; margin-bottom:3px;">${labelEsc} ${obgMarker}</label>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <input type="color" id="pz-input-${c.codigo}" value="#be185d" onchange="document.getElementById('pz-hex-${c.codigo}').value = this.value; window.personalizacaoRespostasAtuais['${c.codigo}'] = this.value;" style="width:38px; height:34px; border:none; border-radius:6px; cursor:pointer;">
+            <input type="text" id="pz-hex-${c.codigo}" value="#be185d" maxlength="7" oninput="if(this.value.startsWith('#') && this.value.length === 7) { document.getElementById('pz-input-${c.codigo}').value = this.value; window.personalizacaoRespostasAtuais['${c.codigo}'] = this.value; }" style="width:80px; font-size:12px; padding:6px; border:1px solid #cbd5e1; border-radius:6px;">
+          </div>
+          ${ajudaEsc}
+        </div>
+      `;
+    } else if (c.tipo === 'CORES_MULTIPLAS') {
+      const maxCores = cfg.max_cores || 4;
+      window.personalizacaoRespostasAtuais[c.codigo] = ['#be185d'];
+      html += `
+        <div>
+          <label style="font-size:12px; font-weight:600; color:#334155; display:block; margin-bottom:3px;">${labelEsc} (Máx: ${maxCores}) ${obgMarker}</label>
+          <div id="pz-paleta-${c.codigo}" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
+            <span style="display:inline-flex; align-items:center; gap:4px; background:#fff; border:1px solid #cbd5e1; border-radius:16px; padding:2px 8px; font-size:11px;">
+              <span style="width:14px; height:14px; border-radius:50%; background:#be185d; display:inline-block;"></span>
+              #be185d
+            </span>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <input type="color" id="pz-picker-${c.codigo}" value="#3b82f6" style="width:34px; height:30px; border:none; border-radius:6px; cursor:pointer;">
+            <button type="button" class="btn-outline" onclick="adicionarCorPaleta('${c.codigo}', ${maxCores})" style="font-size:11px; padding:4px 10px; border-radius:6px;">
+              <i class="fa-solid fa-plus"></i> Adicionar Cor
+            </button>
+          </div>
+          ${ajudaEsc}
+        </div>
+      `;
+    } else if (c.tipo === 'SELECT') {
+      const opcoes = Array.isArray(cfg.opcoes) ? cfg.opcoes : [];
+      let optsHtml = `<option value="">Selecione uma opção...</option>`;
+      for (const op of opcoes) {
+        optsHtml += `<option value="${escapeHTML(op)}">${escapeHTML(op)}</option>`;
+      }
+      html += `
+        <div>
+          <label style="font-size:12px; font-weight:600; color:#334155; display:block; margin-bottom:3px;">${labelEsc} ${obgMarker}</label>
+          <select id="pz-input-${c.codigo}" style="width:100%; font-size:13px; padding:7px 10px; border:1px solid #cbd5e1; border-radius:8px;">
+            ${optsHtml}
+          </select>
+          ${ajudaEsc}
+        </div>
+      `;
+    } else if (c.tipo === 'NUMERO') {
+      html += `
+        <div>
+          <label style="font-size:12px; font-weight:600; color:#334155; display:block; margin-bottom:3px;">${labelEsc} ${obgMarker}</label>
+          <input type="number" id="pz-input-${c.codigo}" placeholder="${placeholderEsc}" style="width:100%; font-size:13px; padding:7px 10px; border:1px solid #cbd5e1; border-radius:8px;">
+          ${ajudaEsc}
+        </div>
+      `;
+    } else if (c.tipo === 'DATA') {
+      html += `
+        <div>
+          <label style="font-size:12px; font-weight:600; color:#334155; display:block; margin-bottom:3px;">${labelEsc} ${obgMarker}</label>
+          <input type="date" id="pz-input-${c.codigo}" style="width:100%; font-size:13px; padding:7px 10px; border:1px solid #cbd5e1; border-radius:8px;">
+          ${ajudaEsc}
+        </div>
+      `;
+    } else if (c.tipo === 'IMAGEM' || c.tipo === 'IMAGENS') {
+      const isMulti = c.tipo === 'IMAGENS';
+      const maxImg = isMulti ? (cfg.max_imagens || 5) : 1;
+      window.personalizacaoRespostasAtuais[c.codigo] = [];
+      html += `
+        <div>
+          <label style="font-size:12px; font-weight:600; color:#334155; display:block; margin-bottom:3px;">${labelEsc} ${isMulti ? `(Até ${maxImg} fotos)` : ''} ${obgMarker}</label>
+          <input type="file" id="pz-file-${c.codigo}" accept="image/*" ${isMulti ? 'multiple' : ''} onchange="uploadReferenciasCliente(this, '${c.codigo}', '${c.tipo}', ${maxImg})" style="font-size:12px; margin-bottom:4px;">
+          <div id="pz-status-${c.codigo}" style="font-size:11px; color:#64748b;"></div>
+          <div id="pz-previews-${c.codigo}" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:4px;"></div>
+          ${ajudaEsc}
+        </div>
+      `;
+    }
+  }
+
+  listaPz.innerHTML = html;
+}
+
+function adicionarCorPaleta(codigo, maxCores) {
+  const picker = document.getElementById(`pz-picker-${codigo}`);
+  if (!picker) return;
+  const novaCor = picker.value;
+  if (!Array.isArray(window.personalizacaoRespostasAtuais[codigo])) {
+    window.personalizacaoRespostasAtuais[codigo] = [];
+  }
+  const lista = window.personalizacaoRespostasAtuais[codigo];
+  if (lista.length >= maxCores) {
+    alert(`Você já selecionou o limite máximo de ${maxCores} cores.`);
+    return;
+  }
+  lista.push(novaCor);
+  renderizarPaletaPills(codigo, maxCores);
+}
+
+function removerCorPaleta(codigo, index, maxCores) {
+  const lista = window.personalizacaoRespostasAtuais[codigo];
+  if (Array.isArray(lista)) {
+    lista.splice(index, 1);
+    renderizarPaletaPills(codigo, maxCores);
+  }
+}
+
+function renderizarPaletaPills(codigo, maxCores) {
+  const container = document.getElementById(`pz-paleta-${codigo}`);
+  if (!container) return;
+  const lista = window.personalizacaoRespostasAtuais[codigo] || [];
+  container.innerHTML = lista.map((cor, idx) => `
+    <span style="display:inline-flex; align-items:center; gap:4px; background:#fff; border:1px solid #cbd5e1; border-radius:16px; padding:2px 8px; font-size:11px;">
+      <span style="width:14px; height:14px; border-radius:50%; background:${escapeHTML(cor)}; display:inline-block;"></span>
+      ${escapeHTML(cor)}
+      <span role="button" onclick="removerCorPaleta('${codigo}', ${idx}, ${maxCores})" style="cursor:pointer; color:#ef4444; font-weight:700; margin-left:4px;">&times;</span>
+    </span>
+  `).join('');
+}
+
+async function uploadReferenciasCliente(input, codigo, tipo, maxImagens) {
+  const files = Array.from(input.files || []);
+  if (files.length === 0) return;
+
+  const statusEl = document.getElementById(`pz-status-${codigo}`);
+  const previewEl = document.getElementById(`pz-previews-${codigo}`);
+  if (!Array.isArray(window.personalizacaoRespostasAtuais[codigo])) {
+    window.personalizacaoRespostasAtuais[codigo] = [];
+  }
+  const lista = window.personalizacaoRespostasAtuais[codigo];
+
+  if (lista.length + files.length > maxImagens) {
+    alert(`Limite de ${maxImagens} foto(s) excedido para este campo.`);
+    input.value = '';
+    return;
+  }
+
+  if (statusEl) statusEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Enviando imagem(ns)...';
+
+  for (const file of files) {
+    if (file.size > 10 * 1024 * 1024) {
+      alert(`O arquivo "${file.name}" excede o limite máximo de 10MB.`);
+      continue;
+    }
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = `referencias/${Date.now()}_${Math.random().toString(36).substring(2, 7)}_${safeName}`;
+
+    try {
+      const { data, error } = await supabaseClient.storage
+        .from('pedido-referencias')
+        .upload(storagePath, file, { upsert: false });
+
+      if (error) throw error;
+
+      lista.push({
+        storage_path: data.path,
+        nome_original: file.name,
+        tamanho_bytes: file.size,
+        mime_type: file.type || 'image/jpeg'
+      });
+    } catch (err) {
+      console.error('[Upload Referencia] Erro:', err);
+      alert(`Falha ao enviar "${file.name}": ${err.message}`);
+    }
+  }
+
+  if (statusEl) statusEl.innerHTML = `✅ ${lista.length} foto(s) anexada(s)`;
+  if (previewEl) {
+    previewEl.innerHTML = lista.map((arq, idx) => `
+      <div style="position:relative; width:48px; height:48px; border:1px solid #cbd5e1; border-radius:6px; background:#f1f5f9; display:flex; align-items:center; justify-content:center; overflow:hidden;" title="${escapeHTML(arq.nome_original)}">
+        <i class="fa-solid fa-image" style="color:var(--primary);"></i>
+        <button type="button" onclick="removerFotoReferencia('${codigo}', ${idx}, ${maxImagens})" style="position:absolute; top:0; right:0; background:rgba(220,38,38,0.85); color:#fff; border:none; width:16px; height:16px; font-size:10px; cursor:pointer; line-height:16px; text-align:center;">&times;</button>
+      </div>
+    `).join('');
+  }
+  input.value = '';
+}
+
+function removerFotoReferencia(codigo, idx, maxImagens) {
+  const lista = window.personalizacaoRespostasAtuais[codigo];
+  if (Array.isArray(lista)) {
+    lista.splice(idx, 1);
+    const statusEl = document.getElementById(`pz-status-${codigo}`);
+    const previewEl = document.getElementById(`pz-previews-${codigo}`);
+    if (statusEl) statusEl.innerHTML = lista.length > 0 ? `✅ ${lista.length} foto(s) anexada(s)` : '';
+    if (previewEl) {
+      previewEl.innerHTML = lista.map((arq, i) => `
+        <div style="position:relative; width:48px; height:48px; border:1px solid #cbd5e1; border-radius:6px; background:#f1f5f9; display:flex; align-items:center; justify-content:center; overflow:hidden;" title="${escapeHTML(arq.nome_original)}">
+          <i class="fa-solid fa-image" style="color:var(--primary);"></i>
+          <button type="button" onclick="removerFotoReferencia('${codigo}', ${i}, ${maxImagens})" style="position:absolute; top:0; right:0; background:rgba(220,38,38,0.85); color:#fff; border:none; width:16px; height:16px; font-size:10px; cursor:pointer; line-height:16px; text-align:center;">&times;</button>
+        </div>
+      `).join('');
+    }
+  }
 }
 
 function alterarQtdModalProduto(delta) {
@@ -328,6 +581,44 @@ function confirmarAdicaoCarrinho() {
     itemCarrinho.nome = itemCarrinho.nome + " (" + saborEscolhido + ")";
     itemCarrinho.sabor = saborEscolhido;
   }
+
+  // Validação e captura de Personalizações (Frente 043)
+  const respostasPz = {};
+  if (Array.isArray(window.personalizacaoCamposAtivos) && window.personalizacaoCamposAtivos.length > 0) {
+    for (const campo of window.personalizacaoCamposAtivos) {
+      let val = null;
+      if (campo.tipo === 'TEXTO' || campo.tipo === 'TEXTO_LONGO' || campo.tipo === 'SELECT' || campo.tipo === 'DATA') {
+        const inp = document.getElementById(`pz-input-${campo.codigo}`);
+        val = inp ? inp.value.trim() : '';
+      } else if (campo.tipo === 'NUMERO') {
+        const inp = document.getElementById(`pz-input-${campo.codigo}`);
+        val = (inp && inp.value !== '') ? Number(inp.value) : null;
+      } else if (campo.tipo === 'COR') {
+        val = window.personalizacaoRespostasAtuais[campo.codigo] || '#be185d';
+      } else if (campo.tipo === 'CORES_MULTIPLAS') {
+        val = window.personalizacaoRespostasAtuais[campo.codigo] || [];
+      } else if (campo.tipo === 'IMAGEM' || campo.tipo === 'IMAGENS') {
+        val = window.personalizacaoRespostasAtuais[campo.codigo] || [];
+      }
+
+      // Validação de obrigatoriedade
+      if (campo.obrigatorio) {
+        let vazio = false;
+        if (val === null || val === undefined || val === '') vazio = true;
+        if (Array.isArray(val) && val.length === 0) vazio = true;
+
+        if (vazio) {
+          alert(`Por favor, preencha o campo obrigatório: "${campo.label}"`);
+          return;
+        }
+      }
+
+      if (val !== null && val !== undefined && val !== '' && !(Array.isArray(val) && val.length === 0)) {
+        respostasPz[campo.codigo] = val;
+      }
+    }
+  }
+  itemCarrinho.personalizacoes = respostasPz;
   
   if (!Array.isArray(carrinho)) carrinho = [];
 
@@ -346,10 +637,11 @@ function confirmarAdicaoCarrinho() {
     }
   }
 
-  // Agrupa se já existir produto idêntico (mesmo ID e sabor)
+  // Agrupa se já existir produto idêntico (mesmo ID, sabor E personalizações idênticas - PERS8)
   const itemExistente = carrinho.find(it => 
     String(it.id) === String(itemCarrinho.id) && 
-    (it.sabor || '') === (itemCarrinho.sabor || '')
+    (it.sabor || '') === (itemCarrinho.sabor || '') &&
+    JSON.stringify(it.personalizacoes || {}) === JSON.stringify(itemCarrinho.personalizacoes || {})
   );
 
   if (itemExistente) {
@@ -502,6 +794,9 @@ function renderizarProdutosAdmin() {
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           ${btnRotaHtml}
+          <button class="btn-outline" onclick="abrirModalConfigPersonalizacao(${p.id}, '${escapeHTML(p.nome)}', ${p.requer_aprovacao_personalizacao === true})" style="padding:6px 12px; font-size:12px; border-radius:8px;" title="Configurar Briefing e Personalização">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> Personalização
+          </button>
           <button class="btn-outline" onclick="abrirModalFichaTecnica(${p.id})" style="padding:6px 12px; font-size:12px; border-radius:8px;" title="Ver/Editar Receita e Insumos">
             <i class="fa-solid fa-mortar-pestle"></i> Ficha Técnica
           </button>
@@ -698,6 +993,191 @@ window.abrirModalRotaKds = abrirModalRotaKds;
 window.fecharModalRotaKds = fecharModalRotaKds;
 window.adicionarEtapaKds = adicionarEtapaKds;
 window.removerEtapaKds = removerEtapaKds;
+
+// ------------------------------------------------------------------------------
+// CONFIGURAÇÃO DE PERSONALIZAÇÃO & BRIEFING POR PRODUTO (FRENTE 043 - ADMIN)
+// ------------------------------------------------------------------------------
+let produtoConfigPzAtual = null;
+
+async function abrirModalConfigPersonalizacao(produtoId, nomeProduto, requerAprovacao) {
+  produtoConfigPzAtual = { id: produtoId, nome: nomeProduto };
+  const titEl = document.getElementById('pz-modal-produto-titulo');
+  if (titEl) titEl.textContent = nomeProduto;
+
+  const toggle = document.getElementById('pz-toggle-requer-aprovacao');
+  if (toggle) toggle.checked = requerAprovacao === true;
+
+  await recarregarCamposPersonalizacaoAdmin(produtoId);
+
+  const modal = document.getElementById('modal-config-personalizacao-produto');
+  if (modal) modal.style.display = 'flex';
+}
+
+function fecharModalConfigPersonalizacao() {
+  const modal = document.getElementById('modal-config-personalizacao-produto');
+  if (modal) modal.style.display = 'none';
+  produtoConfigPzAtual = null;
+  carregarProdutosServidor();
+}
+
+async function alternarRequerAprovacaoProduto(checked) {
+  if (!produtoConfigPzAtual) return;
+  try {
+    const { error } = await supabaseClient
+      .from('produtos')
+      .update({ requer_aprovacao_personalizacao: checked })
+      .eq('id', produtoConfigPzAtual.id);
+    if (error) throw error;
+  } catch (err) {
+    alert('Erro ao atualizar configuração de aprovação: ' + err.message);
+  }
+}
+
+function alternarCamposConfigExtra(tipo) {
+  const extraBloco = document.getElementById('pz-bloco-config-extra');
+  const inputExtra = document.getElementById('pz-novo-extra');
+  if (!extraBloco) return;
+
+  if (tipo === 'SELECT' || tipo === 'CORES_MULTIPLAS' || tipo === 'IMAGENS') {
+    extraBloco.style.display = 'block';
+    if (tipo === 'SELECT') {
+      inputExtra.placeholder = 'Opção 1, Opção 2, Opção 3';
+    } else if (tipo === 'CORES_MULTIPLAS') {
+      inputExtra.placeholder = 'Máx cores: 4';
+    } else {
+      inputExtra.placeholder = 'Máx imagens: 5';
+    }
+  } else {
+    extraBloco.style.display = 'none';
+  }
+}
+
+async function recarregarCamposPersonalizacaoAdmin(produtoId) {
+  const listaEl = document.getElementById('pz-lista-campos-config');
+  if (!listaEl) return;
+  listaEl.innerHTML = '<p style="color:#64748b; font-size:12px;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando campos...</p>';
+
+  try {
+    const { data: campos, error } = await supabaseClient
+      .from('produto_campos_personalizacao')
+      .select('*')
+      .eq('produto_id', produtoId)
+      .eq('ativo', true)
+      .order('ordem', { ascending: true });
+
+    if (error) throw error;
+
+    if (!campos || campos.length === 0) {
+      listaEl.innerHTML = '<p style="color:#94a3b8; font-size:12px; font-style:italic;">Nenhum campo de personalização configurado para este produto.</p>';
+      return;
+    }
+
+    let html = '<div style="display:flex; flex-direction:column; gap:8px;">';
+    for (const c of campos) {
+      const badgeObg = c.obrigatorio 
+        ? '<span style="background:#fef2f2; color:#b91c1c; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px;">Obrigatório</span>'
+        : '<span style="background:#f8fafc; color:#64748b; font-size:10px; padding:2px 6px; border-radius:4px;">Opcional</span>';
+
+      html += `
+        <div style="display:flex; justify-content:space-between; align-items:center; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px;">
+          <div>
+            <strong style="color:#1e293b; font-size:13px;">${escapeHTML(c.label)}</strong>
+            <span style="color:#64748b; font-size:11px; margin-left:6px; font-family:monospace;">(${escapeHTML(c.codigo)})</span>
+            <span style="background:#e0e7ff; color:#3730a3; font-size:10px; font-weight:600; padding:2px 6px; border-radius:4px; margin-left:6px;">${escapeHTML(c.tipo)}</span>
+            ${badgeObg}
+          </div>
+          <div>
+            <button type="button" class="btn-outline" onclick="removerCampoPersonalizacaoAdmin(${c.id})" style="color:#dc2626; border-color:#fca5a5; padding:4px 8px; font-size:11px; border-radius:6px;" title="Remover Campo">
+              <i class="fa-solid fa-trash-can"></i>
+            </button>
+          </div>
+        </div>
+      `;
+    }
+    html += '</div>';
+    listaEl.innerHTML = html;
+  } catch (err) {
+    listaEl.innerHTML = `<p style="color:#dc2626; font-size:12px;">Erro: ${escapeHTML(err.message)}</p>`;
+  }
+}
+
+async function adicionarCampoPersonalizacaoAdmin() {
+  if (!produtoConfigPzAtual) return;
+
+  const codigo = (document.getElementById('pz-novo-codigo')?.value || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  const label = (document.getElementById('pz-novo-label')?.value || '').trim();
+  const tipo = document.getElementById('pz-novo-tipo')?.value || 'TEXTO';
+  const obrigatorio = document.getElementById('pz-novo-obrigatorio')?.checked === true;
+  const extraVal = (document.getElementById('pz-novo-extra')?.value || '').trim();
+
+  if (!codigo || !label) {
+    alert('Código e Rótulo são obrigatórios.');
+    return;
+  }
+
+  const configJson = {};
+  if (tipo === 'SELECT') {
+    configJson.opcoes = extraVal.split(',').map(s => s.trim()).filter(Boolean);
+  } else if (tipo === 'CORES_MULTIPLAS') {
+    const m = parseInt(extraVal.replace(/\D/g, ''), 10);
+    configJson.max_cores = (!isNaN(m) && m > 0) ? m : 4;
+  } else if (tipo === 'IMAGENS') {
+    const m = parseInt(extraVal.replace(/\D/g, ''), 10);
+    configJson.max_imagens = (!isNaN(m) && m > 0) ? m : 5;
+  }
+
+  try {
+    const { error } = await supabaseClient
+      .from('produto_campos_personalizacao')
+      .insert({
+        produto_id: produtoConfigPzAtual.id,
+        codigo: codigo,
+        label: label,
+        tipo: tipo,
+        obrigatorio: obrigatorio,
+        config_json: configJson
+      });
+
+    if (error) throw error;
+
+    document.getElementById('pz-novo-codigo').value = '';
+    document.getElementById('pz-novo-label').value = '';
+    document.getElementById('pz-novo-extra').value = '';
+    document.getElementById('pz-novo-obrigatorio').checked = false;
+
+    await recarregarCamposPersonalizacaoAdmin(produtoConfigPzAtual.id);
+  } catch (err) {
+    alert('Erro ao salvar campo: ' + err.message);
+  }
+}
+
+async function removerCampoPersonalizacaoAdmin(campoId) {
+  if (!produtoConfigPzAtual || !campoId) return;
+  if (!confirm('Deseja realmente desativar este campo de personalização?')) return;
+
+  try {
+    const { error } = await supabaseClient
+      .from('produto_campos_personalizacao')
+      .update({ ativo: false })
+      .eq('id', campoId);
+
+    if (error) throw error;
+    await recarregarCamposPersonalizacaoAdmin(produtoConfigPzAtual.id);
+  } catch (err) {
+    alert('Erro ao remover campo: ' + err.message);
+  }
+}
+
+window.abrirModalConfigPersonalizacao = abrirModalConfigPersonalizacao;
+window.fecharModalConfigPersonalizacao = fecharModalConfigPersonalizacao;
+window.alternarRequerAprovacaoProduto = alternarRequerAprovacaoProduto;
+window.alternarCamposConfigExtra = alternarCamposConfigExtra;
+window.adicionarCampoPersonalizacaoAdmin = adicionarCampoPersonalizacaoAdmin;
+window.removerCampoPersonalizacaoAdmin = removerCampoPersonalizacaoAdmin;
+window.adicionarCorPaleta = adicionarCorPaleta;
+window.removerCorPaleta = removerCorPaleta;
+window.uploadReferenciasCliente = uploadReferenciasCliente;
+window.removerFotoReferencia = removerFotoReferencia;
 
 async function prepararUpload(input) {
   if (input.files && input.files[0]) {

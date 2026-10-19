@@ -172,6 +172,59 @@ function renderizarPainelKds() {
         ? item.proxima_etapa
         : item.proxima_etapa;
 
+      let briefingHtml = '';
+      if (Array.isArray(item.personalizacoes) && item.personalizacoes.length > 0) {
+        let statusBadge = '';
+        if (item.briefing_status === 'PENDENTE_REVISAO') {
+          statusBadge = `
+            <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:6px; margin-bottom:6px;">
+              <span style="color:#b45309; font-weight:700; font-size:11px; display:block; margin-bottom:4px;">
+                <i class="fa-solid fa-triangle-exclamation"></i> Briefing Pendente de Revisão
+              </span>
+              <div style="display:flex; gap:6px;">
+                <button type="button" onclick="window.kdsAprovarBriefing(${item.pedido_item_id}, true)" style="background:#16a34a; color:#fff; border:none; border-radius:4px; font-size:11px; padding:3px 8px; font-weight:600; cursor:pointer;">
+                  <i class="fa-solid fa-check"></i> Aprovar Briefing
+                </button>
+                <button type="button" onclick="window.kdsAprovarBriefing(${item.pedido_item_id}, false)" style="background:#dc2626; color:#fff; border:none; border-radius:4px; font-size:11px; padding:3px 8px; font-weight:600; cursor:pointer;">
+                  <i class="fa-solid fa-xmark"></i> Rejeitar
+                </button>
+              </div>
+            </div>
+          `;
+        } else if (item.briefing_status === 'APROVADO') {
+          statusBadge = `<span style="background:#dcfce7; color:#166534; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; display:inline-block; margin-bottom:4px;"><i class="fa-solid fa-circle-check"></i> Briefing Aprovado</span>`;
+        } else if (item.briefing_status === 'REJEITADO') {
+          statusBadge = `<span style="background:#fee2e2; color:#991b1b; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; display:inline-block; margin-bottom:4px;"><i class="fa-solid fa-circle-xmark"></i> Briefing Rejeitado</span>`;
+        }
+
+        const pzLinhas = item.personalizacoes.map(p => {
+          let valStr = '';
+          if (Array.isArray(p.valor)) {
+            valStr = p.valor.map(v => typeof v === 'object' ? (v.nome_original || 'Arquivo') : v).join(', ');
+          } else if (typeof p.valor === 'object' && p.valor !== null) {
+            valStr = JSON.stringify(p.valor);
+          } else {
+            valStr = String(p.valor || '');
+          }
+          return `<div style="font-size:11.5px; color:#334155; margin-bottom:2px;"><strong>${escapeHTML(p.label)}:</strong> ${escapeHTML(valStr)}</div>`;
+        }).join('');
+
+        const btnRefHtml = item.arquivos_count > 0 ? `
+          <button type="button" onclick="window.abrirModalBriefingKds(${item.pedido_item_id})" style="background:#fdf2f8; border:1px solid #fbcfe8; color:#be185d; border-radius:6px; font-size:11px; font-weight:600; padding:3px 8px; margin-top:4px; cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
+            <i class="fa-solid fa-images"></i> Fotos de Referência (${item.arquivos_count})
+          </button>
+        ` : '';
+
+        briefingHtml = `
+          <div style="background:#fdf2f8; border:1px solid #fce7f3; border-radius:6px; padding:6px 10px; margin:6px 0;">
+            ${statusBadge}
+            <div style="font-size:11px; font-weight:700; color:#be185d; margin-bottom:3px;"><i class="fa-solid fa-wand-magic-sparkles"></i> Detalhes da Personalização:</div>
+            ${pzLinhas}
+            ${btnRefHtml}
+          </div>
+        `;
+      }
+
       return `
         <div class="kds-item-row ${isAtrasado ? 'kds-item-atrasado' : ''}" style="padding: 12px; border: 1px solid ${isAtrasado ? '#fca5a5' : '#e2e8f0'}; border-radius: 8px; background: ${isAtrasado ? '#fff1f2' : '#ffffff'}; margin-bottom: 10px;">
           <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
@@ -186,6 +239,7 @@ function renderizarPainelKds() {
               ${isAtrasado ? `<div style="font-size: 11px; font-weight: 800; color: #dc2626; margin-top: 2px;">⚠ ATRASADO +${item.minutos_atraso}m</div>` : ''}
             </div>
           </div>
+          ${briefingHtml}
           ${item.observacoes_item ? `<div style="font-size: 12px; color: #64748b; background: #f8fafc; padding: 4px 8px; border-radius: 4px; margin-bottom: 8px;">Obs: ${item.observacoes_item}</div>` : ''}
           <button 
             type="button"
@@ -418,3 +472,136 @@ window.kdsAvancarItem = kdsAvancarItem;
 window.kdsMarcarUrgencia = kdsMarcarUrgencia;
 window.alternarKdsFullscreen = alternarKdsFullscreen;
 window.inicializarKds = inicializarKds;
+
+// ------------------------------------------------------------------------------
+// MODAL DE BRIEFING & REFERÊNCIAS VISUAIS NO KDS (FRENTE 043)
+// ------------------------------------------------------------------------------
+async function abrirModalBriefingKds(pedidoItemId) {
+  const modal = document.getElementById('modal-briefing-kds');
+  const conteudo = document.getElementById('modal-briefing-conteudo');
+  if (!modal || !conteudo) return;
+
+  conteudo.innerHTML = '<p style="color:#64748b; font-size:13px; text-align:center; padding:20px;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando briefing e referências visuais...</p>';
+  modal.style.display = 'flex';
+
+  try {
+    const { data: res, error } = await supabaseClient
+      .rpc('obter_briefing_item', { p_pedido_item_id: pedidoItemId });
+
+    if (error) throw error;
+    if (!res || !res.success) throw new Error(res?.error || 'Briefing não encontrado.');
+
+    let pzHtml = '';
+    if (Array.isArray(res.personalizacoes) && res.personalizacoes.length > 0) {
+      pzHtml = res.personalizacoes.map(p => {
+        let valStr = '';
+        if (Array.isArray(p.valor)) {
+          valStr = p.valor.map(v => typeof v === 'object' ? (v.nome_original || 'Arquivo') : v).join(', ');
+        } else if (typeof p.valor === 'object' && p.valor !== null) {
+          valStr = JSON.stringify(p.valor);
+        } else {
+          valStr = String(p.valor || '');
+        }
+        return `
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:8px 12px; margin-bottom:6px;">
+            <div style="font-size:11px; font-weight:600; color:#64748b;">${escapeHTML(p.label)} (${escapeHTML(p.codigo)})</div>
+            <div style="font-size:13px; font-weight:700; color:#1e293b; margin-top:2px;">${escapeHTML(valStr)}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    let fotosHtml = '';
+    if (Array.isArray(res.arquivos) && res.arquivos.length > 0) {
+      const fotosPromises = res.arquivos.map(async arq => {
+        let signedUrl = '';
+        try {
+          const { data: sData } = await supabaseClient.storage
+            .from('pedido-referencias')
+            .createSignedUrl(arq.storage_path, 3600);
+          signedUrl = sData?.signedUrl || '';
+        } catch (_) {}
+
+        return `
+          <div style="text-align:center;">
+            <a href="${signedUrl || '#'}" target="_blank" rel="noopener noreferrer" style="display:block; border:1px solid #cbd5e1; border-radius:10px; overflow:hidden; background:#000;">
+              <img src="${signedUrl}" alt="${escapeHTML(arq.nome_original)}" style="width:100%; max-height:220px; object-fit:contain; display:block;">
+            </a>
+            <span style="font-size:11px; color:#64748b; margin-top:3px; display:block;">${escapeHTML(arq.nome_original)}</span>
+          </div>
+        `;
+      });
+      const fotosArr = await Promise.all(fotosPromises);
+      fotosHtml = `
+        <div style="margin-top:14px;">
+          <h4 style="font-size:13px; font-weight:700; color:#334155; margin-bottom:8px;"><i class="fa-solid fa-camera"></i> Fotos Anexadas pelo Cliente (${res.arquivos.length}):</h4>
+          <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap:12px;">
+            ${fotosArr.join('')}
+          </div>
+        </div>
+      `;
+    } else {
+      fotosHtml = '<p style="color:#94a3b8; font-size:12px; font-style:italic; margin-top:10px;">Nenhuma foto anexada.</p>';
+    }
+
+    conteudo.innerHTML = `
+      <h3 style="margin-top:0; color:var(--text-dark); font-size:18px;">
+        <i class="fa-solid fa-wand-magic-sparkles" style="color:var(--primary);"></i> Briefing: ${escapeHTML(res.produto_nome)}
+      </h3>
+      <div style="margin-bottom:12px;">
+        <span style="font-size:12px; color:#64748b;">Status do Briefing: </span>
+        <strong style="color:var(--primary); font-size:12px;">${escapeHTML(res.briefing_status)}</strong>
+      </div>
+      <div>${pzHtml}</div>
+      ${fotosHtml}
+      <div style="text-align:right; margin-top:16px;">
+        <button type="button" onclick="fecharModalBriefingKds()" class="btn-primary" style="padding:6px 16px;">Fechar</button>
+      </div>
+    `;
+  } catch (err) {
+    conteudo.innerHTML = `
+      <p style="color:#dc2626; font-size:13px;">Erro ao carregar briefing: ${escapeHTML(err.message)}</p>
+      <div style="text-align:right; margin-top:12px;">
+        <button type="button" onclick="fecharModalBriefingKds()" class="btn-primary" style="padding:6px 14px;">Fechar</button>
+      </div>
+    `;
+  }
+}
+
+function fecharModalBriefingKds() {
+  const modal = document.getElementById('modal-briefing-kds');
+  if (modal) modal.style.display = 'none';
+}
+
+async function kdsAprovarBriefing(pedidoItemId, aprovado) {
+  let motivo = null;
+  if (!aprovado) {
+    motivo = prompt('Por favor, informe o motivo da rejeição do briefing:');
+    if (!motivo || !motivo.trim()) {
+      alert('É necessário fornecer um motivo para rejeitar o briefing.');
+      return;
+    }
+  }
+
+  try {
+    const { data, error } = await supabaseClient.rpc('aprovar_briefing_item', {
+      p_pedido_item_id: pedidoItemId,
+      p_aprovado: aprovado,
+      p_motivo: motivo
+    });
+
+    if (error) throw error;
+    if (!data || !data.success) throw new Error(data?.error || 'Falha na atualização.');
+
+    alert(aprovado ? '✅ Briefing aprovado com sucesso!' : '⚠ Briefing rejeitado.');
+    if (typeof window.carregarPainelKds === 'function') {
+      await window.carregarPainelKds();
+    }
+  } catch (err) {
+    alert('Erro ao atualizar status do briefing: ' + err.message);
+  }
+}
+
+window.abrirModalBriefingKds = abrirModalBriefingKds;
+window.fecharModalBriefingKds = fecharModalBriefingKds;
+window.kdsAprovarBriefing = kdsAprovarBriefing;

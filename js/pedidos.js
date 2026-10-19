@@ -147,7 +147,9 @@ async function enviarPedido() {
             id: item.id || null,
             nome: item.nome,
             preco: item.preco,
-            quantidade: qtd
+            quantidade: qtd,
+            opcoes: Array.isArray(item.opcoes) ? item.opcoes : (item.sabor ? [{ nome: item.sabor }] : []),
+            personalizacoes: (item.personalizacoes && typeof item.personalizacoes === 'object') ? item.personalizacoes : {}
         });
     }
 

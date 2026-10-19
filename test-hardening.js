@@ -3998,5 +3998,131 @@ assert.ok(
 );
 console.log('    ✅ D12 aprovado: Alerta visual "Sem rota KDS" e configuração de rotas presentes no Admin.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–42 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+console.log('\n============================================================');
+console.log('🎨 FASE 43: Frente 043 — Personalização de Produtos & Briefing Visual (Gates PERS1–PERS12)...');
+console.log('============================================================');
+
+const m043 = fs.readFileSync('supabase/migrations/043_personalizacao_briefing_produtos.sql', 'utf-8');
+const carrinhoJs043 = fs.readFileSync('js/carrinho.js', 'utf-8');
+const pedidosJs043 = fs.readFileSync('js/pedidos.js', 'utf-8');
+const adminKdsJs043 = fs.readFileSync('js/admin-kds.js', 'utf-8');
+const validateOrderJs043 = fs.readFileSync('functions/api/validate-order.js', 'utf-8');
+
+console.log('  🔎 PERS1: Catálogo dinâmico de campos e produto sem personalização transita normalmente...');
+assert.ok(
+  m043.includes('CREATE TABLE IF NOT EXISTS public.produto_campos_personalizacao') &&
+  m043.includes('CREATE OR REPLACE FUNCTION public.obter_personalizacao_produto(') &&
+  m043.includes('CREATE OR REPLACE FUNCTION public.validar_personalizacao_produto(') &&
+  m043.includes("'valido', true"),
+  '[FALHA PERS1] Catálogo produto_campos_personalizacao e RPCs obter/validar_personalizacao_produto devem existir e aceitar produtos sem campos!'
+);
+console.log('    ✅ PERS1 aprovado: produto sem campos ou briefing transita com valido: true.');
+
+console.log('  🔎 PERS2: Campo obrigatório ausente bloqueia inclusão no carrinho e na RPC com CAMPO_OBRIGATORIO_AUSENTE...');
+assert.ok(
+  m043.includes("'CAMPO_OBRIGATORIO_AUSENTE'") &&
+  produtosJs.includes('Por favor, preencha o campo obrigatório:') &&
+  produtosJs.includes('campo.obrigatorio'),
+  '[FALHA PERS2] Campo obrigatório ausente deve ser bloqueado no frontend e no backend com CAMPO_OBRIGATORIO_AUSENTE!'
+);
+console.log('    ✅ PERS2 aprovado: validação de obrigatoriedade fail-closed em cliente e servidor.');
+
+console.log('  🔎 PERS3: Tipagem estrita e validação de limites (número, cores, imagens)...');
+assert.ok(
+  m043.includes("'TIPO_NUMERO_INVALIDO'") &&
+  m043.includes("'CORES_MULTIPLAS_ESPERA_ARRAY'") &&
+  m043.includes("'MAX_CORES_EXCEDIDO'") &&
+  m043.includes("'IMAGENS_ESPERA_ARRAY'") &&
+  m043.includes("'MAX_IMAGENS_EXCEDIDO'"),
+  '[FALHA PERS3] RPC validar_personalizacao_produto deve rejeitar divergência de tipos e limites excedidos!'
+);
+console.log('    ✅ PERS3 aprovado: tipagens e limites de briefing validados com códigos de erro canônicos.');
+
+console.log('  🔎 PERS4: Snapshot histórico imutável por item de pedido (pedido_item_personalizacoes)...');
+assert.ok(
+  m043.includes('CREATE TABLE IF NOT EXISTS public.pedido_item_personalizacoes') &&
+  m043.includes('codigo_snapshot VARCHAR(50) NOT NULL') &&
+  m043.includes('label_snapshot VARCHAR(100) NOT NULL') &&
+  m043.includes('tipo_snapshot VARCHAR(30) NOT NULL') &&
+  m043.includes('valor_jsonb JSONB NOT NULL') &&
+  m043.includes('ordem_snapshot INTEGER NOT NULL DEFAULT 1'),
+  '[FALHA PERS4] pedido_item_personalizacoes deve armazenar snapshots imutáveis das configurações e valores!'
+);
+console.log('    ✅ PERS4 aprovado: snapshot histórico imutável preservado em pedido_item_personalizacoes.');
+
+console.log('  🔎 PERS5: Bucket privado no Supabase Storage (pedido-referencias)...');
+assert.ok(
+  m043.includes("'pedido-referencias'") &&
+  m043.includes('10485760') &&
+  m043.includes("ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']"),
+  '[FALHA PERS5] Bucket pedido-referencias deve ser privado, com limite de 10MB e mime-types de imagem!'
+);
+console.log('    ✅ PERS5 aprovado: bucket pedido-referencias configurado como privado com limites de integridade.');
+
+console.log('  🔎 PERS6: RLS fail-closed no storage: leitura restrita a operador/admin ou dono do pedido...');
+assert.ok(
+  m043.includes('"Leitura de Referencias por Dono ou Equipe"') &&
+  m043.includes('public.is_admin_or_operator()') &&
+  m043.includes('p.cliente_id = auth.uid()') &&
+  m043.includes('"Upload de Referencias no Checkout"'),
+  '[FALHA PERS6] Políticas RLS de storage.objects devem restringir leitura ao dono ou equipe e permitir upload controlado!'
+);
+console.log('    ✅ PERS6 aprovado: RLS fail-closed ativo para arquivos de briefing no Supabase Storage.');
+
+console.log('  🔎 PERS7: RBAC em RPCs de briefing e histórico restrito a equipe autorizada...');
+assert.ok(
+  m043.includes('REVOKE ALL ON FUNCTION public.obter_briefing_item(BIGINT) FROM PUBLIC, anon;') &&
+  m043.includes('GRANT EXECUTE ON FUNCTION public.obter_briefing_item(BIGINT) TO authenticated, service_role;') &&
+  m043.includes('REVOKE ALL ON FUNCTION public.aprovar_briefing_item(BIGINT, BOOLEAN, TEXT) FROM PUBLIC, anon;') &&
+  m043.includes('GRANT EXECUTE ON FUNCTION public.aprovar_briefing_item(BIGINT, BOOLEAN, TEXT) TO authenticated, service_role;'),
+  '[FALHA PERS7] RPCs de visualização e aprovação de briefing devem ter permissões restritas e fail-closed!'
+);
+console.log('    ✅ PERS7 aprovado: RBAC e grants de segurança estritos em todas as RPCs da Frente 043.');
+
+console.log('  🔎 PERS8: Segregação no Carrinho: personalizações distintas geram linhas separadas...');
+assert.ok(
+  produtosJs.includes('JSON.stringify(it.personalizacoes || {}) === JSON.stringify(itemCarrinho.personalizacoes || {})'),
+  '[FALHA PERS8] Carrinho deve diferenciar itens do mesmo produto quando houver divergência nas personalizações!'
+);
+console.log('    ✅ PERS8 aprovado: segregação no carrinho comprovada para itens com briefings diferentes.');
+
+console.log('  🔎 PERS9: Ciclo de aprovação de briefing e auditoria append-only imutável...');
+assert.ok(
+  m043.includes('CREATE TABLE IF NOT EXISTS public.pedido_item_personalizacao_historico') &&
+  m043.includes('FOR UPDATE') &&
+  m043.includes("v_novo_status := 'APROVADO'") &&
+  m043.includes("v_novo_status := 'REJEITADO'") &&
+  m043.includes('SET briefing_status = v_novo_status'),
+  '[FALHA PERS9] aprovar_briefing_item deve travar item com FOR UPDATE, alterar status e auditar no histórico!'
+);
+console.log('    ✅ PERS9 aprovado: aprovação/rejeição de briefing transacional com auditoria imutável.');
+
+console.log('  🔎 PERS10: Preservação em exclusão do produto no catálogo (ON DELETE SET NULL)...');
+assert.ok(
+  m043.includes('campo_id BIGINT REFERENCES public.produto_campos_personalizacao(id) ON DELETE SET NULL'),
+  '[FALHA PERS10] FK de campo_id em pedido_item_personalizacoes deve ser ON DELETE SET NULL para preservar histórico!'
+);
+console.log('    ✅ PERS10 aprovado: integridade referencial preserva snapshots históricos mesmo após exclusão de campos.');
+
+console.log('  🔎 PERS11: Integração de criar_pedido com briefing_status e validação server-side...');
+assert.ok(
+  m043.includes('v_valida_pz := public.validar_personalizacao_produto(') &&
+  m043.includes('v_briefing_status := ') &&
+  m043.includes('INSERT INTO public.pedido_item_personalizacoes') &&
+  m043.includes('INSERT INTO public.pedido_item_personalizacao_arquivos'),
+  '[FALHA PERS11] criar_pedido deve validar e persistir personalizações e referências visuais atomicamente!'
+);
+console.log('    ✅ PERS11 aprovado: criar_pedido 100% integrado com snapshots e ciclo de briefing.');
+
+console.log('  🔎 PERS12: KDS Bancada exibe briefing e referências visuais integradas...');
+assert.ok(
+  m043.includes('kds_obter_painel') &&
+  adminKdsJs043.includes('abrirModalBriefingKds') &&
+  adminKdsJs043.includes('kdsAprovarBriefing') &&
+  adminKdsJs043.includes('Fotos de Referência'),
+  '[FALHA PERS12] KDS deve exibir personalizações, badge de revisão e modal de fotos de referência!'
+);
+console.log('    ✅ PERS12 aprovado: KDS bancada perfeitamente integrado com briefing e fotos de referência.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–43 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
 

@@ -80,11 +80,32 @@ function renderizarItensCheckout() {
 
     const imgUrl = item.img ? (typeof escapeHTML === 'function' ? escapeHTML(item.img) : item.img) : 'img/logo.jpg';
 
+    let resumoPersonalizacaoHtml = '';
+    if (item.personalizacoes && typeof item.personalizacoes === 'object' && Object.keys(item.personalizacoes).length > 0) {
+      const pzEntries = Object.entries(item.personalizacoes);
+      const detalhes = pzEntries.map(([k, v]) => {
+        if (Array.isArray(v)) {
+          if (v.length > 0 && v[0]?.storage_path) {
+            return `📷 ${v.length} foto(s)`;
+          }
+          return `${k}: ${v.join(', ')}`;
+        }
+        return `${k}: ${v}`;
+      }).join(' • ');
+
+      resumoPersonalizacaoHtml = `
+        <div style="font-size:11px; color:#be185d; background:#fdf2f8; border:1px solid #fce7f3; border-radius:6px; padding:2px 6px; margin:3px 0; max-width:260px; line-height:1.2;">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> ${typeof escapeHTML === 'function' ? escapeHTML(detalhes) : detalhes}
+        </div>
+      `;
+    }
+
     html += `
       <div class="cart-item-row" data-index="${i}">
         <img src="${imgUrl}" class="cart-item-img" alt="${nomeSeguro}">
         <div class="cart-item-info">
           <div class="cart-item-title">${nomeSeguro}</div>
+          ${resumoPersonalizacaoHtml}
           <div class="cart-item-price">R$ ${precoUnit.toFixed(2)} un</div>
         </div>
         <div class="cart-item-controls">
