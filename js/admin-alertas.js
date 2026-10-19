@@ -5,7 +5,7 @@
 let alertasCache = [];
 let configuracoesAlertasCache = null;
 
-export async function carregarAlertasAdmin() {
+async function carregarAlertasAdmin() {
   const container = document.getElementById('admin-tab-alertas');
   if (!container) return;
 
@@ -478,4 +478,8 @@ function renderizarVisaoOperador(container) {
     html += '</div>';
     lista.innerHTML = html;
   });
+}
+
+if (typeof window !== 'undefined') {
+  window.carregarAlertasAdmin = carregarAlertasAdmin;
 }

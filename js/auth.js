@@ -102,10 +102,11 @@ async function fazerLogout() {
 
 function atualizarInterfaceUsuario() {
   const greeting = document.getElementById('user-greeting');
+  if (!greeting) return;
   if (usuarioAtual.nivel === 'visitante') {
     greeting.innerText = "Acompanhe nossos doces como Visitante";
   } else {
-    greeting.innerText = "Olá, " + usuarioAtual.nome;
+    greeting.innerText = "Olá, " + (usuarioAtual.nome || 'Cliente');
   }
 }
 

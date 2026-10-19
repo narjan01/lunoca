@@ -8,7 +8,7 @@
 // - Áudio suave via Web Audio API gerenciado no cliente (1 tom por atraso)
 // ==============================================================================
 
-import { supabase } from './supabase.js';
+const supabase = typeof window !== 'undefined' ? (window.supabaseClient || window.supabase) : null;
 
 let kdsState = {
   cards: [],

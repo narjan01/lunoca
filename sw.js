@@ -38,6 +38,11 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
+  // Processa exclusivamente esquemas http e https (ignora chrome-extension, moz-extension, etc.)
+  if (!url.protocol.startsWith('http')) {
+    return;
+  }
+
   // NUNCA cachear rotas de API, Supabase, Mercado Pago ou requisições POST/PUT
   if (
     event.request.method !== 'GET' ||

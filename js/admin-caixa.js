@@ -6,7 +6,7 @@
 // cálculo de quebra/sobra com justificativa obrigatória e auditoria gerencial (Migration 034).
 // ==============================================================================
 
-import { supabase } from './supabase.js';
+const supabase = typeof window !== 'undefined' ? (window.supabaseClient || window.supabase) : null;
 
 let caixaSessaoAtual = null;
 let caixaHistorico = [];

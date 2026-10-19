@@ -6,7 +6,7 @@
 // em transação única com canal canônico 'balcao' e quitação integrada (Migration 032).
 // ==============================================================================
 
-import { supabase } from './supabase.js';
+const supabase = typeof window !== 'undefined' ? (window.supabaseClient || window.supabase) : null;
 
 let pdvProdutos = [];
 let pdvCarrinho = [];
