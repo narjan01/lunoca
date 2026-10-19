@@ -173,19 +173,27 @@ function renderizarPainelKds() {
         : item.proxima_etapa;
 
       let briefingHtml = '';
+      const isBriefingBloqueado = item.briefing_status === 'PENDENTE_REVISAO';
+      const isBriefingRejeitado = item.briefing_status === 'REJEITADO';
+      const isBriefingAjuste = item.briefing_status === 'AJUSTE_SOLICITADO';
+      const bloqueioProducao = isBriefingBloqueado || isBriefingRejeitado || isBriefingAjuste;
+
       if (Array.isArray(item.personalizacoes) && item.personalizacoes.length > 0) {
         let statusBadge = '';
-        if (item.briefing_status === 'PENDENTE_REVISAO') {
+        if (isBriefingBloqueado) {
           statusBadge = `
             <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:6px; margin-bottom:6px;">
               <span style="color:#b45309; font-weight:700; font-size:11px; display:block; margin-bottom:4px;">
                 <i class="fa-solid fa-triangle-exclamation"></i> Briefing Pendente de Revisão
               </span>
-              <div style="display:flex; gap:6px;">
-                <button type="button" onclick="window.kdsAprovarBriefing(${item.pedido_item_id}, true)" style="background:#16a34a; color:#fff; border:none; border-radius:4px; font-size:11px; padding:3px 8px; font-weight:600; cursor:pointer;">
-                  <i class="fa-solid fa-check"></i> Aprovar Briefing
+              <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <button type="button" onclick="window.kdsRevisarBriefing(${item.pedido_item_id}, 'APROVADO')" style="background:#16a34a; color:#fff; border:none; border-radius:4px; font-size:11px; padding:3px 8px; font-weight:600; cursor:pointer;">
+                  <i class="fa-solid fa-check"></i> Aprovar
                 </button>
-                <button type="button" onclick="window.kdsAprovarBriefing(${item.pedido_item_id}, false)" style="background:#dc2626; color:#fff; border:none; border-radius:4px; font-size:11px; padding:3px 8px; font-weight:600; cursor:pointer;">
+                <button type="button" onclick="window.kdsRevisarBriefing(${item.pedido_item_id}, 'AJUSTE_SOLICITADO')" style="background:#d97706; color:#fff; border:none; border-radius:4px; font-size:11px; padding:3px 8px; font-weight:600; cursor:pointer;">
+                  <i class="fa-solid fa-comments"></i> Pedir Ajuste
+                </button>
+                <button type="button" onclick="window.kdsRevisarBriefing(${item.pedido_item_id}, 'REJEITADO')" style="background:#dc2626; color:#fff; border:none; border-radius:4px; font-size:11px; padding:3px 8px; font-weight:600; cursor:pointer;">
                   <i class="fa-solid fa-xmark"></i> Rejeitar
                 </button>
               </div>
@@ -193,7 +201,16 @@ function renderizarPainelKds() {
           `;
         } else if (item.briefing_status === 'APROVADO') {
           statusBadge = `<span style="background:#dcfce7; color:#166534; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; display:inline-block; margin-bottom:4px;"><i class="fa-solid fa-circle-check"></i> Briefing Aprovado</span>`;
-        } else if (item.briefing_status === 'REJEITADO') {
+        } else if (isBriefingAjuste) {
+          statusBadge = `
+            <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:4px 8px; margin-bottom:4px;">
+              <span style="color:#b45309; font-weight:700; font-size:10.5px; display:block;"><i class="fa-solid fa-comments"></i> Ajuste Solicitado ao Cliente</span>
+              <button type="button" onclick="window.kdsRevisarBriefing(${item.pedido_item_id}, 'APROVADO')" style="background:#16a34a; color:#fff; border:none; border-radius:4px; font-size:10px; padding:2px 6px; font-weight:600; cursor:pointer; margin-top:3px;">
+                <i class="fa-solid fa-check"></i> Aprovar Ajuste
+              </button>
+            </div>
+          `;
+        } else if (isBriefingRejeitado) {
           statusBadge = `<span style="background:#fee2e2; color:#991b1b; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; display:inline-block; margin-bottom:4px;"><i class="fa-solid fa-circle-xmark"></i> Briefing Rejeitado</span>`;
         }
 
@@ -225,6 +242,33 @@ function renderizarPainelKds() {
         `;
       }
 
+      let botaoAvancoHtml = '';
+      if (bloqueioProducao) {
+        botaoAvancoHtml = `
+          <button 
+            type="button"
+            class="kds-btn-avancar"
+            data-kds-item-id="${item.kds_item_id}"
+            disabled
+            style="width: 100%; min-height: 48px; font-size: 13px; font-weight: 700; background: ${isBriefingRejeitado ? '#ef4444' : isBriefingAjuste ? '#f59e0b' : '#94a3b8'}; color: #ffffff; border: none; border-radius: 6px; cursor: not-allowed; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <span>${isBriefingRejeitado ? '⛔' : isBriefingAjuste ? '💬' : '🔒'}</span> 
+            ${isBriefingRejeitado ? 'Briefing Rejeitado' : isBriefingAjuste ? 'Aguardando Ajustes do Cliente' : 'Briefing Pendente de Aprovação'}
+          </button>
+        `;
+      } else {
+        botaoAvancoHtml = `
+          <button 
+            type="button"
+            class="kds-btn-avancar"
+            data-kds-item-id="${item.kds_item_id}"
+            data-proximo-estagio="${proximoEstagioArg}"
+            onclick="window.kdsAvancarItem('${item.kds_item_id}', '${proximoEstagioArg}')"
+            style="width: 100%; min-height: 48px; font-size: 14px; font-weight: 700; background: ${isAtrasado ? '#dc2626' : '#2563eb'}; color: #ffffff; border: none; border-radius: 6px; cursor: pointer; transition: background 0.15s; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <span>➔</span> ${botaoTexto}
+          </button>
+        `;
+      }
+
       return `
         <div class="kds-item-row ${isAtrasado ? 'kds-item-atrasado' : ''}" style="padding: 12px; border: 1px solid ${isAtrasado ? '#fca5a5' : '#e2e8f0'}; border-radius: 8px; background: ${isAtrasado ? '#fff1f2' : '#ffffff'}; margin-bottom: 10px;">
           <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
@@ -241,15 +285,7 @@ function renderizarPainelKds() {
           </div>
           ${briefingHtml}
           ${item.observacoes_item ? `<div style="font-size: 12px; color: #64748b; background: #f8fafc; padding: 4px 8px; border-radius: 4px; margin-bottom: 8px;">Obs: ${item.observacoes_item}</div>` : ''}
-          <button 
-            type="button"
-            class="kds-btn-avancar"
-            data-kds-item-id="${item.kds_item_id}"
-            data-proximo-estagio="${proximoEstagioArg}"
-            onclick="window.kdsAvancarItem('${item.kds_item_id}', '${proximoEstagioArg}')"
-            style="width: 100%; min-height: 48px; font-size: 14px; font-weight: 700; background: ${isAtrasado ? '#dc2626' : '#2563eb'}; color: #ffffff; border: none; border-radius: 6px; cursor: pointer; transition: background 0.15s; display: flex; align-items: center; justify-content: center; gap: 8px;">
-            <span>➔</span> ${botaoTexto}
-          </button>
+          ${botaoAvancoHtml}
         </div>
       `;
     }).join('');
@@ -602,6 +638,48 @@ async function kdsAprovarBriefing(pedidoItemId, aprovado) {
   }
 }
 
+async function kdsRevisarBriefing(pedidoItemId, decisao) {
+  let motivo = null;
+  if (decisao === 'AJUSTE_SOLICITADO') {
+    motivo = prompt('Descreva quais ajustes ou esclarecimentos o cliente deve fornecer:');
+    if (!motivo || !motivo.trim()) {
+      alert('É necessário fornecer uma mensagem de orientação para o cliente.');
+      return;
+    }
+  } else if (decisao === 'REJEITADO') {
+    motivo = prompt('Por favor, informe o motivo da rejeição do briefing:');
+    if (!motivo || !motivo.trim()) {
+      alert('É necessário fornecer um motivo para rejeitar o briefing.');
+      return;
+    }
+  }
+
+  try {
+    const { data, error } = await supabaseClient.rpc('revisar_briefing_item', {
+      p_pedido_item_id: pedidoItemId,
+      p_decisao: decisao,
+      p_motivo: motivo
+    });
+
+    if (error) throw error;
+    if (!data || !data.success) throw new Error(data?.error || 'Falha na atualização.');
+
+    const msgSucesso = decisao === 'APROVADO' 
+      ? '✅ Briefing aprovado! Produção liberada.' 
+      : decisao === 'AJUSTE_SOLICITADO'
+      ? '💬 Solicitação de ajuste registrada com sucesso!'
+      : '⛔ Briefing rejeitado.';
+
+    alert(msgSucesso);
+    if (typeof window.carregarPainelKds === 'function') {
+      await window.carregarPainelKds();
+    }
+  } catch (err) {
+    alert('Erro ao revisar briefing: ' + err.message);
+  }
+}
+
 window.abrirModalBriefingKds = abrirModalBriefingKds;
 window.fecharModalBriefingKds = fecharModalBriefingKds;
 window.kdsAprovarBriefing = kdsAprovarBriefing;
+window.kdsRevisarBriefing = kdsRevisarBriefing;

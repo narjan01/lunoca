@@ -4124,5 +4124,37 @@ assert.ok(
 );
 console.log('    ✅ PERS12 aprovado: KDS bancada perfeitamente integrado com briefing e fotos de referência.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–43 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+console.log('  🔎 PERS13: Bloqueio fail-closed de avanço produtivo no KDS enquanto briefing pendente (Backend & Frontend)...');
+const m044 = fs.readFileSync('supabase/migrations/044_kds_bloqueio_briefing_pendente.sql', 'utf-8');
+const adminKdsAtualizado = fs.readFileSync('js/admin-kds.js', 'utf-8');
+const installSql044 = fs.readFileSync('sql/install.sql', 'utf-8');
+const schemaSql044 = fs.readFileSync('sql/schema.sql', 'utf-8');
+
+assert.ok(
+  m044.includes('BRIEFING_PENDENTE_REVISAO: Transição bloqueada') &&
+  m044.includes("v_briefing_status = 'PENDENTE_REVISAO'") &&
+  m044.includes('AJUSTE_SOLICITADO') &&
+  m044.includes('revisar_briefing_item'),
+  '[FALHA PERS13] Migration 044 deve bloquear kds_avancar_item com BRIEFING_PENDENTE_REVISAO e suportar AJUSTE_SOLICITADO!'
+);
+
+assert.ok(
+  adminKdsAtualizado.includes('Briefing Pendente de Aprovação') &&
+  adminKdsAtualizado.includes('isBriefingBloqueado') &&
+  adminKdsAtualizado.includes('kdsRevisarBriefing') &&
+  adminKdsAtualizado.includes('bloqueioProducao'),
+  '[FALHA PERS13] Frontend KDS deve desabilitar botão de avançar quando briefing_status estiver pendente/rejeitado!'
+);
+
+assert.ok(
+  installSql044.includes('BRIEFING_PENDENTE_REVISAO') &&
+  schemaSql044.includes('BRIEFING_PENDENTE_REVISAO') &&
+  installSql044.includes('AJUSTE_SOLICITADO') &&
+  schemaSql044.includes('AJUSTE_SOLICITADO'),
+  '[FALHA PERS13] Schemas mestres devem conter as travas de briefing e o novo enum de ajuste!'
+);
+console.log('    ✅ PERS13 aprovado: KDS fail-closed bloqueia transição produtiva de briefing pendente com auditoria e suporte a ajustes.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–44 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+
 
