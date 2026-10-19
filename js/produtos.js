@@ -31,11 +31,21 @@ async function carregarProdutosServidor() {
       estoque_qtd: p.estoque_qtd,
       estoque_fisico: p.estoque_fisico,
       estoque_reservado: p.estoque_reservado,
-      controlar_estoque: p.controlar_estoque
+      controlar_estoque: p.controlar_estoque,
+      pronta_entrega: p.pronta_entrega === true
     }));
     
     renderizarProdutosApp();
-    if (usuarioAtual && usuarioAtual.nivel === 'admin') {
+    if (usuarioAtual && (usuarioAtual.nivel === 'admin' || usuarioAtual.nivel === 'operador')) {
+      try {
+        const { data: etapasData } = await supabaseClient
+          .from('produto_etapas_kds')
+          .select('id, produto_id, ordem, praca, sla_minutos, obrigatoria')
+          .order('ordem', { ascending: true });
+        window.produtoEtapasKdsGlobal = etapasData || [];
+      } catch (_) {
+        window.produtoEtapasKdsGlobal = [];
+      }
       if (typeof renderizarProdutosAdmin === 'function') renderizarProdutosAdmin();
     }
   } catch (error) {
@@ -374,6 +384,7 @@ function editarProduto(id) {
   if (document.getElementById('prod-estoque-qtd')) document.getElementById('prod-estoque-qtd').value = (p.estoque_qtd !== undefined && p.estoque_qtd !== null) ? p.estoque_qtd : 10;
   if (document.getElementById('prod-estoque-minimo')) document.getElementById('prod-estoque-minimo').value = (p.estoque_minimo !== undefined && p.estoque_minimo !== null) ? p.estoque_minimo : 3;
   if (document.getElementById('prod-controlar-estoque')) document.getElementById('prod-controlar-estoque').checked = p.controlar_estoque !== false;
+  if (document.getElementById('prod-pronta-entrega')) document.getElementById('prod-pronta-entrega').checked = p.pronta_entrega === true;
   document.getElementById('lbl-upload').innerHTML = "<i class='fa-solid fa-image'></i> Foto Selecionada";
   document.getElementById('upload-status').innerText = "";
   window.scrollTo(0, 0);
@@ -389,6 +400,7 @@ async function salvarProdutoAdmin() {
   let estoqueQtd = parseInt(document.getElementById('prod-estoque-qtd')?.value || 10, 10);
   let estoqueMinimo = parseInt(document.getElementById('prod-estoque-minimo')?.value || 3, 10);
   let controlarEstoque = document.getElementById('prod-controlar-estoque') ? document.getElementById('prod-controlar-estoque').checked : true;
+  let prontaEntrega = document.getElementById('prod-pronta-entrega') ? document.getElementById('prod-pronta-entrega').checked : false;
   
   if (!nome || !preco) return alert("Preencha Nome e Preço.");
   
@@ -399,7 +411,7 @@ async function salvarProdutoAdmin() {
   try {
     let error;
     if (id) {
-      // Edição de Catálogo: não reenvia campos de estoque (evita risco P1 e desativação P3)
+      // Edição de Catálogo: preserva integridade e atualiza pronta_entrega
       const res = await supabaseClient
         .from('produtos')
         .update({
@@ -407,7 +419,8 @@ async function salvarProdutoAdmin() {
           preco: preco,
           descricao: desc,
           opcoes: opcoes,
-          img_url: img
+          img_url: img,
+          pronta_entrega: prontaEntrega
         })
         .eq('id', id);
       error = res.error;
@@ -422,7 +435,8 @@ async function salvarProdutoAdmin() {
           img_url: img,
           estoque_qtd: estoqueQtd,
           estoque_minimo: estoqueMinimo,
-          controlar_estoque: controlarEstoque
+          controlar_estoque: controlarEstoque,
+          pronta_entrega: prontaEntrega
         });
       error = res.error;
     }
@@ -441,6 +455,8 @@ async function salvarProdutoAdmin() {
 
 function renderizarProdutosAdmin() {
   let html = '';
+  const etapasGlobais = window.produtoEtapasKdsGlobal || [];
+
   for (let i = 0; i < produtos.length; i++) {
     let p = produtos[i];
     let cmvInfo = '';
@@ -451,15 +467,41 @@ function renderizarProdutosAdmin() {
       }
     }
 
+    // Gestão visual de rota KDS / Pronta Entrega (Frente 042)
+    let kdsBadge = '';
+    let btnRotaHtml = '';
+    if (p.pronta_entrega) {
+      kdsBadge = `<span style="font-size:11px; background:#dcfce7; color:#166534; padding:2px 8px; border-radius:6px; font-weight:600; margin-left:6px;"><i class="fa-solid fa-box"></i> Pronta Entrega</span>`;
+    } else {
+      const etapasProd = etapasGlobais.filter(e => e.produto_id == p.id);
+      if (etapasProd.length === 0) {
+        kdsBadge = `<span style="font-size:11px; background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:6px; font-weight:700; margin-left:6px;" title="Produto sem rota KDS: vendas não poderão entrar na cozinha!"><i class="fa-solid fa-triangle-exclamation"></i> Sem rota KDS</span>`;
+        btnRotaHtml = `
+          <button class="btn-outline" onclick="abrirModalRotaKds(${p.id}, '${escapeHTML(p.nome)}')" style="padding:6px 12px; font-size:12px; border-radius:8px; border-color:#ef4444; color:#b91c1c; font-weight:700; background:#fef2f2;" title="Configurar rota de produção no KDS">
+            <i class="fa-solid fa-triangle-exclamation"></i> Configurar rota
+          </button>
+        `;
+      } else {
+        kdsBadge = `<span style="font-size:11px; background:#e0f2fe; color:#0369a1; padding:2px 8px; border-radius:6px; font-weight:600; margin-left:6px;" title="${etapasProd.length} etapas no KDS"><i class="fa-solid fa-fire-burner"></i> KDS (${etapasProd.length} etapas)</span>`;
+        btnRotaHtml = `
+          <button class="btn-outline" onclick="abrirModalRotaKds(${p.id}, '${escapeHTML(p.nome)}')" style="padding:6px 12px; font-size:12px; border-radius:8px;" title="Ver ou editar rota do KDS">
+            <i class="fa-solid fa-kitchen-set"></i> Rota KDS
+          </button>
+        `;
+      }
+    }
+
     html += `
-      <div class="user-list-item" style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid #f1f5f9;">
+      <div class="user-list-item" style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid #f1f5f9; flex-wrap:wrap; gap:8px;">
         <div>
           <strong style="color:var(--text-dark);">${escapeHTML(p.nome)}</strong>
+          ${kdsBadge}
           ${cmvInfo}
           <br>
           <span style="font-size:13px; color:var(--primary); font-weight:600;">R$ ${parseFloat(p.preco).toFixed(2).replace('.', ',')}</span>
         </div>
-        <div style="display:flex; gap:8px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          ${btnRotaHtml}
           <button class="btn-outline" onclick="abrirModalFichaTecnica(${p.id})" style="padding:6px 12px; font-size:12px; border-radius:8px;" title="Ver/Editar Receita e Insumos">
             <i class="fa-solid fa-mortar-pestle"></i> Ficha Técnica
           </button>
@@ -485,7 +527,177 @@ function limparFormProduto() {
   if (document.getElementById('prod-estoque-qtd')) document.getElementById('prod-estoque-qtd').value = "10";
   if (document.getElementById('prod-estoque-minimo')) document.getElementById('prod-estoque-minimo').value = "3";
   if (document.getElementById('prod-controlar-estoque')) document.getElementById('prod-controlar-estoque').checked = true;
+  if (document.getElementById('prod-pronta-entrega')) document.getElementById('prod-pronta-entrega').checked = false;
 }
+
+// ------------------------------------------------------------------------------
+// GESTÃO DA ROTA KDS POR PRODUTO (FRENTE 038 / 042)
+// ------------------------------------------------------------------------------
+let produtoKdsAtual = null;
+
+async function abrirModalRotaKds(produtoId, nomeProduto) {
+  produtoKdsAtual = { id: produtoId, nome: nomeProduto };
+  const titEl = document.getElementById('kds-rota-produto-titulo');
+  if (titEl) titEl.textContent = nomeProduto;
+
+  await recarregarEtapasKds(produtoId);
+
+  const modal = document.getElementById('modal-rota-kds-produto');
+  if (modal) modal.style.display = 'flex';
+}
+
+function fecharModalRotaKds() {
+  const modal = document.getElementById('modal-rota-kds-produto');
+  if (modal) modal.style.display = 'none';
+  produtoKdsAtual = null;
+  carregarProdutosServidor();
+}
+
+async function recarregarEtapasKds(produtoId) {
+  const listaEl = document.getElementById('kds-lista-etapas-rota');
+  const alertaSemRota = document.getElementById('kds-alerta-sem-rota');
+  const tempoTotalEl = document.getElementById('kds-tempo-total-rota');
+  if (listaEl) listaEl.innerHTML = '<p style="color:#64748b; font-size:12px;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando etapas...</p>';
+
+  try {
+    const { data: etapas, error } = await supabaseClient
+      .from('produto_etapas_kds')
+      .select('id, ordem, praca, sla_minutos, obrigatoria')
+      .eq('produto_id', produtoId)
+      .order('ordem', { ascending: true });
+
+    if (error) throw error;
+
+    if (!etapas || etapas.length === 0) {
+      if (alertaSemRota) alertaSemRota.style.display = 'block';
+      if (listaEl) listaEl.innerHTML = '<p style="color:#94a3b8; font-size:12px; font-style:italic;">Nenhuma etapa configurada ainda.</p>';
+      if (tempoTotalEl) tempoTotalEl.textContent = 'SLA Total: 0 min';
+      return;
+    }
+
+    if (alertaSemRota) alertaSemRota.style.display = 'none';
+
+    let totalSla = 0;
+    let html = '<div style="display:flex; flex-direction:column; gap:8px;">';
+
+    etapas.forEach(et => {
+      totalSla += Number(et.sla_minutos || 0);
+      const pracaIcones = {
+        MASSA: 'fa-bowl-rice',
+        FORNO: 'fa-temperature-high',
+        RECHEIO: 'fa-layer-group',
+        DECORACAO: 'fa-wand-magic-sparkles',
+        EMBALAGEM: 'fa-box-open'
+      };
+      const icone = pracaIcones[et.praca] || 'fa-utensils';
+
+      html += `
+        <div style="display:flex; justify-content:space-between; align-items:center; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-weight:700; background:var(--primary); color:white; width:24px; height:24px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:12px;">${et.ordem}</span>
+            <div>
+              <strong style="color:#1e293b; font-size:13px;"><i class="fa-solid ${icone}" style="color:var(--primary); margin-right:4px;"></i> Praça: ${escapeHTML(et.praca)}</strong>
+              <span style="color:#64748b; font-size:12px; margin-left:8px;">(SLA: <strong>${et.sla_minutos} min</strong>)</span>
+            </div>
+          </div>
+          <button onclick="removerEtapaKds(${et.id})" class="btn-outline" style="padding:4px 8px; font-size:11px; color:#ef4444; border-color:#fca5a5; border-radius:6px;" title="Remover etapa">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        </div>
+      `;
+    });
+
+    html += '</div>';
+    if (listaEl) listaEl.innerHTML = html;
+    if (tempoTotalEl) tempoTotalEl.textContent = `SLA Total: ${totalSla} min`;
+  } catch (err) {
+    if (listaEl) listaEl.innerHTML = `<p style="color:#ef4444; font-size:12px;">Erro ao carregar etapas: ${escapeHTML(err.message)}</p>`;
+  }
+}
+
+async function adicionarEtapaKds() {
+  if (!produtoKdsAtual || !produtoKdsAtual.id) return;
+  const pracaEl = document.getElementById('kds-nova-etapa-praca');
+  const slaEl = document.getElementById('kds-nova-etapa-sla');
+
+  const praca = pracaEl?.value;
+  const sla = parseInt(slaEl?.value || '15', 10);
+
+  if (!praca || isNaN(sla) || sla <= 0) {
+    return alert('Selecione a praça e informe um SLA válido em minutos.');
+  }
+
+  try {
+    // Busca a próxima ordem disponível
+    const { data: etapasExistentes } = await supabaseClient
+      .from('produto_etapas_kds')
+      .select('ordem, praca')
+      .eq('produto_id', produtoKdsAtual.id);
+
+    if (etapasExistentes && etapasExistentes.some(e => e.praca === praca)) {
+      return alert(`A praça "${praca}" já está cadastrada nesta rota. Cada praça pode constar uma única vez.`);
+    }
+
+    const maxOrdem = (etapasExistentes && etapasExistentes.length > 0)
+      ? Math.max(...etapasExistentes.map(e => e.ordem || 0))
+      : 0;
+
+    const { error } = await supabaseClient
+      .from('produto_etapas_kds')
+      .insert({
+        produto_id: produtoKdsAtual.id,
+        ordem: maxOrdem + 1,
+        praca: praca,
+        sla_minutos: sla,
+        obrigatoria: true
+      });
+
+    if (error) throw error;
+
+    await recarregarEtapasKds(produtoKdsAtual.id);
+  } catch (err) {
+    alert('Erro ao adicionar etapa na rota: ' + err.message);
+  }
+}
+
+async function removerEtapaKds(etapaId) {
+  if (!produtoKdsAtual || !etapaId) return;
+  if (!confirm('Deseja realmente remover esta etapa da rota produtiva?')) return;
+
+  try {
+    const { error } = await supabaseClient
+      .from('produto_etapas_kds')
+      .delete()
+      .eq('id', etapaId);
+
+    if (error) throw error;
+
+    // Reordena etapas restantes
+    const { data: restantes } = await supabaseClient
+      .from('produto_etapas_kds')
+      .select('id, ordem')
+      .eq('produto_id', produtoKdsAtual.id)
+      .order('ordem', { ascending: true });
+
+    if (restantes && restantes.length > 0) {
+      for (let i = 0; i < restantes.length; i++) {
+        await supabaseClient
+          .from('produto_etapas_kds')
+          .update({ ordem: i + 1 })
+          .eq('id', restantes[i].id);
+      }
+    }
+
+    await recarregarEtapasKds(produtoKdsAtual.id);
+  } catch (err) {
+    alert('Erro ao remover etapa: ' + err.message);
+  }
+}
+
+window.abrirModalRotaKds = abrirModalRotaKds;
+window.fecharModalRotaKds = fecharModalRotaKds;
+window.adicionarEtapaKds = adicionarEtapaKds;
+window.removerEtapaKds = removerEtapaKds;
 
 async function prepararUpload(input) {
   if (input.files && input.files[0]) {

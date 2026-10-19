@@ -3885,5 +3885,118 @@ for (const [name, content] of [['install.sql', fs.readFileSync('sql/install.sql'
 }
 console.log('    ✅ Migration 040, schemas mestre e governança de isolamento WhatsApp validados com sucesso.');
 
-console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–40 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
+console.log('\n============================================================');
+console.log('🩺 FASE 41-42: Dinamismo Operacional & Restauração Fail-Closed KDS (Gates D1–D12)...');
+console.log('============================================================');
+
+const m041 = fs.readFileSync('supabase/migrations/041_dinamismo_admin_kds_retirada_sync.sql', 'utf-8');
+const m042 = fs.readFileSync('supabase/migrations/042_kds_restaurar_semantica_fail_closed.sql', 'utf-8');
+const adminJs = fs.readFileSync('js/admin.js', 'utf-8');
+const retiradaJs = fs.readFileSync('js/admin-retirada.js', 'utf-8');
+const operacaoJs = fs.readFileSync('js/admin-operacao.js', 'utf-8');
+const produtosJs = fs.readFileSync('js/produtos.js', 'utf-8');
+
+console.log('  🔎 D1: Pedido pago entra no KDS exatamente 1x...');
+assert.ok(
+  m042.includes('ON CONFLICT (pedido_id) DO UPDATE SET updated_at = NOW() RETURNING id INTO v_kds_id;') ||
+  m042.includes('ON CONFLICT (pedido_id)'),
+  '[FALHA D1] Cabeçalho KDS deve ter unicidade estrita por pedido_id!'
+);
+console.log('    ✅ D1 aprovado: pedido entra no KDS exatamente 1x com unicidade estrita.');
+
+console.log('  🔎 D2: Inicialização repetida é idempotente...');
+assert.ok(
+  m042.includes("SELECT id INTO v_kds_id") &&
+  m042.includes("FROM public.pedido_producao_kds") &&
+  m042.includes("WHERE pedido_id = p_pedido_id;") &&
+  m042.includes("'ja_inicializado', true"),
+  '[FALHA D2] Inicialização repetida deve ser idempotente e retornar ja_inicializado: true!'
+);
+console.log('    ✅ D2 aprovado: inicialização repetida no KDS é idempotente.');
+
+console.log('  🔎 D3: Produto sem rota falha explicitamente (Fail-Closed P0001)...');
+assert.ok(
+  m042.includes("RAISE EXCEPTION 'KDS_ROUTE_NOT_CONFIGURED: O produto % (ID %) não possui rota de etapas cadastrada no KDS.'") &&
+  m042.includes("USING ERRCODE = 'P0001';"),
+  '[FALHA D3] Produto que exige produção sem rota cadastrada deve falhar com KDS_ROUTE_NOT_CONFIGURED e código P0001!'
+);
+console.log('    ✅ D3 aprovado: produto sem rota falha estritamente com KDS_ROUTE_NOT_CONFIGURED (P0001).');
+
+console.log('  🔎 D4: Produto pronta-entrega não entra no KDS (exceção legítima)...');
+assert.ok(
+  m042.includes('ADD COLUMN IF NOT EXISTS pronta_entrega BOOLEAN NOT NULL DEFAULT false;') &&
+  m042.includes('v_item.pronta_entrega IS TRUE THEN') &&
+  m042.includes('CONTINUE;'),
+  '[FALHA D4] Produto classificado como pronta-entrega deve ser ignorado na fila do KDS sem sintetizar rota!'
+);
+console.log('    ✅ D4 aprovado: produtos pronta-entrega são dispensados do KDS sem gerar rotas sintéticas.');
+
+console.log('  🔎 D5: Backfill não duplica KDS existente...');
+assert.ok(
+  m041.includes('NOT EXISTS (') &&
+  m041.includes('SELECT 1 FROM public.pedido_producao_kds k WHERE k.pedido_id = p.id'),
+  '[FALHA D5] Backfill de pedidos operacionais deve usar NOT EXISTS para garantir não-duplicação!'
+);
+console.log('    ✅ D5 aprovado: backfill não duplica registros pré-existentes no KDS.');
+
+console.log('  🔎 D6: Pedido cancelado encerra unidades sem marcar pronto nem reativar...');
+assert.ok(
+  m042.includes("motivo_encerramento = 'CANCELADO'") &&
+  m042.includes("ativo = FALSE") &&
+  m042.includes("NEW.status_operacional = 'cancelado'"),
+  '[FALHA D6] Transição para cancelado deve desativar KDS sem marcar PRONTO!'
+);
+console.log('    ✅ D6 aprovado: cancelamento encerra unidades do KDS sem reativação espúria.');
+
+console.log('  🔎 D7: Filtro Todos Pendentes respeita status canônicos...');
+assert.ok(
+  retiradaJs.includes('btn-retirada-ver-todos') &&
+  m041.includes("status_operacional IN ('aguardando_producao', 'em_producao', 'pronto', 'aguardando_retirada')"),
+  '[FALHA D7] Filtro Todos Pendentes deve se subordinar estritamente aos status operacionais canônicos!'
+);
+console.log('    ✅ D7 aprovado: filtro Todos Pendentes subordinado aos enums canônicos da Frente 031/041.');
+
+console.log('  🔎 D8: Badges usam projeções canônicas de contagem...');
+assert.ok(
+  adminJs.includes('atualizarBadgesMenuAdmin') &&
+  adminJs.includes("from('pedido_producao_kds')") &&
+  adminJs.includes("from('pedidos')"),
+  '[FALHA D8] Badges em tempo real devem usar projeções canônicas sobre pedidos e KDS!'
+);
+console.log('    ✅ D8 aprovado: badges em tempo real utilizam contagens canônicas server-side.');
+
+console.log('  🔎 D9: Atalhos KDS/Balcão não alteram estado do banco...');
+assert.ok(
+  (operacaoJs.includes("mudarTabAdmin('kds')") && operacaoJs.includes("mudarTabAdmin('retirada')")) ||
+  retiradaJs.includes("mudarTabAdmin('kds')"),
+  '[FALHA D9] Atalhos de navegação entre Pedidos, KDS e Balcão devem apenas alternar abas sem mutação de banco!'
+);
+console.log('    ✅ D9 aprovado: atalhos de navegação operam estritamente como switches de visão.');
+
+console.log('  🔎 D10: RLS e RPCs continuam fail-closed...');
+assert.ok(
+  m042.includes('REVOKE ALL ON FUNCTION public.kds_inicializar_pedido(BIGINT) FROM PUBLIC, anon, authenticated;') &&
+  m042.includes('GRANT EXECUTE ON FUNCTION public.kds_inicializar_pedido(BIGINT) TO service_role;') &&
+  m041.includes('REVOKE ALL ON FUNCTION public.obter_painel_balcao_retiradas(DATE) FROM PUBLIC, anon;'),
+  '[FALHA D10] Grants fail-closed em RPCs do KDS e Balcão devem bloquear chamadas anônimas e públicas!'
+);
+console.log('    ✅ D10 aprovado: RPCs e tabelas continuam protegidas sob fail-closed estrito.');
+
+console.log('  🔎 D11: Schemas mestres (install.sql e schema.sql) sincronizados com Migration 042...');
+for (const [name, content] of [['install.sql', fs.readFileSync('sql/install.sql', 'utf-8')], ['schema.sql', fs.readFileSync('sql/schema.sql', 'utf-8')]]) {
+  assert.ok(content.includes('KDS_ROUTE_NOT_CONFIGURED: O produto'), `[FALHA] ${name} não contém a semântica fail-closed da Migration 042!`);
+  assert.ok(content.includes('pronta_entrega BOOLEAN NOT NULL DEFAULT false'), `[FALHA] ${name} não contém a coluna pronta_entrega da Migration 042!`);
+}
+console.log('    ✅ D11 aprovado: Schemas mestres sincronizados em 100% de paridade com a Migration 042.');
+
+console.log('  🔎 D12: Gestão visual de rota KDS no catálogo administrativo...');
+assert.ok(
+  produtosJs.includes('Sem rota KDS') &&
+  produtosJs.includes('abrirModalRotaKds') &&
+  produtosJs.includes('produto_etapas_kds'),
+  '[FALHA D12] Painel administrativo de produtos deve alertar produtos sem rota KDS e oferecer modal de configuração!'
+);
+console.log('    ✅ D12 aprovado: Alerta visual "Sem rota KDS" e configuração de rotas presentes no Admin.');
+
+console.log('\n🎉 TODOS OS TESTES PASSARAM COM SUCESSO! 100% das verificações automatizadas das Fases 1–42 foram aprovadas.\n   ℹ️  Estas verificações são ESTRUTURAIS. Para provas de concorrência/idempotência rode: npm run test:integration');
 

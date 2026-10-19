@@ -391,10 +391,16 @@
               <input type="number" id="prod-estoque-minimo" placeholder="3" value="3" min="1">
             </div>
           </div>
-          <div class="form-group" style="margin-top: -5px; margin-bottom: 15px;">
+          <div class="form-group" style="margin-top: -5px; margin-bottom: 8px;">
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600;">
               <input type="checkbox" id="prod-controlar-estoque" checked style="width: 18px; height: 18px; accent-color: var(--primary);">
               Controlar estoque deste doce (desmarque para produção sob encomenda)
+            </label>
+          </div>
+          <div class="form-group" style="margin-top: -5px; margin-bottom: 15px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600; color: #166534;">
+              <input type="checkbox" id="prod-pronta-entrega" style="width: 18px; height: 18px; accent-color: #166534;">
+              <i class="fa-solid fa-box"></i> Pronta-entrega (dispensa transformação fabril / não entra no KDS)
             </label>
           </div>
           <div class="form-group">
@@ -1340,6 +1346,53 @@
 
       <div style="margin-top:15px; text-align:right;">
         <button type="button" onclick="fecharModalFichaTecnica()" class="btn-primary" style="padding:8px 16px;">Concluir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Rota de Produção KDS (Frente 038 / 042) -->
+  <div id="modal-rota-kds-produto" class="modal-overlay">
+    <div class="modal-content" style="max-width: 540px; text-align: left; border-radius: 20px;">
+      <span class="close-modal" role="button" aria-label="Fechar janela" onclick="fecharModalRotaKds()">&times;</span>
+      <h3 style="margin-top:0; color:var(--text-dark); font-size:18px;">
+        <i class="fa-solid fa-fire-burner" style="color:var(--primary);"></i> Rota KDS: <span id="kds-rota-produto-titulo" style="color:var(--primary);">--</span>
+      </h3>
+      <p style="font-size:12px; color:#64748b; margin-top:-6px; margin-bottom:14px;">
+        Configure a sequência ordenada de praças de produção para este item na cozinha artesanal.
+      </p>
+
+      <!-- Alerta de ausência de rota -->
+      <div id="kds-alerta-sem-rota" style="display:none; background:#fef2f2; border:1px solid #fecaca; border-radius:10px; padding:10px; margin-bottom:12px; color:#991b1b; font-size:12px;">
+        <i class="fa-solid fa-triangle-exclamation"></i> <strong>Atenção:</strong> Este produto não possui etapas no KDS. Caso seja vendido, não poderá entrar na fila da cozinha até que uma rota seja configurada.
+      </div>
+
+      <!-- Lista de Etapas da Rota Atual -->
+      <div style="margin-bottom: 15px;">
+        <label style="font-weight:700; font-size:13px; color:#334155; display:block; margin-bottom:6px;">Sequência de Etapas:</label>
+        <div id="kds-lista-etapas-rota"></div>
+      </div>
+
+      <!-- Formulário para Adicionar Nova Etapa -->
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:12px; margin-bottom:15px;">
+        <strong style="font-size:12px; color:#475569; display:block; margin-bottom:8px;">+ Adicionar Etapa na Rota</strong>
+        <div style="display:grid; grid-template-columns: 2fr 1fr auto; gap:8px;">
+          <select id="kds-nova-etapa-praca" style="font-size:12px; padding:6px; border-radius:8px; border:1px solid #cbd5e1;">
+            <option value="MASSA">Massa (Preparo)</option>
+            <option value="FORNO">Forno (Cocção)</option>
+            <option value="RECHEIO">Recheio (Montagem)</option>
+            <option value="DECORACAO">Decoração (Acabamento)</option>
+            <option value="EMBALAGEM">Embalagem (Finalização)</option>
+          </select>
+          <input type="number" id="kds-nova-etapa-sla" placeholder="SLA (min)" min="1" value="15" style="font-size:12px; padding:6px; border-radius:8px; border:1px solid #cbd5e1;">
+          <button type="button" onclick="adicionarEtapaKds()" class="btn-primary" style="padding:6px 12px; font-size:12px;">
+            <i class="fa-solid fa-plus"></i> Inserir
+          </button>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:15px;">
+        <span id="kds-tempo-total-rota" style="font-size:12px; color:#475569; font-weight:600;">SLA Total: 0 min</span>
+        <button type="button" onclick="fecharModalRotaKds()" class="btn-primary" style="padding:8px 16px;">Concluir</button>
       </div>
     </div>
   </div>
