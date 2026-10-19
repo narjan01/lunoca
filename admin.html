@@ -1430,6 +1430,96 @@
     </div>
   </div>
 
+  <!-- Modal Configuração de Campos de Personalização (Frente 043 - Admin) -->
+  <div id="modal-config-personalizacao-produto" class="modal-overlay">
+    <div class="modal-content" style="max-width: 620px; text-align: left; border-radius: 20px; max-height: 90vh; overflow-y: auto;">
+      <span class="close-modal" role="button" aria-label="Fechar janela" onclick="fecharModalConfigPersonalizacao()">&times;</span>
+      <h3 style="margin-top:0; color:var(--text-dark); font-size:18px;">
+        <i class="fa-solid fa-wand-magic-sparkles" style="color:var(--primary);"></i> Briefing & Personalização: <span id="pz-modal-produto-titulo" style="color:var(--primary);">--</span>
+      </h3>
+      <p style="font-size:12px; color:#64748b; margin-top:-6px; margin-bottom:14px;">
+        Configure quais perguntas, seleções ou arquivos o cliente deve preencher ao comprar este produto.
+      </p>
+
+      <!-- Toggle Requer Aprovação Prévia -->
+      <div style="background:#fdf2f8; border:1px solid #fbcfe8; border-radius:10px; padding:12px; margin-bottom:14px;">
+        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:13px; font-weight:600; color:#831843;">
+          <input type="checkbox" id="pz-toggle-requer-aprovacao" style="width:18px; height:18px; accent-color:#be185d;" onchange="alternarRequerAprovacaoProduto(this.checked)">
+          <span>Exigir aprovação manual do briefing pela confeitaria antes de iniciar produção</span>
+        </label>
+      </div>
+
+      <!-- Lista de Campos Configurados -->
+      <div style="margin-bottom:15px;">
+        <label style="font-weight:700; font-size:13px; color:#334155; display:block; margin-bottom:6px;">Campos Ativos:</label>
+        <div id="pz-lista-campos-config"></div>
+      </div>
+
+      <!-- Formulário para Criar/Adicionar Campo -->
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:14px; margin-bottom:15px;">
+        <strong style="font-size:13px; color:#334155; display:block; margin-bottom:10px;">+ Adicionar Campo de Personalização</strong>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;">
+          <div>
+            <label style="font-size:11px; font-weight:600; color:#64748b; display:block;">Código Identificador</label>
+            <input type="text" id="pz-novo-codigo" placeholder="ex: tema, cores, nome_bolo" style="font-size:12px; width:100%; padding:6px; border-radius:6px; border:1px solid #cbd5e1;">
+          </div>
+          <div>
+            <label style="font-size:11px; font-weight:600; color:#64748b; display:block;">Rótulo / Pergunta (Label)</label>
+            <input type="text" id="pz-novo-label" placeholder="ex: Qual o tema da festa?" style="font-size:12px; width:100%; padding:6px; border-radius:6px; border:1px solid #cbd5e1;">
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;">
+          <div>
+            <label style="font-size:11px; font-weight:600; color:#64748b; display:block;">Tipo do Campo</label>
+            <select id="pz-novo-tipo" style="font-size:12px; width:100%; padding:6px; border-radius:6px; border:1px solid #cbd5e1;" onchange="alternarCamposConfigExtra(this.value)">
+              <option value="TEXTO">Texto Curto</option>
+              <option value="TEXTO_LONGO">Texto Longo / Descrição</option>
+              <option value="COR">Cor Única</option>
+              <option value="CORES_MULTIPLAS">Múltiplas Cores (Paleta)</option>
+              <option value="SELECT">Opções Únicas (Dropdown)</option>
+              <option value="NUMERO">Número (ex: idade)</option>
+              <option value="DATA">Data</option>
+              <option value="IMAGEM">1 Imagem de Referência</option>
+              <option value="IMAGENS">Múltiplas Fotos de Referência</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px; font-weight:600; color:#64748b; display:block;">Obrigatoriedade</label>
+            <label style="display:flex; align-items:center; gap:6px; margin-top:8px; font-size:12px; cursor:pointer;">
+              <input type="checkbox" id="pz-novo-obrigatorio" style="accent-color:var(--primary);">
+              <span>Preenchimento Obrigatório</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Opções extras para SELECT ou limite de imagens -->
+        <div id="pz-bloco-config-extra" style="display:none; margin-bottom:10px;">
+          <label style="font-size:11px; font-weight:600; color:#64748b; display:block;">Configuração Adicional (Opções separadas por vírgula ou Máx Itens)</label>
+          <input type="text" id="pz-novo-extra" placeholder="Opção 1, Opção 2 ou Máx: 5" style="font-size:12px; width:100%; padding:6px; border-radius:6px; border:1px solid #cbd5e1;">
+        </div>
+
+        <div style="text-align:right;">
+          <button type="button" onclick="adicionarCampoPersonalizacaoAdmin()" class="btn-primary" style="padding:6px 14px; font-size:12px;">
+            <i class="fa-solid fa-plus"></i> Salvar Campo
+          </button>
+        </div>
+      </div>
+
+      <div style="text-align:right; margin-top:15px;">
+        <button type="button" onclick="fecharModalConfigPersonalizacao()" class="btn-primary" style="padding:8px 16px;">Concluir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Visualização de Briefing e Referências Visuais (Frente 043 - KDS / Operação) -->
+  <div id="modal-briefing-kds" class="modal-overlay">
+    <div class="modal-content" style="max-width: 580px; text-align: left; border-radius: 20px; max-height: 92vh; overflow-y: auto;">
+      <span class="close-modal" role="button" aria-label="Fechar janela" onclick="fecharModalBriefingKds()">&times;</span>
+      <div id="modal-briefing-conteudo"></div>
+    </div>
+  </div>
+
   <!-- Scripts Administrativos Completos -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/supabase.js?v=3.0.0"></script>
